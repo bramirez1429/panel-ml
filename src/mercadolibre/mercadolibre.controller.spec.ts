@@ -1,6 +1,9 @@
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 import { MercadolibreController } from './mercadolibre.controller';
 import { MercadolibreService } from './mercadolibre.service';
+import { UpdatePriceDto } from './update-price.dto';
 
 type ServiceMock = jest.Mocked<
   Pick<
@@ -9,7 +12,10 @@ type ServiceMock = jest.Mocked<
     | 'verifyState'
     | 'exchangeCode'
     | 'getCurrentUser'
-    | 'getAllPublications'
+    | 'saveTokens'
+    | 'getPublicationsPage'
+    | 'getPublication'
+    | 'updatePublicationPrice'
   >
 >;
 
@@ -23,7 +29,10 @@ describe('MercadolibreController', () => {
       verifyState: jest.fn(),
       exchangeCode: jest.fn(),
       getCurrentUser: jest.fn(),
-      getAllPublications: jest.fn(),
+      saveTokens: jest.fn(),
+      getPublicationsPage: jest.fn(),
+      getPublication: jest.fn(),
+      updatePublicationPrice: jest.fn(),
     };
     controller = new MercadolibreController(
       service as unknown as MercadolibreService,
@@ -41,9 +50,16 @@ describe('MercadolibreController', () => {
 
   it('completes OAuth without loading publications or returning the token', async () => {
     const seller = { id: 123456, nickname: 'TEST_SELLER' };
+    const tokens = {
+      access_token: 'private-access-token',
+      refresh_token: 'private-refresh-token',
+      expires_in: 21_600,
+      user_id: seller.id,
+    };
     service.verifyState.mockReturnValue(true);
-    service.exchangeCode.mockResolvedValue('private-access-token');
+    service.exchangeCode.mockResolvedValue(tokens);
     service.getCurrentUser.mockResolvedValue(seller);
+    service.saveTokens.mockResolvedValue(undefined);
 
     const result = await controller.callback(
       'authorization-code',
@@ -53,13 +69,64 @@ describe('MercadolibreController', () => {
     expect(service.verifyState).toHaveBeenCalledWith('valid-state');
     expect(service.exchangeCode).toHaveBeenCalledWith('authorization-code');
     expect(service.getCurrentUser).toHaveBeenCalledWith('private-access-token');
-    expect(service.getAllPublications).not.toHaveBeenCalled();
+    expect(service.saveTokens).toHaveBeenCalledWith(seller, tokens);
     expect(result).toEqual({
       ok: true,
       message: 'Mercado Libre conectado correctamente',
       seller,
     });
     expect(JSON.stringify(result)).not.toContain('private-access-token');
+    expect(JSON.stringify(result)).not.toContain('private-refresh-token');
+  });
+
+  it('delegates publication page requests', async () => {
+    const page = {
+      total: 1,
+      count: 1,
+      nextScrollId: 'next-scroll',
+      finished: false,
+      publications: [{ id: 'MLA100' }],
+      errors: [],
+    };
+    service.getPublicationsPage.mockResolvedValue(page);
+
+    await expect(
+      controller.getPublications('25', ' current-scroll '),
+    ).resolves.toBe(page);
+    expect(service.getPublicationsPage).toHaveBeenCalledWith(
+      25,
+      'current-scroll',
+    );
+  });
+
+  it('delegates publication detail requests', async () => {
+    const publication = { id: 'MLA100', title: 'Test publication' };
+    service.getPublication.mockResolvedValue(publication);
+
+    await expect(controller.getPublication('MLA100')).resolves.toBe(
+      publication,
+    );
+    expect(service.getPublication).toHaveBeenCalledWith('MLA100');
+  });
+
+  it('delegates publication price updates', async () => {
+    const updated = { id: 'MLA100', price: 1500 };
+    service.updatePublicationPrice.mockResolvedValue(updated);
+
+    await expect(
+      controller.updatePrice('MLA100', { price: 1500 }),
+    ).resolves.toBe(updated);
+    expect(service.updatePublicationPrice).toHaveBeenCalledWith('MLA100', 1500);
+  });
+
+  it('validates that the price is a positive number', async () => {
+    const valid = plainToInstance(UpdatePriceDto, { price: 1500 });
+    const zero = plainToInstance(UpdatePriceDto, { price: 0 });
+    const missing = plainToInstance(UpdatePriceDto, {});
+
+    await expect(validate(valid)).resolves.toHaveLength(0);
+    await expect(validate(zero)).resolves.not.toHaveLength(0);
+    await expect(validate(missing)).resolves.not.toHaveLength(0);
   });
 
   it('rejects invalid state, provider errors and a missing code before exchange', async () => {

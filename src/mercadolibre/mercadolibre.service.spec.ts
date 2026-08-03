@@ -9,13 +9,6 @@ const configValues: Record<string, string> = {
   ML_STATE_SECRET: 'test-state-secret-with-at-least-32-bytes',
 };
 
-const sensitiveKeys = new Set([
-  'accesstoken',
-  'refreshtoken',
-  'clientsecret',
-  'authorization',
-]);
-
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -49,29 +42,6 @@ function detailIds(input: string | URL | Request): string[] {
       ?.split(',')
       .filter(Boolean) ?? []
   );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function expectNoSensitiveKeys(value: unknown): void {
-  if (Array.isArray(value)) {
-    value.forEach(expectNoSensitiveKeys);
-    return;
-  }
-  if (!isRecord(value)) {
-    return;
-  }
-
-  for (const [key, nestedValue] of Object.entries(value)) {
-    const normalizedKey = key
-      .toLowerCase()
-      .replaceAll('_', '')
-      .replaceAll('-', '');
-    expect(sensitiveKeys.has(normalizedKey)).toBe(false);
-    expectNoSensitiveKeys(nestedValue);
-  }
 }
 
 function safePublication(id: string): Record<string, unknown> {
@@ -175,16 +145,17 @@ describe('MercadolibreService', () => {
   });
 
   describe('account API', () => {
-    it('exchanges the code as form data and returns only the access token', async () => {
-      fetchMock.mockResolvedValueOnce(
-        jsonResponse({
-          access_token: 'access-token-value',
-          refresh_token: 'refresh-token-value',
-        }),
-      );
+    it('exchanges the code as form data and returns the validated tokens', async () => {
+      const tokens = {
+        access_token: 'access-token-value',
+        refresh_token: 'refresh-token-value',
+        expires_in: 21_600,
+        user_id: 123456,
+      };
+      fetchMock.mockResolvedValueOnce(jsonResponse(tokens));
 
-      await expect(service.exchangeCode('authorization-code')).resolves.toBe(
-        'access-token-value',
+      await expect(service.exchangeCode('authorization-code')).resolves.toEqual(
+        tokens,
       );
 
       const [url, init] = fetchMock.mock.calls[0];
@@ -270,166 +241,196 @@ describe('MercadolibreService', () => {
     });
   });
 
-  describe('getAllPublications', () => {
-    it('reuses the initial scan cursor, deduplicates ids and keeps the first total', async () => {
-      const pages: unknown[] = [
-        {
-          paging: { total: 10 },
-          scroll_id: 'stable-scroll-id',
-          results: ['MLA001', 'MLA002'],
-        },
-        { paging: { total: 999 }, results: ['MLA002', 'MLA003'] },
-        { results: null },
-      ];
-      let scanCall = 0;
+  describe('stored account API', () => {
+    const connection = {
+      seller_id: 123456,
+      nickname: 'TEST_SELLER',
+      access_token: 'stored-access-token',
+      refresh_token: 'stored-refresh-token',
+      expires_at: '2030-01-01T00:00:00.000Z',
+      updated_at: '2029-12-31T00:00:00.000Z',
+    };
 
-      fetchMock.mockImplementation((input, init) => {
-        const url = new URL(requestUrl(input));
-        expect(new Headers(init?.headers).get('authorization')).toBe(
-          'Bearer access-token',
-        );
-        if (url.pathname.endsWith('/items/search')) {
-          const page = pages[scanCall];
-          scanCall += 1;
-          return Promise.resolve(jsonResponse(page));
-        }
+    it('refreshes the access token and saves the new tokens', async () => {
+      const tokens = {
+        access_token: 'new-access-token',
+        refresh_token: 'new-refresh-token',
+        expires_in: 21_600,
+        user_id: connection.seller_id,
+      };
+      fetchMock.mockResolvedValueOnce(jsonResponse(tokens));
+      const saveTokens = jest
+        .spyOn(service, 'saveTokens')
+        .mockResolvedValue(undefined);
 
-        return Promise.resolve(multigetResponse(detailIds(input)));
+      await expect(service.refreshAccessToken(connection)).resolves.toBe(
+        tokens.access_token,
+      );
+      expect(saveTokens).toHaveBeenCalledWith(
+        { id: connection.seller_id, nickname: connection.nickname },
+        tokens,
+      );
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(requestUrl(url)).toBe('https://api.mercadolibre.com/oauth/token');
+      expect(Object.fromEntries(formBody(init))).toEqual({
+        grant_type: 'refresh_token',
+        client_id: 'test-client-id',
+        client_secret: 'test-client-secret',
+        refresh_token: connection.refresh_token,
       });
+    });
 
-      const result = await service.getAllPublications(123456, 'access-token');
-      const scanUrls = fetchMock.mock.calls
-        .map(([input]) => new URL(requestUrl(input)))
-        .filter(({ pathname }) => pathname.endsWith('/items/search'));
+    it('reuses a valid access token and renews an expired one', async () => {
+      const now = 1_800_000_000_000;
+      jest.spyOn(Date, 'now').mockReturnValue(now);
+      const validConnection = {
+        ...connection,
+        expires_at: new Date(now + 10 * 60 * 1000).toISOString(),
+      };
+      const expiredConnection = {
+        ...connection,
+        expires_at: new Date(now - 1).toISOString(),
+      };
+      jest
+        .spyOn(service, 'getStoredConnection')
+        .mockResolvedValueOnce(validConnection)
+        .mockResolvedValueOnce(expiredConnection);
+      const refreshAccessToken = jest
+        .spyOn(service, 'refreshAccessToken')
+        .mockResolvedValue('renewed-access-token');
 
-      expect(result).toEqual({
-        totalReported: 10,
-        idsRetrieved: 3,
-        publicationsRetrieved: 3,
-        failed: 0,
-        publications: [
-          safePublication('MLA001'),
-          safePublication('MLA002'),
-          safePublication('MLA003'),
-        ],
+      await expect(service.getValidAccessToken()).resolves.toBe(
+        connection.access_token,
+      );
+      expect(refreshAccessToken).not.toHaveBeenCalled();
+
+      await expect(service.getValidAccessToken()).resolves.toBe(
+        'renewed-access-token',
+      );
+      expect(refreshAccessToken).toHaveBeenCalledWith(expiredConnection);
+    });
+
+    it('gets one scan page and its publication details', async () => {
+      jest.spyOn(service, 'getStoredConnection').mockResolvedValue(connection);
+      jest
+        .spyOn(service, 'getValidAccessToken')
+        .mockResolvedValue('valid-access-token');
+      fetchMock
+        .mockResolvedValueOnce(
+          jsonResponse({
+            paging: { total: 2 },
+            results: ['MLA100', 'MLA200', 'MLA100'],
+          }),
+        )
+        .mockImplementationOnce((input) =>
+          Promise.resolve(multigetResponse(detailIds(input))),
+        );
+
+      await expect(
+        service.getPublicationsPage(25, 'stable-scroll-id'),
+      ).resolves.toEqual({
+        total: 2,
+        count: 2,
+        nextScrollId: 'stable-scroll-id',
+        finished: false,
+        publications: [safePublication('MLA100'), safePublication('MLA200')],
         errors: [],
       });
-      expect(scanUrls.map((url) => url.searchParams.get('scroll_id'))).toEqual([
-        null,
-        'stable-scroll-id',
-        'stable-scroll-id',
+
+      const searchUrl = new URL(requestUrl(fetchMock.mock.calls[0][0]));
+      expect(searchUrl.pathname).toBe('/users/123456/items/search');
+      expect(searchUrl.searchParams.get('search_type')).toBe('scan');
+      expect(searchUrl.searchParams.get('limit')).toBe('25');
+      expect(searchUrl.searchParams.get('scroll_id')).toBe('stable-scroll-id');
+      expect(detailIds(fetchMock.mock.calls[1][0])).toEqual([
+        'MLA100',
+        'MLA200',
       ]);
-      for (const url of scanUrls) {
-        expect(url.searchParams.get('search_type')).toBe('scan');
-        expect(url.searchParams.get('limit')).toBe('100');
-      }
     });
 
-    it('chunks details, limits concurrency, sanitizes bodies and collects item errors', async () => {
-      const ids = Array.from(
-        { length: 85 },
-        (_, index) => `MLA${String(index + 1).padStart(3, '0')}`,
-      );
-      const notFoundBody = { error: 'not_found', message: 'Item not found' };
-      let inFlight = 0;
-      let maxInFlight = 0;
+    it('finishes a scan even when Mercado Libre omits the total', async () => {
+      jest.spyOn(service, 'getStoredConnection').mockResolvedValue(connection);
+      jest
+        .spyOn(service, 'getValidAccessToken')
+        .mockResolvedValue('valid-access-token');
+      fetchMock.mockResolvedValueOnce(jsonResponse(null));
 
-      fetchMock.mockImplementation((input) => {
-        const url = new URL(requestUrl(input));
-        if (url.pathname.endsWith('/items/search')) {
-          return Promise.resolve(
-            url.searchParams.has('scroll_id')
-              ? jsonResponse({ results: [] })
-              : jsonResponse({
-                  scroll_id: 'stable-scroll-id',
-                  results: ids,
-                }),
-          );
-        }
-
-        const batchIds = detailIds(input);
-        inFlight += 1;
-        maxInFlight = Math.max(maxInFlight, inFlight);
-        return Promise.resolve().then(() => {
-          inFlight -= 1;
-          return jsonResponse(
-            batchIds.map((id) =>
-              id === 'MLA023'
-                ? { code: 404, body: notFoundBody }
-                : { code: 200, body: upstreamPublication(id) },
-            ),
-          );
-        });
+      await expect(
+        service.getPublicationsPage(50, 'stable-scroll-id'),
+      ).resolves.toEqual({
+        total: null,
+        count: 0,
+        nextScrollId: null,
+        finished: true,
+        publications: [],
+        errors: [],
       });
-
-      const result = await service.getAllPublications(123456, 'access-token');
-      const detailCalls = fetchMock.mock.calls.filter(
-        ([input]) => new URL(requestUrl(input)).pathname === '/items',
-      );
-      const chunks = detailCalls.map(([input]) => detailIds(input));
-
-      expect(chunks.map(({ length }) => length).sort((a, b) => b - a)).toEqual([
-        20, 20, 20, 20, 5,
-      ]);
-      expect(new Set(chunks.flat())).toEqual(new Set(ids));
-      expect(maxInFlight).toBeGreaterThan(1);
-      expect(maxInFlight).toBeLessThanOrEqual(4);
-      expect(result).toMatchObject({
-        totalReported: 85,
-        idsRetrieved: 85,
-        publicationsRetrieved: 84,
-        failed: 1,
-        errors: [{ id: 'MLA023', code: 404, body: notFoundBody }],
-      });
-      expect(result.publications).toHaveLength(84);
-      expect(result.publications).toContainEqual(safePublication('MLA001'));
-      expectNoSensitiveKeys(result.publications);
     });
 
-    it('keeps successful batches and creates one error per failed id', async () => {
-      const ids = Array.from(
-        { length: 41 },
-        (_, index) => `MLA${String(index + 1).padStart(3, '0')}`,
+    it('gets one publication with a valid access token', async () => {
+      jest
+        .spyOn(service, 'getValidAccessToken')
+        .mockResolvedValue('valid-access-token');
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(upstreamPublication('MLA100')),
       );
 
-      fetchMock.mockImplementation((input) => {
-        const url = new URL(requestUrl(input));
-        if (url.pathname.endsWith('/items/search')) {
-          return Promise.resolve(
-            url.searchParams.has('scroll_id')
-              ? jsonResponse({ results: [] })
-              : jsonResponse({
-                  paging: { total: ids.length },
-                  scroll_id: 'stable-scroll-id',
-                  results: ids,
-                }),
-          );
-        }
+      await expect(service.getPublication('MLA100')).resolves.toEqual(
+        safePublication('MLA100'),
+      );
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(requestUrl(url)).toBe('https://api.mercadolibre.com/items/MLA100');
+      expect(new Headers(init?.headers).get('authorization')).toBe(
+        'Bearer valid-access-token',
+      );
+    });
 
-        const batchIds = detailIds(input);
-        return batchIds[0] === 'MLA021'
-          ? Promise.reject(new Error('simulated network failure'))
-          : Promise.resolve(multigetResponse(batchIds));
+    it('updates a publication price with a valid access token', async () => {
+      jest
+        .spyOn(service, 'getValidAccessToken')
+        .mockResolvedValue('valid-access-token');
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({ ...upstreamPublication('MLA100'), price: 1500 }),
+      );
+
+      await expect(
+        service.updatePublicationPrice('MLA100', 1500),
+      ).resolves.toEqual({ ...safePublication('MLA100'), price: 1500 });
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(requestUrl(url)).toBe('https://api.mercadolibre.com/items/MLA100');
+      expect(init?.method).toBe('PUT');
+      expect(new Headers(init?.headers).get('authorization')).toBe(
+        'Bearer valid-access-token',
+      );
+      expect(new Headers(init?.headers).get('content-type')).toBe(
+        'application/json',
+      );
+      expect(init?.body).toBe(JSON.stringify({ price: 1500 }));
+    });
+
+    it('preserves a safe Mercado Libre price error', async () => {
+      jest
+        .spyOn(service, 'getValidAccessToken')
+        .mockResolvedValue('valid-access-token');
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(
+          {
+            error: 'item.price.not_modifiable',
+            message: 'Item has an active price automation',
+            access_token: 'must-not-leak',
+          },
+          400,
+        ),
+      );
+
+      await expect(
+        service.updatePublicationPrice('MLA100', 1500),
+      ).rejects.toMatchObject({
+        response: {
+          error: 'item.price.not_modifiable',
+          message: 'Item has an active price automation',
+        },
       });
-
-      const result = await service.getAllPublications(123456, 'access-token');
-
-      expect(result).toMatchObject({
-        totalReported: 41,
-        idsRetrieved: 41,
-        publicationsRetrieved: 21,
-        failed: 20,
-      });
-      expect(result.publications).toEqual([
-        ...ids.slice(0, 20).map(safePublication),
-        safePublication('MLA041'),
-      ]);
-      expect(result.errors.map(({ id }) => id)).toEqual(ids.slice(20, 40));
-      for (const error of result.errors) {
-        expect(Number.isInteger(error.code)).toBe(true);
-        expect(error).toHaveProperty('body');
-      }
-      expectNoSensitiveKeys(result);
     });
   });
 });
