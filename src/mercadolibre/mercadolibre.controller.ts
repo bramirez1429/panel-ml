@@ -49,10 +49,10 @@ export class MercadolibreController {
 
     const accessToken = await this.mercadolibreService.exchangeCode(code);
     const seller = await this.mercadolibreService.getCurrentUser(accessToken);
-    const { total, publications } =
-      await this.mercadolibreService.getPublications(seller.id, accessToken);
+    const publicationsResult =
+      await this.mercadolibreService.getAllPublications(seller.id, accessToken);
 
-    return { seller, total, publications };
+    return { seller, ...publicationsResult };
   }
 
   @Post('webhook')

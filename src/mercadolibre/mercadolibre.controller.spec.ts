@@ -2,7 +2,6 @@ import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { MercadolibreController } from './mercadolibre.controller';
 import {
-  MercadoLibrePublicationsResult,
   MercadoLibreSeller,
   MercadolibreService,
 } from './mercadolibre.service';
@@ -16,7 +15,7 @@ describe('MercadolibreController', () => {
       | 'verifyState'
       | 'exchangeCode'
       | 'getCurrentUser'
-      | 'getPublications'
+      | 'getAllPublications'
     >
   >;
 
@@ -24,17 +23,25 @@ describe('MercadolibreController', () => {
     id: 123456,
     nickname: 'TEST_SELLER',
   };
-  const publicationResult: MercadoLibrePublicationsResult = {
-    total: 1,
+  const publicationResult = {
+    totalReported: 2,
+    idsRetrieved: 2,
+    publicationsRetrieved: 1,
+    failed: 1,
     publications: [
       {
         id: 'MLA100',
         title: 'Test publication',
         price: 1200,
-        available_quantity: 4,
-        status: 'active',
-        permalink: 'https://articulo.mercadolibre.com.ar/MLA100',
-        thumbnail: 'https://http2.mlstatic.com/MLA100.jpg',
+        seller_id: 123456,
+        attributes: [{ id: 'BRAND', value_name: 'Test brand' }],
+      },
+    ],
+    errors: [
+      {
+        id: 'MLA200',
+        code: 404,
+        body: { error: 'not_found', message: 'Item was not found' },
       },
     ],
   };
@@ -45,7 +52,7 @@ describe('MercadolibreController', () => {
       verifyState: jest.fn(),
       exchangeCode: jest.fn(),
       getCurrentUser: jest.fn(),
-      getPublications: jest.fn(),
+      getAllPublications: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -76,7 +83,7 @@ describe('MercadolibreController', () => {
       service.verifyState.mockReturnValue(true);
       service.exchangeCode.mockResolvedValue('private-access-token');
       service.getCurrentUser.mockResolvedValue(seller);
-      service.getPublications.mockResolvedValue(publicationResult);
+      service.getAllPublications.mockResolvedValue(publicationResult);
 
       const result = await controller.callback(
         'authorization-code',
@@ -88,14 +95,13 @@ describe('MercadolibreController', () => {
       expect(service.getCurrentUser).toHaveBeenCalledWith(
         'private-access-token',
       );
-      expect(service.getPublications).toHaveBeenCalledWith(
+      expect(service.getAllPublications).toHaveBeenCalledWith(
         seller.id,
         'private-access-token',
       );
       expect(result).toEqual({
         seller,
-        total: publicationResult.total,
-        publications: publicationResult.publications,
+        ...publicationResult,
       });
       expect(JSON.stringify(result)).not.toContain('private-access-token');
       expect(JSON.stringify(result)).not.toContain('refresh_token');

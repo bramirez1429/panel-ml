@@ -1,8 +1,10 @@
 import {
   BadGatewayException,
   BadRequestException,
+  ForbiddenException,
   Injectable,
   ServiceUnavailableException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
@@ -11,14 +13,20 @@ const AUTHORIZATION_URL = 'https://auth.mercadolibre.com.ar/authorization';
 const API_URL = 'https://api.mercadolibre.com';
 const STATE_TTL_MS = 10 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 10_000;
+const SCAN_PAGE_SIZE = 100;
+const MULTIGET_BATCH_SIZE = 20;
+const MULTIGET_CONCURRENCY = 4;
 
 type RequiredConfigKey =
   'ML_CLIENT_ID' | 'ML_CLIENT_SECRET' | 'ML_REDIRECT_URI' | 'ML_STATE_SECRET';
 
 type MercadoLibreOperation =
-  'tokenExchange' | 'currentUser' | 'publicationSearch' | 'publicationDetails';
+  | 'tokenExchange'
+  | 'currentUser'
+  | 'publicationScanInitial'
+  | 'publicationScanScroll';
 
-interface MercadoLibreRecord {
+export interface MercadoLibreRecord {
   [key: string]: unknown;
 }
 
@@ -27,19 +35,35 @@ export interface MercadoLibreSeller {
   nickname: string;
 }
 
-export interface MercadoLibrePublication {
+export interface MercadoLibreItemError {
   id: string;
-  title: string;
-  price: number;
-  available_quantity: number;
-  status: string;
-  permalink: string;
-  thumbnail: string;
+  code: number;
+  body: unknown;
 }
 
-export interface MercadoLibrePublicationsResult {
-  total: number;
-  publications: MercadoLibrePublication[];
+export interface MercadoLibreAllPublicationsResult {
+  totalReported: number;
+  idsRetrieved: number;
+  publicationsRetrieved: number;
+  failed: number;
+  publications: MercadoLibreRecord[];
+  errors: MercadoLibreItemError[];
+}
+
+interface MercadoLibreScanResult {
+  ids: string[];
+  totalReported: number;
+}
+
+interface MercadoLibreScanPage {
+  results: string[];
+  scrollId?: string;
+  totalReported?: number;
+}
+
+interface MercadoLibreMultigetBatchResult {
+  publications: MercadoLibreRecord[];
+  errors: MercadoLibreItemError[];
 }
 
 @Injectable()
@@ -152,10 +176,10 @@ export class MercadolibreService {
     return { id: response.id, nickname: response.nickname };
   }
 
-  async getPublications(
+  async getAllPublications(
     userId: number,
     accessToken: string,
-  ): Promise<MercadoLibrePublicationsResult> {
+  ): Promise<MercadoLibreAllPublicationsResult> {
     if (!isPositiveInteger(userId)) {
       throw new BadRequestException(
         'El identificador del vendedor es inválido',
@@ -163,36 +187,329 @@ export class MercadolibreService {
     }
     this.validateAccessToken(accessToken);
 
-    const searchUrl = new URL(`${API_URL}/users/${userId}/items/search`);
-    searchUrl.search = new URLSearchParams({
-      limit: '20',
-      offset: '0',
-    }).toString();
+    const scanResult = await this.scanAllPublicationIds(userId, accessToken);
+    const batches = this.createMultigetBatches(scanResult.ids);
+    const batchResults = await this.fetchMultigetBatches(batches, accessToken);
+    const publications = batchResults.flatMap((result) => result.publications);
+    const errors = batchResults.flatMap((result) => result.errors);
 
-    const searchResponse = await this.requestJson(
-      searchUrl.toString(),
-      { headers: this.createAuthorizationHeaders(accessToken) },
-      'publicationSearch',
-    );
-    const { ids, total } = this.parsePublicationSearch(searchResponse);
+    return {
+      totalReported: scanResult.totalReported,
+      idsRetrieved: scanResult.ids.length,
+      publicationsRetrieved: publications.length,
+      failed: errors.length,
+      publications,
+      errors,
+    };
+  }
 
-    if (ids.length === 0) {
-      return { total, publications: [] };
+  private async scanAllPublicationIds(
+    userId: number,
+    accessToken: string,
+  ): Promise<MercadoLibreScanResult> {
+    const uniqueIds = new Set<string>();
+    const seenPages = new Set<string>();
+    let totalReported: number | undefined;
+    let scrollId: string | undefined;
+    let isInitialRequest = true;
+
+    while (true) {
+      const searchUrl = new URL(`${API_URL}/users/${userId}/items/search`);
+      searchUrl.searchParams.set('search_type', 'scan');
+      searchUrl.searchParams.set('limit', String(SCAN_PAGE_SIZE));
+      if (!isInitialRequest && scrollId) {
+        searchUrl.searchParams.set('scroll_id', scrollId);
+      }
+
+      const response = await this.requestJson(
+        searchUrl.toString(),
+        { headers: this.createAuthorizationHeaders(accessToken) },
+        isInitialRequest ? 'publicationScanInitial' : 'publicationScanScroll',
+      );
+      const page = this.parsePublicationScanPage(response);
+
+      if (totalReported === undefined && page.totalReported !== undefined) {
+        totalReported = page.totalReported;
+      }
+
+      if (page.results.length === 0) {
+        break;
+      }
+
+      if (!page.scrollId) {
+        if (isInitialRequest) {
+          throw new BadGatewayException(
+            'Mercado Libre no devolvió un scroll_id para continuar la búsqueda',
+          );
+        }
+      } else if (isInitialRequest) {
+        scrollId = page.scrollId;
+      }
+
+      const pageSignature = [...page.results].sort().join('\u0000');
+      if (seenPages.has(pageSignature)) {
+        throw new BadGatewayException(
+          'Mercado Libre repitió una página del scroll sin avanzar',
+        );
+      }
+      seenPages.add(pageSignature);
+
+      for (const id of page.results) {
+        uniqueIds.add(id);
+      }
+
+      isInitialRequest = false;
     }
 
+    const ids = Array.from(uniqueIds);
+    return {
+      ids,
+      totalReported: totalReported ?? ids.length,
+    };
+  }
+
+  private parsePublicationScanPage(response: unknown): MercadoLibreScanPage {
+    if (!isRecord(response) || !('results' in response)) {
+      throw new BadGatewayException(
+        'Mercado Libre devolvió una página de publicaciones inválida',
+      );
+    }
+
+    let results: string[];
+    if (response.results === null) {
+      results = [];
+    } else if (
+      Array.isArray(response.results) &&
+      response.results.every(isNonEmptyString)
+    ) {
+      results = response.results;
+    } else {
+      throw new BadGatewayException(
+        'Mercado Libre devolvió IDs de publicaciones inválidos',
+      );
+    }
+
+    const page: MercadoLibreScanPage = { results };
+    if (isNonEmptyString(response.scroll_id)) {
+      page.scrollId = response.scroll_id;
+    }
+    if (
+      isRecord(response.paging) &&
+      isNonNegativeInteger(response.paging.total)
+    ) {
+      page.totalReported = response.paging.total;
+    }
+
+    return page;
+  }
+
+  private createMultigetBatches(ids: string[]): string[][] {
+    const batches: string[][] = [];
+    let currentBatch: string[] = [];
+
+    for (const id of ids) {
+      currentBatch.push(id);
+      if (currentBatch.length === MULTIGET_BATCH_SIZE) {
+        batches.push(currentBatch);
+        currentBatch = [];
+      }
+    }
+
+    if (currentBatch.length > 0) {
+      batches.push(currentBatch);
+    }
+
+    return batches;
+  }
+
+  private async fetchMultigetBatches(
+    batches: string[][],
+    accessToken: string,
+  ): Promise<MercadoLibreMultigetBatchResult[]> {
+    if (batches.length === 0) {
+      return [];
+    }
+
+    const results = new Array<MercadoLibreMultigetBatchResult>(batches.length);
+    let nextBatchIndex = 0;
+
+    const worker = async (): Promise<void> => {
+      while (nextBatchIndex < batches.length) {
+        const batchIndex = nextBatchIndex;
+        nextBatchIndex += 1;
+        results[batchIndex] = await this.fetchMultigetBatch(
+          batches[batchIndex],
+          accessToken,
+        );
+      }
+    };
+
+    const workerCount = Math.min(MULTIGET_CONCURRENCY, batches.length);
+    await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+    return results;
+  }
+
+  private async fetchMultigetBatch(
+    ids: string[],
+    accessToken: string,
+  ): Promise<MercadoLibreMultigetBatchResult> {
     const detailsUrl = new URL(`${API_URL}/items`);
     detailsUrl.searchParams.set('ids', ids.join(','));
 
-    const detailsResponse = await this.requestJson(
-      detailsUrl.toString(),
-      { headers: this.createAuthorizationHeaders(accessToken) },
-      'publicationDetails',
-    );
+    let response: Response;
+    try {
+      response = await fetch(detailsUrl.toString(), {
+        headers: this.createAuthorizationHeaders(accessToken),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+    } catch (error) {
+      const timedOut = isTimeoutError(error);
+      return {
+        publications: [],
+        errors: this.createBatchErrors(ids, timedOut ? 504 : 502, {
+          message: timedOut
+            ? 'La solicitud de detalles a Mercado Libre venció'
+            : 'No se pudo conectar con Mercado Libre',
+        }),
+      };
+    }
 
-    return {
-      total,
-      publications: this.parsePublicationDetails(detailsResponse),
-    };
+    let body: unknown;
+    try {
+      body = (await response.json()) as unknown;
+    } catch {
+      return {
+        publications: [],
+        errors: this.createBatchErrors(
+          ids,
+          response.ok ? 502 : response.status,
+          { message: 'Mercado Libre devolvió JSON inválido' },
+        ),
+      };
+    }
+
+    if (!response.ok) {
+      return {
+        publications: [],
+        errors: this.createBatchErrors(
+          ids,
+          response.status,
+          sanitizeSensitiveFields(body),
+        ),
+      };
+    }
+
+    return this.parseMultigetBody(body, ids);
+  }
+
+  private parseMultigetBody(
+    response: unknown,
+    requestedIds: string[],
+  ): MercadoLibreMultigetBatchResult {
+    if (!Array.isArray(response)) {
+      return {
+        publications: [],
+        errors: this.createBatchErrors(requestedIds, 502, {
+          message: 'Mercado Libre devolvió un multiget inválido',
+        }),
+      };
+    }
+
+    const publications: MercadoLibreRecord[] = [];
+    const errors: MercadoLibreItemError[] = [];
+    const requestedIdSet = new Set(requestedIds);
+    const entryIndexById = new Map<string, number>();
+    const reservedEntryIndexes = new Set<number>();
+    const usedEntryIndexes = new Set<number>();
+
+    for (let index = 0; index < response.length; index += 1) {
+      const entry: unknown = response[index];
+      if (!isRecord(entry) || !isRecord(entry.body)) {
+        continue;
+      }
+
+      const responseId = entry.body.id;
+      if (
+        isNonEmptyString(responseId) &&
+        requestedIdSet.has(responseId) &&
+        !entryIndexById.has(responseId)
+      ) {
+        entryIndexById.set(responseId, index);
+        reservedEntryIndexes.add(index);
+      }
+    }
+
+    for (const id of requestedIds) {
+      let entryIndex = entryIndexById.get(id);
+      if (entryIndex === undefined) {
+        entryIndex = response.findIndex(
+          (_, candidateIndex) =>
+            !reservedEntryIndexes.has(candidateIndex) &&
+            !usedEntryIndexes.has(candidateIndex),
+        );
+      }
+
+      if (entryIndex !== undefined && entryIndex < 0) {
+        entryIndex = undefined;
+      }
+
+      const entry: unknown =
+        entryIndex === undefined ? undefined : response[entryIndex];
+      if (entryIndex !== undefined) {
+        usedEntryIndexes.add(entryIndex);
+      }
+
+      if (!isRecord(entry)) {
+        errors.push({
+          id,
+          code: 502,
+          body: { message: 'Mercado Libre omitió este resultado del multiget' },
+        });
+        continue;
+      }
+
+      const code = isHttpStatus(entry.code) ? entry.code : 502;
+      const body = 'body' in entry ? entry.body : null;
+
+      if (
+        code === 200 &&
+        isRecord(body) &&
+        isNonEmptyString(body.id) &&
+        body.id === id
+      ) {
+        const sanitizedBody = sanitizeSensitiveFields(body);
+        if (isRecord(sanitizedBody)) {
+          publications.push(sanitizedBody);
+          continue;
+        }
+      }
+
+      if (code === 200) {
+        errors.push({
+          id,
+          code: 502,
+          body: sanitizeSensitiveFields(body),
+        });
+        continue;
+      }
+
+      errors.push({
+        id,
+        code,
+        body: sanitizeSensitiveFields(body),
+      });
+    }
+
+    return { publications, errors };
+  }
+
+  private createBatchErrors(
+    ids: string[],
+    code: number,
+    body: unknown,
+  ): MercadoLibreItemError[] {
+    return ids.map((id) => ({ id, code, body }));
   }
 
   private createState(): string {
@@ -294,84 +611,48 @@ export class MercadolibreService {
     operation: MercadoLibreOperation,
     status: number,
   ): never {
-    if (status === 429) {
-      throw new ServiceUnavailableException(
-        'Mercado Libre limitó temporalmente las solicitudes',
-      );
-    }
-
     if (operation === 'tokenExchange' && (status === 400 || status === 401)) {
       throw new BadRequestException(
         'El código de autorización fue rechazado o venció',
       );
     }
 
+    if (status === 401) {
+      throw new UnauthorizedException(
+        'El acceso a Mercado Libre es inválido o venció',
+      );
+    }
+
+    if (status === 403) {
+      throw new ForbiddenException(
+        'Mercado Libre rechazó los permisos de la aplicación o del vendedor',
+      );
+    }
+
+    if (status === 429) {
+      throw new ServiceUnavailableException(
+        'Mercado Libre limitó temporalmente las solicitudes',
+      );
+    }
+
+    if (
+      operation === 'publicationScanScroll' &&
+      (status === 400 || status === 404)
+    ) {
+      throw new BadGatewayException(
+        'El scroll_id de Mercado Libre está ausente o venció',
+      );
+    }
+
+    if (status >= 500) {
+      throw new BadGatewayException(
+        'Mercado Libre tuvo un error interno al procesar la solicitud',
+      );
+    }
+
     throw new BadGatewayException(
       'Mercado Libre no pudo completar la solicitud',
     );
-  }
-
-  private parsePublicationSearch(response: unknown): {
-    ids: string[];
-    total: number;
-  } {
-    if (
-      !isRecord(response) ||
-      !Array.isArray(response.results) ||
-      !response.results.every(isNonEmptyString) ||
-      !isRecord(response.paging) ||
-      !isNonNegativeInteger(response.paging.total)
-    ) {
-      throw new BadGatewayException(
-        'Mercado Libre devolvió una búsqueda de publicaciones inválida',
-      );
-    }
-
-    return {
-      ids: response.results.slice(0, 20),
-      total: response.paging.total,
-    };
-  }
-
-  private parsePublicationDetails(
-    response: unknown,
-  ): MercadoLibrePublication[] {
-    if (!Array.isArray(response)) {
-      throw new BadGatewayException(
-        'Mercado Libre devolvió detalles de publicaciones inválidos',
-      );
-    }
-
-    const publications = response.flatMap((entry) => {
-      if (
-        !isRecord(entry) ||
-        entry.code !== 200 ||
-        !isRecord(entry.body) ||
-        !isPublication(entry.body)
-      ) {
-        return [];
-      }
-
-      return [
-        {
-          id: entry.body.id,
-          title: entry.body.title,
-          price: entry.body.price,
-          available_quantity: entry.body.available_quantity,
-          status: entry.body.status,
-          permalink: entry.body.permalink,
-          thumbnail: entry.body.thumbnail,
-        },
-      ];
-    });
-
-    if (publications.length === 0) {
-      throw new BadGatewayException(
-        'Mercado Libre no devolvió detalles válidos de las publicaciones',
-      );
-    }
-
-    return publications;
   }
 }
 
@@ -391,17 +672,45 @@ function isNonNegativeInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
-function isPublication(
-  value: MercadoLibreRecord,
-): value is MercadoLibreRecord & MercadoLibrePublication {
+function isHttpStatus(value: unknown): value is number {
   return (
-    isNonEmptyString(value.id) &&
-    isNonEmptyString(value.title) &&
-    typeof value.price === 'number' &&
-    Number.isFinite(value.price) &&
-    isNonNegativeInteger(value.available_quantity) &&
-    isNonEmptyString(value.status) &&
-    isNonEmptyString(value.permalink) &&
-    isNonEmptyString(value.thumbnail)
+    typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= 100 &&
+    value <= 599
   );
+}
+
+function isTimeoutError(error: unknown): boolean {
+  return isRecord(error) && error.name === 'TimeoutError';
+}
+
+function sanitizeSensitiveFields(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sanitizeSensitiveFields);
+  }
+
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  const sanitized: MercadoLibreRecord = {};
+  for (const [key, nestedValue] of Object.entries(value)) {
+    const normalizedKey = key
+      .toLowerCase()
+      .replaceAll('_', '')
+      .replaceAll('-', '');
+    if (
+      normalizedKey === 'accesstoken' ||
+      normalizedKey === 'refreshtoken' ||
+      normalizedKey === 'clientsecret' ||
+      normalizedKey === 'authorization'
+    ) {
+      continue;
+    }
+
+    sanitized[key] = sanitizeSensitiveFields(nestedValue);
+  }
+
+  return sanitized;
 }
