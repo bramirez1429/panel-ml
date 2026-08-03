@@ -7,7 +7,12 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import {
+  createHash,
+  createHmac,
+  randomBytes,
+  timingSafeEqual,
+} from 'node:crypto';
 
 const AUTH_URL = 'https://auth.mercadolibre.com.ar/authorization';
 const API_URL = 'https://api.mercadolibre.com';
@@ -18,6 +23,12 @@ const SCAN_SIZE = 100;
 const MULTIGET_SIZE = 20;
 const MAX_CONCURRENT = 4;
 const INVALID_JSON = Symbol('invalid-json');
+const OAUTH_ERRORS = new Set([
+  'invalid_client',
+  'invalid_grant',
+  'invalid_operator_user_id',
+  'invalid_request',
+]);
 
 type JsonObject = Record<string, unknown>;
 type ConfigKey =
@@ -41,11 +52,15 @@ export class MercadolibreService {
 
   /** Crea la URL para iniciar OAuth con un state firmado. */
   createAuthorizationUrl(): string {
+    const state = this.createState();
+    const verifier = this.createCodeVerifier(state);
     const query = new URLSearchParams({
       response_type: 'code',
       client_id: this.config('ML_CLIENT_ID'),
       redirect_uri: this.config('ML_REDIRECT_URI'),
-      state: this.createState(),
+      state,
+      code_challenge: createHash('sha256').update(verifier).digest('base64url'),
+      code_challenge_method: 'S256',
     });
     return `${AUTH_URL}?${query}`;
   }
@@ -69,7 +84,7 @@ export class MercadolibreService {
   }
 
   /** Intercambia el code por un token que se usa solo en el backend. */
-  async exchangeCode(code: string): Promise<string> {
+  async exchangeCode(code: string, state: string): Promise<string> {
     if (!code?.trim()) {
       throw new BadRequestException('Falta el codigo de autorizacion');
     }
@@ -85,6 +100,7 @@ export class MercadolibreService {
           client_secret: this.config('ML_CLIENT_SECRET'),
           code,
           redirect_uri: this.config('ML_REDIRECT_URI'),
+          code_verifier: this.createCodeVerifier(state),
         }),
       },
       'oauth',
@@ -263,6 +279,12 @@ export class MercadolibreService {
     return `${value}.${this.sign(value).toString('base64url')}`;
   }
 
+  private createCodeVerifier(state: string): string {
+    return createHmac('sha256', this.config('ML_STATE_SECRET'))
+      .update(`pkce:${state}`)
+      .digest('base64url');
+  }
+
   private sign(value: string): Buffer {
     return createHmac('sha256', this.config('ML_STATE_SECRET'))
       .update(value)
@@ -285,18 +307,29 @@ export class MercadolibreService {
       throw new BadGatewayException('No se pudo conectar con Mercado Libre');
     }
 
-    if (!response.ok) this.throwApiError(response.status, kind);
     const data = await readJson(response);
     if (data === INVALID_JSON) {
+      if (!response.ok) this.throwApiError(response.status, kind);
       throw new BadGatewayException('Mercado Libre devolvio JSON invalido');
     }
+    if (!response.ok) this.throwApiError(response.status, kind, data);
     return data as T;
   }
 
   /** Convierte estados externos en errores seguros de NestJS. */
-  private throwApiError(status: number, kind?: RequestKind): never {
+  private throwApiError(
+    status: number,
+    kind?: RequestKind,
+    body?: unknown,
+  ): never {
     if (kind === 'oauth' && (status === 400 || status === 401)) {
-      throw new BadRequestException('Codigo OAuth rechazado o vencido');
+      const code = safeOAuthError(body);
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: oauthErrorMessage(code),
+        mercadoLibreError: code,
+      });
     }
     if (status === 401) {
       throw new UnauthorizedException('Acceso invalido o vencido');
@@ -347,6 +380,26 @@ function validStatus(value: unknown): value is number {
     value >= 100 &&
     value <= 599
   );
+}
+
+function safeOAuthError(body: unknown): string {
+  const code = isObject(body) ? body.error : undefined;
+  return isString(code) && OAUTH_ERRORS.has(code) ? code : 'oauth_error';
+}
+
+function oauthErrorMessage(code: string): string {
+  switch (code) {
+    case 'invalid_grant':
+      return 'El codigo OAuth no es valido. Inicia nuevamente desde /mercadolibre/connect y verifica ML_REDIRECT_URI';
+    case 'invalid_client':
+      return 'ML_CLIENT_ID y ML_CLIENT_SECRET no corresponden a la misma aplicacion';
+    case 'invalid_operator_user_id':
+      return 'Debes autorizar con la cuenta administradora de Mercado Libre';
+    case 'invalid_request':
+      return 'Solicitud OAuth invalida. Verifica redirect_uri y la configuracion PKCE';
+    default:
+      return 'Mercado Libre rechazo la autorizacion';
+  }
 }
 
 async function readJson(response: Response): Promise<unknown> {

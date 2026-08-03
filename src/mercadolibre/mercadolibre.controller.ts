@@ -41,7 +41,10 @@ export class MercadolibreController {
       throw new BadRequestException('Falta el código de autorización');
     }
 
-    const accessToken = await this.mercadolibreService.exchangeCode(code);
+    const accessToken = await this.mercadolibreService.exchangeCode(
+      code,
+      state,
+    );
     const seller = await this.mercadolibreService.getCurrentUser(accessToken);
     const publicationsResult =
       await this.mercadolibreService.getAllPublications(seller.id, accessToken);
