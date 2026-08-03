@@ -43,10 +43,12 @@ export class MercadolibreController {
 
     const accessToken = await this.mercadolibreService.exchangeCode(code);
     const seller = await this.mercadolibreService.getCurrentUser(accessToken);
-    const publicationsResult =
-      await this.mercadolibreService.getAllPublications(seller.id, accessToken);
 
-    return { seller, ...publicationsResult };
+    return {
+      ok: true,
+      message: 'Mercado Libre conectado correctamente',
+      seller,
+    };
   }
 
   @Post('webhook')

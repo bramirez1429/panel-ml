@@ -39,26 +39,11 @@ describe('MercadolibreController', () => {
     expect(service.createAuthorizationUrl).toHaveBeenCalledTimes(1);
   });
 
-  it('completes the callback flow and never returns the access token', async () => {
+  it('completes OAuth without loading publications or returning the token', async () => {
     const seller = { id: 123456, nickname: 'TEST_SELLER' };
-    const publicationsResult = {
-      totalReported: 2,
-      idsRetrieved: 2,
-      publicationsRetrieved: 1,
-      failed: 1,
-      publications: [{ id: 'MLA100', title: 'Test publication' }],
-      errors: [
-        {
-          id: 'MLA200',
-          code: 404,
-          body: { error: 'not_found' },
-        },
-      ],
-    };
     service.verifyState.mockReturnValue(true);
     service.exchangeCode.mockResolvedValue('private-access-token');
     service.getCurrentUser.mockResolvedValue(seller);
-    service.getAllPublications.mockResolvedValue(publicationsResult);
 
     const result = await controller.callback(
       'authorization-code',
@@ -68,11 +53,12 @@ describe('MercadolibreController', () => {
     expect(service.verifyState).toHaveBeenCalledWith('valid-state');
     expect(service.exchangeCode).toHaveBeenCalledWith('authorization-code');
     expect(service.getCurrentUser).toHaveBeenCalledWith('private-access-token');
-    expect(service.getAllPublications).toHaveBeenCalledWith(
-      seller.id,
-      'private-access-token',
-    );
-    expect(result).toEqual({ seller, ...publicationsResult });
+    expect(service.getAllPublications).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      ok: true,
+      message: 'Mercado Libre conectado correctamente',
+      seller,
+    });
     expect(JSON.stringify(result)).not.toContain('private-access-token');
   });
 

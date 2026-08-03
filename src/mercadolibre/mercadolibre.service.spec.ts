@@ -204,30 +204,47 @@ describe('MercadolibreService', () => {
       });
     });
 
-    it('rejects an invalid code without exposing the upstream body', async () => {
+    it('returns a safe OAuth error without exposing credentials', async () => {
+      const mercadoLibreMessage =
+        'Error validating grant. Your authorization code or redirect URI may be incorrect.';
       fetchMock.mockResolvedValueOnce(
         jsonResponse(
           {
             error: 'invalid_grant',
-            message: 'upstream-message-must-not-leak',
+            message: mercadoLibreMessage,
             access_token: 'upstream-access-token-must-not-leak',
+            refresh_token: 'upstream-refresh-token-must-not-leak',
+            client_secret: 'upstream-client-secret-must-not-leak',
+            Authorization: 'Bearer upstream-secret-must-not-leak',
           },
           400,
         ),
       );
 
-      expect.assertions(4);
+      expect.assertions(7);
       try {
         await service.exchangeCode('expired-code');
       } catch (error) {
         expect(error).toBeInstanceOf(HttpException);
         expect((error as HttpException).getStatus()).toBe(400);
-        expect((error as Error).message).toBe(
-          'El código de autorización fue rechazado o venció',
+        const response = (error as HttpException).getResponse();
+        expect(response).toEqual({
+          message: 'Mercado Libre rechazó el intercambio OAuth',
+          mercadoLibreError: 'invalid_grant',
+          mercadoLibreMessage,
+          status: 400,
+        });
+        const serialized = JSON.stringify(response);
+        expect(serialized).not.toContain('upstream-access-token-must-not-leak');
+        expect(serialized).not.toContain(
+          'upstream-refresh-token-must-not-leak',
         );
-        expect(
-          JSON.stringify((error as HttpException).getResponse()),
-        ).not.toContain('upstream-access-token-must-not-leak');
+        expect(serialized).not.toContain(
+          'upstream-client-secret-must-not-leak',
+        );
+        expect(serialized).not.toContain(
+          'Bearer upstream-secret-must-not-leak',
+        );
       }
     });
 

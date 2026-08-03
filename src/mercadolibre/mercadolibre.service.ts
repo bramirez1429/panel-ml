@@ -358,16 +358,31 @@ export class MercadolibreService {
       if (!response.ok) this.throwApiError(response.status, kind);
       throw new BadGatewayException('Mercado Libre devolvio JSON invalido');
     }
-    if (!response.ok) this.throwApiError(response.status, kind);
+    if (!response.ok) this.throwApiError(response.status, kind, data);
     return data as T;
   }
 
   /** Convierte estados externos en errores seguros de NestJS. */
-  private throwApiError(status: number, kind?: RequestKind): never {
+  private throwApiError(
+    status: number,
+    kind?: RequestKind,
+    data?: unknown,
+  ): never {
     if (kind === 'tokenExchange' && (status === 400 || status === 401)) {
-      throw new BadRequestException(
-        'El código de autorización fue rechazado o venció',
-      );
+      const safeData = sanitize(data);
+      const error = isRecord(safeData) ? safeData.error : undefined;
+      const message = isRecord(safeData) ? safeData.message : undefined;
+
+      throw new BadRequestException({
+        message: 'Mercado Libre rechazó el intercambio OAuth',
+        mercadoLibreError: isNonEmptyString(error)
+          ? error.slice(0, 100)
+          : 'unknown_error',
+        mercadoLibreMessage: isNonEmptyString(message)
+          ? message.slice(0, 500)
+          : 'Mercado Libre no informó el motivo',
+        status: 400,
+      });
     }
     if (status === 401) {
       throw new UnauthorizedException('Acceso invalido o vencido');
