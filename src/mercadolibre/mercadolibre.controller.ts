@@ -15,7 +15,7 @@ export class MercadolibreController {
   constructor(private readonly mercadolibreService: MercadolibreService) {}
 
   @Get('connect')
-  @Redirect(undefined, 302)
+  @Redirect()
   connect(): { url: string } {
     return { url: this.mercadolibreService.createAuthorizationUrl() };
   }
@@ -27,23 +27,17 @@ export class MercadolibreController {
     @Query('error') error?: string,
     @Query('error_description') errorDescription?: string,
   ) {
-    if (
-      typeof state !== 'string' ||
-      !this.mercadolibreService.verifyState(state)
-    ) {
+    if (!state || !this.mercadolibreService.verifyState(state)) {
       throw new UnauthorizedException('El state es inválido o venció');
     }
 
-    if (
-      (typeof error === 'string' && error.length > 0) ||
-      (typeof errorDescription === 'string' && errorDescription.length > 0)
-    ) {
+    if (error || errorDescription) {
       throw new BadRequestException(
         'La autorización de Mercado Libre fue cancelada o rechazada',
       );
     }
 
-    if (typeof code !== 'string' || code.trim().length === 0) {
+    if (!code?.trim()) {
       throw new BadRequestException('Falta el código de autorización');
     }
 
@@ -58,6 +52,6 @@ export class MercadolibreController {
   @Post('webhook')
   @HttpCode(200)
   webhook(): { ok: true } {
-    return { ok: true as const };
+    return { ok: true };
   }
 }

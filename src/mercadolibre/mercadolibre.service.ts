@@ -9,193 +9,138 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
-const AUTHORIZATION_URL = 'https://auth.mercadolibre.com.ar/authorization';
+const AUTH_URL = 'https://auth.mercadolibre.com.ar/authorization';
 const API_URL = 'https://api.mercadolibre.com';
-const STATE_TTL_MS = 10 * 60 * 1000;
-const REQUEST_TIMEOUT_MS = 10_000;
-const SCAN_PAGE_SIZE = 100;
-const MULTIGET_BATCH_SIZE = 20;
-const MULTIGET_CONCURRENCY = 4;
+const STATE_PATTERN = /^([\w-]{43})\.(\d{13})\.([\w-]{43})$/;
+const STATE_TTL = 10 * 60 * 1000;
+const TIMEOUT = 10_000;
+const SCAN_SIZE = 100;
+const MULTIGET_SIZE = 20;
+const MAX_CONCURRENT = 4;
+const INVALID_JSON = Symbol('invalid-json');
 
-type RequiredConfigKey =
+type JsonObject = Record<string, unknown>;
+type ConfigKey =
   'ML_CLIENT_ID' | 'ML_CLIENT_SECRET' | 'ML_REDIRECT_URI' | 'ML_STATE_SECRET';
-
-type MercadoLibreOperation =
-  | 'tokenExchange'
-  | 'currentUser'
-  | 'publicationScanInitial'
-  | 'publicationScanScroll';
-
-export interface MercadoLibreRecord {
-  [key: string]: unknown;
-}
-
-export interface MercadoLibreSeller {
-  id: number;
-  nickname: string;
-}
-
-export interface MercadoLibreItemError {
-  id: string;
-  code: number;
-  body: unknown;
-}
-
-export interface MercadoLibreAllPublicationsResult {
-  totalReported: number;
-  idsRetrieved: number;
-  publicationsRetrieved: number;
-  failed: number;
-  publications: MercadoLibreRecord[];
-  errors: MercadoLibreItemError[];
-}
-
-interface MercadoLibreScanResult {
-  ids: string[];
-  totalReported: number;
-}
-
-interface MercadoLibreScanPage {
-  results: string[];
-  scrollId?: string;
-  totalReported?: number;
-}
-
-interface MercadoLibreMultigetBatchResult {
-  publications: MercadoLibreRecord[];
-  errors: MercadoLibreItemError[];
-}
+type RequestKind = 'oauth' | 'scroll';
+type ItemError = { id: string; code: number; body: unknown };
+type BatchResult = {
+  publications: JsonObject[];
+  errors: ItemError[];
+};
+type ScanPage = {
+  results?: unknown;
+  scroll_id?: unknown;
+  paging?: { total?: unknown };
+};
+type MultigetEntry = { code?: unknown; body?: unknown };
 
 @Injectable()
 export class MercadolibreService {
   constructor(private readonly configService: ConfigService) {}
 
+  /** Crea la URL para iniciar OAuth con un state firmado. */
   createAuthorizationUrl(): string {
-    const authorizationUrl = new URL(AUTHORIZATION_URL);
-    authorizationUrl.search = new URLSearchParams({
+    const query = new URLSearchParams({
       response_type: 'code',
-      client_id: this.getRequiredConfig('ML_CLIENT_ID'),
-      redirect_uri: this.getRedirectUri(),
+      client_id: this.config('ML_CLIENT_ID'),
+      redirect_uri: this.config('ML_REDIRECT_URI'),
       state: this.createState(),
-    }).toString();
-
-    return authorizationUrl.toString();
+    });
+    return `${AUTH_URL}?${query}`;
   }
 
+  /** Valida la firma y los 10 minutos de vigencia del state. */
   verifyState(state: string): boolean {
-    if (typeof state !== 'string') {
-      return false;
-    }
+    const match = STATE_PATTERN.exec(state);
+    if (!match) return false;
 
-    const parts = state.split('.');
-    if (parts.length !== 3) {
-      return false;
-    }
+    const [, nonce, timestamp, signature] = match;
+    const age = Date.now() - Number(timestamp);
+    if (age < 0 || age > STATE_TTL) return false;
 
-    const [nonce, timestampValue, receivedSignature] = parts;
-    if (
-      !/^[A-Za-z0-9_-]{43}$/.test(nonce) ||
-      !/^\d{13}$/.test(timestampValue) ||
-      !/^[A-Za-z0-9_-]{43}$/.test(receivedSignature)
-    ) {
-      return false;
-    }
-
-    const timestamp = Number(timestampValue);
-    const age = Date.now() - timestamp;
-    if (!Number.isSafeInteger(timestamp) || age < 0 || age > STATE_TTL_MS) {
-      return false;
-    }
-
-    const payload = `${nonce}.${timestampValue}`;
-    const expectedSignature = this.signState(payload);
-    const receivedBuffer = Buffer.from(receivedSignature, 'base64url');
-    const expectedBuffer = Buffer.from(expectedSignature, 'base64url');
-
+    const expected = Buffer.from(
+      this.sign(`${nonce}.${timestamp}`).toString('base64url'),
+    );
+    const received = Buffer.from(signature);
     return (
-      receivedBuffer.length === expectedBuffer.length &&
-      timingSafeEqual(receivedBuffer, expectedBuffer)
+      expected.length === received.length && timingSafeEqual(expected, received)
     );
   }
 
+  /** Intercambia el code por un token que se usa solo en el backend. */
   async exchangeCode(code: string): Promise<string> {
-    if (typeof code !== 'string' || code.trim().length === 0) {
-      throw new BadRequestException('Falta el código de autorización');
+    if (!code?.trim()) {
+      throw new BadRequestException('Falta el codigo de autorizacion');
     }
 
-    const body = new URLSearchParams({
-      grant_type: 'authorization_code',
-      client_id: this.getRequiredConfig('ML_CLIENT_ID'),
-      client_secret: this.getRequiredConfig('ML_CLIENT_SECRET'),
-      code,
-      redirect_uri: this.getRedirectUri(),
-    });
-
-    const response = await this.requestJson(
+    const data = await this.requestJson<JsonObject>(
       `${API_URL}/oauth/token`,
       {
         method: 'POST',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'authorization_code',
+          client_id: this.config('ML_CLIENT_ID'),
+          client_secret: this.config('ML_CLIENT_SECRET'),
+          code,
+          redirect_uri: this.config('ML_REDIRECT_URI'),
+        }),
       },
-      'tokenExchange',
+      'oauth',
     );
 
-    if (!isRecord(response) || !isNonEmptyString(response.access_token)) {
-      throw new BadGatewayException(
-        'Mercado Libre devolvió una respuesta de autorización inválida',
-      );
+    if (!isString(data?.access_token)) {
+      throw new BadGatewayException('Respuesta OAuth invalida');
     }
-
-    // Discard every other response field, including refresh_token.
-    return response.access_token;
+    return data.access_token;
   }
 
-  async getCurrentUser(accessToken: string): Promise<MercadoLibreSeller> {
-    this.validateAccessToken(accessToken);
-
-    const response = await this.requestJson(
-      `${API_URL}/users/me`,
-      { headers: this.createAuthorizationHeaders(accessToken) },
-      'currentUser',
-    );
+  /** Obtiene los datos basicos de la cuenta autorizada. */
+  async getCurrentUser(accessToken: string) {
+    const data = await this.requestJson<unknown>(`${API_URL}/users/me`, {
+      headers: this.auth(accessToken),
+    });
+    if (!isObject(data)) {
+      throw new BadGatewayException('Datos de vendedor invalidos');
+    }
+    const { id, nickname } = data;
 
     if (
-      !isRecord(response) ||
-      !isPositiveInteger(response.id) ||
-      !isNonEmptyString(response.nickname)
+      typeof id !== 'number' ||
+      !Number.isSafeInteger(id) ||
+      id <= 0 ||
+      !isString(nickname)
     ) {
-      throw new BadGatewayException(
-        'Mercado Libre devolvió datos de vendedor inválidos',
-      );
+      throw new BadGatewayException('Datos de vendedor invalidos');
     }
-
-    return { id: response.id, nickname: response.nickname };
+    return { id, nickname };
   }
 
-  async getAllPublications(
-    userId: number,
-    accessToken: string,
-  ): Promise<MercadoLibreAllPublicationsResult> {
-    if (!isPositiveInteger(userId)) {
-      throw new BadRequestException(
-        'El identificador del vendedor es inválido',
+  /** Obtiene todos los IDs y luego todos sus detalles. */
+  async getAllPublications(userId: number, accessToken: string) {
+    if (!Number.isSafeInteger(userId) || userId <= 0) {
+      throw new BadRequestException('ID de vendedor invalido');
+    }
+
+    const scan = await this.scanIds(userId, accessToken);
+    const batches = chunk(scan.ids, MULTIGET_SIZE);
+    const details: BatchResult[] = [];
+
+    for (let index = 0; index < batches.length; index += MAX_CONCURRENT) {
+      const group = batches.slice(index, index + MAX_CONCURRENT);
+      details.push(
+        ...(await Promise.all(
+          group.map((ids) => this.fetchBatch(ids, accessToken)),
+        )),
       );
     }
-    this.validateAccessToken(accessToken);
 
-    const scanResult = await this.scanAllPublicationIds(userId, accessToken);
-    const batches = this.createMultigetBatches(scanResult.ids);
-    const batchResults = await this.fetchMultigetBatches(batches, accessToken);
-    const publications = batchResults.flatMap((result) => result.publications);
-    const errors = batchResults.flatMap((result) => result.errors);
-
+    const publications = details.flatMap((result) => result.publications);
+    const errors = details.flatMap((result) => result.errors);
     return {
-      totalReported: scanResult.totalReported,
-      idsRetrieved: scanResult.ids.length,
+      totalReported: scan.total,
+      idsRetrieved: scan.ids.length,
       publicationsRetrieved: publications.length,
       failed: errors.length,
       publications,
@@ -203,467 +148,199 @@ export class MercadolibreService {
     };
   }
 
-  private async scanAllPublicationIds(
+  /** Reutiliza el primer scroll_id hasta que results quede vacio. */
+  private async scanIds(
     userId: number,
     accessToken: string,
-  ): Promise<MercadoLibreScanResult> {
-    const uniqueIds = new Set<string>();
-    let totalReported: number | undefined;
+  ): Promise<{ ids: string[]; total: number }> {
+    const ids = new Set<string>();
     let scrollId: string | undefined;
-    let isInitialRequest = true;
+    let total: number | undefined;
 
     while (true) {
-      const searchUrl = new URL(`${API_URL}/users/${userId}/items/search`);
-      searchUrl.searchParams.set('search_type', 'scan');
-      searchUrl.searchParams.set('limit', String(SCAN_PAGE_SIZE));
-      if (!isInitialRequest && scrollId) {
-        searchUrl.searchParams.set('scroll_id', scrollId);
-      }
+      const query = new URLSearchParams({
+        search_type: 'scan',
+        limit: String(SCAN_SIZE),
+      });
+      if (scrollId) query.set('scroll_id', scrollId);
 
-      const response = await this.requestJson(
-        searchUrl.toString(),
-        { headers: this.createAuthorizationHeaders(accessToken) },
-        isInitialRequest ? 'publicationScanInitial' : 'publicationScanScroll',
+      const data = await this.requestJson<unknown>(
+        `${API_URL}/users/${userId}/items/search?${query}`,
+        { headers: this.auth(accessToken) },
+        scrollId ? 'scroll' : undefined,
       );
-      const page = this.parsePublicationScanPage(response);
+      if (!isObject(data)) {
+        throw new BadGatewayException('Respuesta scan invalida');
+      }
+      const page = data as ScanPage;
+      const results = page.results;
 
-      if (totalReported === undefined && page.totalReported !== undefined) {
-        totalReported = page.totalReported;
+      const reported = page.paging?.total;
+      if (
+        total === undefined &&
+        typeof reported === 'number' &&
+        Number.isSafeInteger(reported) &&
+        reported >= 0
+      ) {
+        total = reported;
       }
 
-      if (page.results.length === 0) {
-        break;
+      if (results === null) break;
+      if (
+        !Array.isArray(results) ||
+        results.some((id: unknown) => !isString(id))
+      ) {
+        throw new BadGatewayException('IDs de publicaciones invalidos');
       }
+      if (results.length === 0) break;
 
-      if (!page.scrollId) {
-        if (isInitialRequest) {
-          throw new BadGatewayException(
-            'Mercado Libre no devolvió un scroll_id para continuar la búsqueda',
-          );
+      if (!scrollId) {
+        if (!isString(page.scroll_id)) {
+          throw new BadGatewayException('Mercado Libre no devolvio scroll_id');
         }
-      } else if (isInitialRequest) {
-        scrollId = page.scrollId;
+        scrollId = page.scroll_id;
       }
-
-      for (const id of page.results) {
-        uniqueIds.add(id);
-      }
-
-      isInitialRequest = false;
+      (results as string[]).forEach((id) => ids.add(id));
     }
 
-    const ids = Array.from(uniqueIds);
-    return {
-      ids,
-      totalReported: totalReported ?? ids.length,
-    };
+    return { ids: [...ids], total: total ?? ids.size };
   }
 
-  private parsePublicationScanPage(response: unknown): MercadoLibreScanPage {
-    if (!isRecord(response) || !('results' in response)) {
-      throw new BadGatewayException(
-        'Mercado Libre devolvió una página de publicaciones inválida',
-      );
-    }
-
-    let results: string[];
-    if (response.results === null) {
-      results = [];
-    } else if (
-      Array.isArray(response.results) &&
-      response.results.every(isNonEmptyString)
-    ) {
-      results = response.results;
-    } else {
-      throw new BadGatewayException(
-        'Mercado Libre devolvió IDs de publicaciones inválidos',
-      );
-    }
-
-    const page: MercadoLibreScanPage = { results };
-    if (isNonEmptyString(response.scroll_id)) {
-      page.scrollId = response.scroll_id;
-    }
-    if (
-      isRecord(response.paging) &&
-      isNonNegativeInteger(response.paging.total)
-    ) {
-      page.totalReported = response.paging.total;
-    }
-
-    return page;
-  }
-
-  private createMultigetBatches(ids: string[]): string[][] {
-    const batches: string[][] = [];
-    let currentBatch: string[] = [];
-
-    for (const id of ids) {
-      currentBatch.push(id);
-      if (currentBatch.length === MULTIGET_BATCH_SIZE) {
-        batches.push(currentBatch);
-        currentBatch = [];
-      }
-    }
-
-    if (currentBatch.length > 0) {
-      batches.push(currentBatch);
-    }
-
-    return batches;
-  }
-
-  private async fetchMultigetBatches(
-    batches: string[][],
-    accessToken: string,
-  ): Promise<MercadoLibreMultigetBatchResult[]> {
-    if (batches.length === 0) {
-      return [];
-    }
-
-    const results = new Array<MercadoLibreMultigetBatchResult>(batches.length);
-    let nextBatchIndex = 0;
-
-    const worker = async (): Promise<void> => {
-      while (nextBatchIndex < batches.length) {
-        const batchIndex = nextBatchIndex;
-        nextBatchIndex += 1;
-        results[batchIndex] = await this.fetchMultigetBatch(
-          batches[batchIndex],
-          accessToken,
-        );
-      }
-    };
-
-    const workerCount = Math.min(MULTIGET_CONCURRENCY, batches.length);
-    await Promise.all(Array.from({ length: workerCount }, () => worker()));
-
-    return results;
-  }
-
-  private async fetchMultigetBatch(
+  /** Consulta hasta 20 items; un fallo no elimina los otros lotes. */
+  private async fetchBatch(
     ids: string[],
     accessToken: string,
-  ): Promise<MercadoLibreMultigetBatchResult> {
-    const detailsUrl = new URL(`${API_URL}/items`);
-    detailsUrl.searchParams.set('ids', ids.join(','));
-
+  ): Promise<BatchResult> {
     let response: Response;
     try {
-      response = await fetch(detailsUrl.toString(), {
-        headers: this.createAuthorizationHeaders(accessToken),
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      const query = new URLSearchParams({ ids: ids.join(',') });
+      response = await fetch(`${API_URL}/items?${query}`, {
+        headers: this.auth(accessToken),
+        signal: AbortSignal.timeout(TIMEOUT),
       });
     } catch (error) {
-      const timedOut = isTimeoutError(error);
-      return {
-        publications: [],
-        errors: this.createBatchErrors(ids, timedOut ? 504 : 502, {
-          message: timedOut
-            ? 'La solicitud de detalles a Mercado Libre venció'
-            : 'No se pudo conectar con Mercado Libre',
-        }),
-      };
+      const code = isObject(error) && error.name === 'TimeoutError' ? 504 : 502;
+      return batchError(ids, code, 'No se pudieron obtener los detalles');
     }
 
-    let body: unknown;
-    try {
-      body = (await response.json()) as unknown;
-    } catch {
-      return {
-        publications: [],
-        errors: this.createBatchErrors(
-          ids,
-          response.ok ? 502 : response.status,
-          { message: 'Mercado Libre devolvió JSON inválido' },
-        ),
-      };
+    const data = await readJson(response);
+    if (data === INVALID_JSON) {
+      return batchError(
+        ids,
+        response.ok ? 502 : response.status,
+        'Mercado Libre devolvio JSON invalido',
+      );
     }
-
     if (!response.ok) {
-      return {
-        publications: [],
-        errors: this.createBatchErrors(
-          ids,
-          response.status,
-          sanitizeSensitiveFields(body),
-        ),
-      };
+      return batchError(ids, response.status, sanitize(data));
+    }
+    if (!Array.isArray(data)) {
+      return batchError(ids, 502, 'Respuesta multiget invalida');
     }
 
-    return this.parseMultigetBody(body, ids);
-  }
+    const publications: JsonObject[] = [];
+    const errors: ItemError[] = [];
+    ids.forEach((id, index) => {
+      const entry = data[index] as MultigetEntry | undefined;
+      const code = validStatus(entry?.code) ? entry.code : 502;
+      const body = entry?.body ?? null;
 
-  private parseMultigetBody(
-    response: unknown,
-    requestedIds: string[],
-  ): MercadoLibreMultigetBatchResult {
-    if (!Array.isArray(response)) {
-      return {
-        publications: [],
-        errors: this.createBatchErrors(requestedIds, 502, {
-          message: 'Mercado Libre devolvió un multiget inválido',
-        }),
-      };
-    }
-
-    const publications: MercadoLibreRecord[] = [];
-    const errors: MercadoLibreItemError[] = [];
-    const requestedIdSet = new Set(requestedIds);
-    const entryIndexById = new Map<string, number>();
-    const reservedEntryIndexes = new Set<number>();
-    const usedEntryIndexes = new Set<number>();
-
-    for (let index = 0; index < response.length; index += 1) {
-      const entry: unknown = response[index];
-      if (!isRecord(entry) || !isRecord(entry.body)) {
-        continue;
-      }
-
-      const responseId = entry.body.id;
-      if (
-        isNonEmptyString(responseId) &&
-        requestedIdSet.has(responseId) &&
-        !entryIndexById.has(responseId)
-      ) {
-        entryIndexById.set(responseId, index);
-        reservedEntryIndexes.add(index);
-      }
-    }
-
-    for (const id of requestedIds) {
-      let entryIndex = entryIndexById.get(id);
-      if (entryIndex === undefined) {
-        entryIndex = response.findIndex(
-          (_, candidateIndex) =>
-            !reservedEntryIndexes.has(candidateIndex) &&
-            !usedEntryIndexes.has(candidateIndex),
-        );
-      }
-
-      if (entryIndex !== undefined && entryIndex < 0) {
-        entryIndex = undefined;
-      }
-
-      const entry: unknown =
-        entryIndex === undefined ? undefined : response[entryIndex];
-      if (entryIndex !== undefined) {
-        usedEntryIndexes.add(entryIndex);
-      }
-
-      if (!isRecord(entry)) {
+      if (code === 200 && isObject(body) && body.id === id) {
+        publications.push(sanitize(body));
+      } else {
         errors.push({
           id,
-          code: 502,
-          body: { message: 'Mercado Libre omitió este resultado del multiget' },
+          code: code === 200 ? 502 : code,
+          body: sanitize(body),
         });
-        continue;
       }
-
-      const code = isHttpStatus(entry.code) ? entry.code : 502;
-      const body = 'body' in entry ? entry.body : null;
-
-      if (
-        code === 200 &&
-        isRecord(body) &&
-        isNonEmptyString(body.id) &&
-        body.id === id
-      ) {
-        const sanitizedBody = sanitizeSensitiveFields(body);
-        if (isRecord(sanitizedBody)) {
-          publications.push(sanitizedBody);
-          continue;
-        }
-      }
-
-      if (code === 200) {
-        errors.push({
-          id,
-          code: 502,
-          body: sanitizeSensitiveFields(body),
-        });
-        continue;
-      }
-
-      errors.push({
-        id,
-        code,
-        body: sanitizeSensitiveFields(body),
-      });
-    }
-
+    });
     return { publications, errors };
   }
 
-  private createBatchErrors(
-    ids: string[],
-    code: number,
-    body: unknown,
-  ): MercadoLibreItemError[] {
-    return ids.map((id) => ({ id, code, body }));
-  }
-
   private createState(): string {
-    const nonce = randomBytes(32).toString('base64url');
-    const timestamp = Date.now().toString();
-    const payload = `${nonce}.${timestamp}`;
-
-    return `${payload}.${this.signState(payload)}`;
+    const value = `${randomBytes(32).toString('base64url')}.${Date.now()}`;
+    return `${value}.${this.sign(value).toString('base64url')}`;
   }
 
-  private signState(payload: string): string {
-    return createHmac('sha256', this.getStateSecret())
-      .update(payload)
-      .digest('base64url');
+  private sign(value: string): Buffer {
+    return createHmac('sha256', this.config('ML_STATE_SECRET'))
+      .update(value)
+      .digest();
   }
 
-  private getStateSecret(): string {
-    const stateSecret = this.getRequiredConfig('ML_STATE_SECRET');
-    if (Buffer.byteLength(stateSecret, 'utf8') < 32) {
-      throw new ServiceUnavailableException(
-        'La integración con Mercado Libre no está configurada correctamente',
-      );
-    }
-
-    return stateSecret;
-  }
-
-  private getRedirectUri(): string {
-    const redirectUri = this.getRequiredConfig('ML_REDIRECT_URI');
-
-    try {
-      const parsedUrl = new URL(redirectUri);
-      if (parsedUrl.protocol !== 'https:' && parsedUrl.protocol !== 'http:') {
-        throw new Error('Unsupported redirect protocol');
-      }
-    } catch {
-      throw new ServiceUnavailableException(
-        'La integración con Mercado Libre no está configurada correctamente',
-      );
-    }
-
-    return redirectUri;
-  }
-
-  private getRequiredConfig(key: RequiredConfigKey): string {
-    const value = this.configService.get<string>(key);
-    if (!isNonEmptyString(value)) {
-      throw new ServiceUnavailableException(
-        'La integración con Mercado Libre no está configurada correctamente',
-      );
-    }
-
-    return value.trim();
-  }
-
-  private validateAccessToken(accessToken: string): void {
-    if (!isNonEmptyString(accessToken)) {
-      throw new BadRequestException('El token de acceso es inválido');
-    }
-  }
-
-  private createAuthorizationHeaders(accessToken: string): HeadersInit {
-    return {
-      Accept: 'application/json',
-      Authorization: `Bearer ${accessToken}`,
-    };
-  }
-
-  private async requestJson(
+  /** Ejecuta una llamada que debe responder JSON valido. */
+  private async requestJson<T>(
     url: string,
     init: RequestInit,
-    operation: MercadoLibreOperation,
-  ): Promise<unknown> {
+    kind?: RequestKind,
+  ): Promise<T> {
     let response: Response;
-
     try {
       response = await fetch(url, {
         ...init,
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        signal: AbortSignal.timeout(TIMEOUT),
       });
     } catch {
       throw new BadGatewayException('No se pudo conectar con Mercado Libre');
     }
 
-    if (!response.ok) {
-      this.throwMercadoLibreError(operation, response.status);
+    if (!response.ok) this.throwApiError(response.status, kind);
+    const data = await readJson(response);
+    if (data === INVALID_JSON) {
+      throw new BadGatewayException('Mercado Libre devolvio JSON invalido');
     }
-
-    try {
-      return (await response.json()) as unknown;
-    } catch {
-      throw new BadGatewayException(
-        'Mercado Libre devolvió una respuesta inválida',
-      );
-    }
+    return data as T;
   }
 
-  private throwMercadoLibreError(
-    operation: MercadoLibreOperation,
-    status: number,
-  ): never {
-    if (operation === 'tokenExchange' && (status === 400 || status === 401)) {
-      throw new BadRequestException(
-        'El código de autorización fue rechazado o venció',
-      );
+  /** Convierte estados externos en errores seguros de NestJS. */
+  private throwApiError(status: number, kind?: RequestKind): never {
+    if (kind === 'oauth' && (status === 400 || status === 401)) {
+      throw new BadRequestException('Codigo OAuth rechazado o vencido');
     }
-
     if (status === 401) {
-      throw new UnauthorizedException(
-        'El acceso a Mercado Libre es inválido o venció',
-      );
+      throw new UnauthorizedException('Acceso invalido o vencido');
     }
-
     if (status === 403) {
-      throw new ForbiddenException(
-        'Mercado Libre rechazó los permisos de la aplicación o del vendedor',
-      );
+      throw new ForbiddenException('Permisos insuficientes');
     }
-
     if (status === 429) {
-      throw new ServiceUnavailableException(
-        'Mercado Libre limitó temporalmente las solicitudes',
-      );
+      throw new ServiceUnavailableException('Demasiadas solicitudes');
     }
+    if (kind === 'scroll' && (status === 400 || status === 404)) {
+      throw new BadGatewayException('El scroll_id esta ausente o vencio');
+    }
+    throw new BadGatewayException('Mercado Libre no completo la solicitud');
+  }
 
+  private config(key: ConfigKey): string {
+    const value = this.configService.get<string>(key)?.trim();
     if (
-      operation === 'publicationScanScroll' &&
-      (status === 400 || status === 404)
+      !value ||
+      (key === 'ML_STATE_SECRET' && Buffer.byteLength(value) < 32)
     ) {
-      throw new BadGatewayException(
-        'El scroll_id de Mercado Libre está ausente o venció',
-      );
+      throw new ServiceUnavailableException('Configuracion incompleta');
     }
+    return value;
+  }
 
-    if (status >= 500) {
-      throw new BadGatewayException(
-        'Mercado Libre tuvo un error interno al procesar la solicitud',
-      );
+  private auth(accessToken: string): HeadersInit {
+    if (!accessToken?.trim()) {
+      throw new BadRequestException('Token invalido');
     }
-
-    throw new BadGatewayException(
-      'Mercado Libre no pudo completar la solicitud',
-    );
+    return { Authorization: `Bearer ${accessToken}` };
   }
 }
 
-function isRecord(value: unknown): value is MercadoLibreRecord {
+function isObject(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function isNonEmptyString(value: unknown): value is string {
+function isString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
-function isPositiveInteger(value: unknown): value is number {
-  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
-}
-
-function isNonNegativeInteger(value: unknown): value is number {
-  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
-}
-
-function isHttpStatus(value: unknown): value is number {
+function validStatus(value: unknown): value is number {
   return (
     typeof value === 'number' &&
     Number.isInteger(value) &&
@@ -672,36 +349,46 @@ function isHttpStatus(value: unknown): value is number {
   );
 }
 
-function isTimeoutError(error: unknown): boolean {
-  return isRecord(error) && error.name === 'TimeoutError';
+async function readJson(response: Response): Promise<unknown> {
+  try {
+    return (await response.json()) as unknown;
+  } catch {
+    return INVALID_JSON;
+  }
 }
 
-function sanitizeSensitiveFields(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(sanitizeSensitiveFields);
+function chunk<T>(values: T[], size: number): T[][] {
+  const result: T[][] = [];
+  for (let index = 0; index < values.length; index += size) {
+    result.push(values.slice(index, index + size));
   }
+  return result;
+}
 
-  if (!isRecord(value)) {
-    return value;
-  }
+function batchError(ids: string[], code: number, body: unknown): BatchResult {
+  return {
+    publications: [],
+    errors: ids.map((id) => ({ id, code, body })),
+  };
+}
 
-  const sanitized: MercadoLibreRecord = {};
-  for (const [key, nestedValue] of Object.entries(value)) {
-    const normalizedKey = key
-      .toLowerCase()
-      .replaceAll('_', '')
-      .replaceAll('-', '');
-    if (
-      normalizedKey === 'accesstoken' ||
-      normalizedKey === 'refreshtoken' ||
-      normalizedKey === 'clientsecret' ||
-      normalizedKey === 'authorization'
-    ) {
-      continue;
-    }
+const PRIVATE_FIELDS = new Set([
+  'accesstoken',
+  'refreshtoken',
+  'clientsecret',
+  'authorization',
+]);
 
-    sanitized[key] = sanitizeSensitiveFields(nestedValue);
-  }
+function sanitize<T>(value: T): T {
+  if (Array.isArray(value)) return value.map(sanitize) as T;
+  if (!isObject(value)) return value;
 
-  return sanitized;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(
+        ([key]) =>
+          !PRIVATE_FIELDS.has(key.toLowerCase().replaceAll(/[_-]/g, '')),
+      )
+      .map(([key, nested]) => [key, sanitize(nested)]),
+  ) as T;
 }
