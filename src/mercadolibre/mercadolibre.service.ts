@@ -9,26 +9,19 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
-const AUTH_URL = 'https://auth.mercadolibre.com.ar/authorization';
+const AUTHORIZATION_URL = 'https://auth.mercadolibre.com.ar/authorization';
 const API_URL = 'https://api.mercadolibre.com';
-const STATE_PATTERN = /^([\w-]{43})\.(\d{13})\.([\w-]{43})$/;
-const STATE_TTL = 10 * 60 * 1000;
+const STATE_TTL_MS = 10 * 60 * 1000;
 const TIMEOUT = 10_000;
 const SCAN_SIZE = 100;
 const MULTIGET_SIZE = 20;
 const MAX_CONCURRENT = 4;
 const INVALID_JSON = Symbol('invalid-json');
-const OAUTH_ERRORS = new Set([
-  'invalid_client',
-  'invalid_grant',
-  'invalid_operator_user_id',
-  'invalid_request',
-]);
 
 type JsonObject = Record<string, unknown>;
-type ConfigKey =
+type RequiredConfigKey =
   'ML_CLIENT_ID' | 'ML_CLIENT_SECRET' | 'ML_REDIRECT_URI' | 'ML_STATE_SECRET';
-type RequestKind = 'oauth' | 'scroll';
+type RequestKind = 'tokenExchange' | 'scroll';
 type ItemError = { id: string; code: number; body: unknown };
 type BatchResult = {
   publications: JsonObject[];
@@ -45,62 +38,88 @@ type MultigetEntry = { code?: unknown; body?: unknown };
 export class MercadolibreService {
   constructor(private readonly configService: ConfigService) {}
 
-  /** Crea la URL para iniciar OAuth con un state firmado. */
   createAuthorizationUrl(): string {
-    const state = this.createState();
-    const query = new URLSearchParams({
+    const authorizationUrl = new URL(AUTHORIZATION_URL);
+    authorizationUrl.search = new URLSearchParams({
       response_type: 'code',
-      client_id: this.config('ML_CLIENT_ID'),
-      redirect_uri: this.config('ML_REDIRECT_URI'),
-      state,
-    });
-    return `${AUTH_URL}?${query}`;
+      client_id: this.getRequiredConfig('ML_CLIENT_ID'),
+      redirect_uri: this.getRedirectUri(),
+      state: this.createState(),
+    }).toString();
+
+    return authorizationUrl.toString();
   }
 
-  /** Valida la firma y los 10 minutos de vigencia del state. */
   verifyState(state: string): boolean {
-    const match = STATE_PATTERN.exec(state);
-    if (!match) return false;
-
-    const [, nonce, timestamp, signature] = match;
-    const age = Date.now() - Number(timestamp);
-    if (age < 0 || age > STATE_TTL) return false;
-
-    const expected = Buffer.from(
-      this.sign(`${nonce}.${timestamp}`).toString('base64url'),
-    );
-    const received = Buffer.from(signature);
-    return (
-      expected.length === received.length && timingSafeEqual(expected, received)
-    );
-  }
-
-  /** Intercambia el code por un token que se usa solo en el backend. */
-  async exchangeCode(code: string): Promise<string> {
-    if (!code?.trim()) {
-      throw new BadRequestException('Falta el codigo de autorizacion');
+    if (typeof state !== 'string') {
+      return false;
     }
 
-    const data = await this.requestJson<JsonObject>(
+    const parts = state.split('.');
+    if (parts.length !== 3) {
+      return false;
+    }
+
+    const [nonce, timestampValue, receivedSignature] = parts;
+    if (
+      !/^[A-Za-z0-9_-]{43}$/.test(nonce) ||
+      !/^\d{13}$/.test(timestampValue) ||
+      !/^[A-Za-z0-9_-]{43}$/.test(receivedSignature)
+    ) {
+      return false;
+    }
+
+    const timestamp = Number(timestampValue);
+    const age = Date.now() - timestamp;
+    if (!Number.isSafeInteger(timestamp) || age < 0 || age > STATE_TTL_MS) {
+      return false;
+    }
+
+    const payload = `${nonce}.${timestampValue}`;
+    const expectedSignature = this.signState(payload);
+    const receivedBuffer = Buffer.from(receivedSignature, 'base64url');
+    const expectedBuffer = Buffer.from(expectedSignature, 'base64url');
+
+    return (
+      receivedBuffer.length === expectedBuffer.length &&
+      timingSafeEqual(receivedBuffer, expectedBuffer)
+    );
+  }
+
+  async exchangeCode(code: string): Promise<string> {
+    if (typeof code !== 'string' || code.trim().length === 0) {
+      throw new BadRequestException('Falta el código de autorización');
+    }
+
+    const body = new URLSearchParams({
+      grant_type: 'authorization_code',
+      client_id: this.getRequiredConfig('ML_CLIENT_ID'),
+      client_secret: this.getRequiredConfig('ML_CLIENT_SECRET'),
+      code,
+      redirect_uri: this.getRedirectUri(),
+    });
+
+    const response = await this.requestJson(
       `${API_URL}/oauth/token`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          grant_type: 'authorization_code',
-          client_id: this.config('ML_CLIENT_ID'),
-          client_secret: this.config('ML_CLIENT_SECRET'),
-          code,
-          redirect_uri: this.config('ML_REDIRECT_URI'),
-        }),
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body,
       },
-      'oauth',
+      'tokenExchange',
     );
 
-    if (!isString(data?.access_token)) {
-      throw new BadGatewayException('Respuesta OAuth invalida');
+    if (!isRecord(response) || !isNonEmptyString(response.access_token)) {
+      throw new BadGatewayException(
+        'Mercado Libre devolvió una respuesta de autorización inválida',
+      );
     }
-    return data.access_token;
+
+    // Discard every other response field, including refresh_token.
+    return response.access_token;
   }
 
   /** Obtiene los datos basicos de la cuenta autorizada. */
@@ -266,14 +285,56 @@ export class MercadolibreService {
   }
 
   private createState(): string {
-    const value = `${randomBytes(32).toString('base64url')}.${Date.now()}`;
-    return `${value}.${this.sign(value).toString('base64url')}`;
+    const nonce = randomBytes(32).toString('base64url');
+    const timestamp = Date.now().toString();
+    const payload = `${nonce}.${timestamp}`;
+
+    return `${payload}.${this.signState(payload)}`;
   }
 
-  private sign(value: string): Buffer {
-    return createHmac('sha256', this.config('ML_STATE_SECRET'))
-      .update(value)
-      .digest();
+  private signState(payload: string): string {
+    return createHmac('sha256', this.getStateSecret())
+      .update(payload)
+      .digest('base64url');
+  }
+
+  private getStateSecret(): string {
+    const stateSecret = this.getRequiredConfig('ML_STATE_SECRET');
+    if (Buffer.byteLength(stateSecret, 'utf8') < 32) {
+      throw new ServiceUnavailableException(
+        'La integración con Mercado Libre no está configurada correctamente',
+      );
+    }
+
+    return stateSecret;
+  }
+
+  private getRedirectUri(): string {
+    const redirectUri = this.getRequiredConfig('ML_REDIRECT_URI');
+
+    try {
+      const parsedUrl = new URL(redirectUri);
+      if (parsedUrl.protocol !== 'https:' && parsedUrl.protocol !== 'http:') {
+        throw new Error('Unsupported redirect protocol');
+      }
+    } catch {
+      throw new ServiceUnavailableException(
+        'La integración con Mercado Libre no está configurada correctamente',
+      );
+    }
+
+    return redirectUri;
+  }
+
+  private getRequiredConfig(key: RequiredConfigKey): string {
+    const value = this.configService.get<string>(key);
+    if (!isNonEmptyString(value)) {
+      throw new ServiceUnavailableException(
+        'La integración con Mercado Libre no está configurada correctamente',
+      );
+    }
+
+    return value.trim();
   }
 
   /** Ejecuta una llamada que debe responder JSON valido. */
@@ -297,24 +358,16 @@ export class MercadolibreService {
       if (!response.ok) this.throwApiError(response.status, kind);
       throw new BadGatewayException('Mercado Libre devolvio JSON invalido');
     }
-    if (!response.ok) this.throwApiError(response.status, kind, data);
+    if (!response.ok) this.throwApiError(response.status, kind);
     return data as T;
   }
 
   /** Convierte estados externos en errores seguros de NestJS. */
-  private throwApiError(
-    status: number,
-    kind?: RequestKind,
-    body?: unknown,
-  ): never {
-    if (kind === 'oauth' && (status === 400 || status === 401)) {
-      const code = safeOAuthError(body);
-      throw new BadRequestException({
-        statusCode: 400,
-        error: 'Bad Request',
-        message: oauthErrorMessage(code),
-        mercadoLibreError: code,
-      });
+  private throwApiError(status: number, kind?: RequestKind): never {
+    if (kind === 'tokenExchange' && (status === 400 || status === 401)) {
+      throw new BadRequestException(
+        'El código de autorización fue rechazado o venció',
+      );
     }
     if (status === 401) {
       throw new UnauthorizedException('Acceso invalido o vencido');
@@ -331,23 +384,20 @@ export class MercadolibreService {
     throw new BadGatewayException('Mercado Libre no completo la solicitud');
   }
 
-  private config(key: ConfigKey): string {
-    const value = this.configService.get<string>(key)?.trim();
-    if (
-      !value ||
-      (key === 'ML_STATE_SECRET' && Buffer.byteLength(value) < 32)
-    ) {
-      throw new ServiceUnavailableException('Configuracion incompleta');
-    }
-    return value;
-  }
-
   private auth(accessToken: string): HeadersInit {
     if (!accessToken?.trim()) {
       throw new BadRequestException('Token invalido');
     }
     return { Authorization: `Bearer ${accessToken}` };
   }
+}
+
+function isRecord(value: unknown): value is JsonObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
 }
 
 function isObject(value: unknown): value is JsonObject {
@@ -365,26 +415,6 @@ function validStatus(value: unknown): value is number {
     value >= 100 &&
     value <= 599
   );
-}
-
-function safeOAuthError(body: unknown): string {
-  const code = isObject(body) ? body.error : undefined;
-  return isString(code) && OAUTH_ERRORS.has(code) ? code : 'oauth_error';
-}
-
-function oauthErrorMessage(code: string): string {
-  switch (code) {
-    case 'invalid_grant':
-      return 'El codigo OAuth no es valido. Inicia nuevamente desde /mercadolibre/connect y verifica ML_REDIRECT_URI';
-    case 'invalid_client':
-      return 'ML_CLIENT_ID y ML_CLIENT_SECRET no corresponden a la misma aplicacion';
-    case 'invalid_operator_user_id':
-      return 'Debes autorizar con la cuenta administradora de Mercado Libre';
-    case 'invalid_request':
-      return 'Solicitud OAuth invalida. Verifica redirect_uri y la configuracion de la aplicacion';
-    default:
-      return 'Mercado Libre rechazo la autorizacion';
-  }
 }
 
 async function readJson(response: Response): Promise<unknown> {
