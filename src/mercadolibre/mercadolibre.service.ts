@@ -25,7 +25,7 @@ const INVALID_JSON = Symbol('invalid-json');
 type JsonObject = Record<string, unknown>;
 type RequiredConfigKey =
   'ML_CLIENT_ID' | 'ML_CLIENT_SECRET' | 'ML_REDIRECT_URI' | 'ML_STATE_SECRET';
-type RequestKind = 'tokenExchange' | 'scroll' | 'salePrice';
+type RequestKind = 'tokenExchange' | 'scroll' | 'prices' | 'salePrice';
 type ItemError = { id: string; code: number; body: unknown };
 type BatchResult = {
   publications: JsonObject[];
@@ -38,9 +38,28 @@ type MercadoLibreTokens = {
   expires_in: number;
   user_id: number;
 };
+
+interface MercadoLibrePriceNode {
+  type: string;
+  amount: number;
+  currency_id: string;
+  conditions: { context_restrictions: string[] };
+}
+
+interface MercadoLibrePricesResponse {
+  id: string;
+  prices: MercadoLibrePriceNode[];
+}
+
+interface MercadoLibreSalePriceResponse {
+  amount: number;
+  regular_amount: number | null;
+  currency_id: string;
+}
+
 type SalePriceResult = {
   salePrice: number | null;
-  regularPrice: number | null;
+  promotionRegularPrice: number | null;
   currencyId?: string;
   priceError?: { status: number; message: string };
 };
@@ -289,11 +308,38 @@ export class MercadolibreService {
   /** Consulta una publicación usando un access token vigente. */
   async getPublication(itemId: string) {
     const accessToken = await this.getValidAccessToken();
-    const data = await this.requestJson<unknown>(
-      `${API_URL}/items/${encodeURIComponent(this.validateItemId(itemId))}`,
-      { headers: this.auth(accessToken) },
-    );
-    return sanitize(data);
+    const id = this.validateItemId(itemId);
+    const [itemData, pricing] = await Promise.all([
+      this.requestJson<unknown>(`${API_URL}/items/${encodeURIComponent(id)}`, {
+        headers: this.auth(accessToken),
+      }),
+      this.getPricing(id, accessToken),
+    ]);
+    const item = sanitize(itemData);
+    if (!isObject(item)) {
+      throw new BadGatewayException('Respuesta de publicación inválida');
+    }
+
+    const {
+      price,
+      base_price: basePrice,
+      original_price: originalPrice,
+      ...itemWithoutLegacyPricing
+    } = item;
+    return {
+      ...itemWithoutLegacyPricing,
+      pricing: {
+        ...pricing,
+        currencyId:
+          pricing.currencyId ??
+          (isString(item.currency_id) ? item.currency_id : null),
+      },
+      legacyPricing: {
+        price: typeof price === 'number' ? price : null,
+        basePrice: typeof basePrice === 'number' ? basePrice : null,
+        originalPrice: typeof originalPrice === 'number' ? originalPrice : null,
+      },
+    };
   }
 
   /** Modifica el precio de una publicación. */
@@ -303,8 +349,9 @@ export class MercadolibreService {
     }
 
     const accessToken = await this.getValidAccessToken();
-    const data = await this.requestJson<unknown>(
-      `${API_URL}/items/${encodeURIComponent(this.validateItemId(itemId))}`,
+    const id = this.validateItemId(itemId);
+    await this.requestJson<unknown>(
+      `${API_URL}/items/${encodeURIComponent(id)}`,
       {
         method: 'PUT',
         headers: {
@@ -314,7 +361,24 @@ export class MercadolibreService {
         body: JSON.stringify({ price }),
       },
     );
-    return sanitize(data);
+
+    const pricing = await this.getPricing(id, accessToken);
+    const result = {
+      ok: true,
+      itemId: id,
+      requestedPrice: price,
+      listPriceAfterUpdate: pricing.listPrice,
+      salePriceAfterUpdate: pricing.salePrice,
+      promotionRegularPrice: pricing.promotionRegularPrice,
+      hasPromotion: pricing.hasPromotion,
+    };
+
+    return pricing.listPrice === price
+      ? result
+      : {
+          ...result,
+          warning: 'El precio standard no coincide con el precio solicitado',
+        };
   }
 
   /** Devuelve un User Product con sus condiciones de venta y precios. */
@@ -430,26 +494,122 @@ export class MercadolibreService {
         ? item.sub_status.filter(isString)
         : [],
       listingType: isString(item.listing_type_id) ? item.listing_type_id : null,
-      priceFromItem:
-        typeof item.price === 'number' && Number.isFinite(item.price)
-          ? item.price
-          : null,
+      listPrice: null as number | null,
       salePrice: null as number | null,
-      regularPrice: null as number | null,
+      promotionRegularPrice: null as number | null,
       currencyId,
+      hasPromotion: false,
       permalink: isString(item.permalink) ? item.permalink : null,
+      legacyPricing: {
+        priceFromItem:
+          typeof item.price === 'number' && Number.isFinite(item.price)
+            ? item.price
+            : null,
+        originalPriceFromItem:
+          typeof item.original_price === 'number' &&
+          Number.isFinite(item.original_price)
+            ? item.original_price
+            : null,
+      },
     };
 
     if ((status !== 'active' && status !== 'paused') || !itemId) {
       return condition;
     }
 
-    const salePrice = await this.getSalePrice(itemId, accessToken);
+    const pricing = await this.getPricing(itemId, accessToken);
+
     return {
       ...condition,
-      ...salePrice,
-      currencyId: salePrice.currencyId ?? currencyId,
+      ...pricing,
+      currencyId: pricing.currencyId ?? currencyId,
     };
+  }
+
+  /** Combina el precio standard y el precio final del comprador. */
+  private async getPricing(itemId: string, accessToken: string) {
+    const standardPrice = await this.getPrices(itemId, accessToken);
+    const salePrice = await this.getSalePrice(itemId, accessToken);
+    const listPrice = standardPrice.listPrice;
+    const finalSalePrice = salePrice.salePrice;
+    const priceError = standardPrice.priceError ?? salePrice.priceError;
+
+    return {
+      listPrice,
+      salePrice: finalSalePrice,
+      promotionRegularPrice: salePrice.promotionRegularPrice,
+      currencyId: standardPrice.currencyId ?? salePrice.currencyId,
+      hasPromotion:
+        finalSalePrice !== null &&
+        listPrice !== null &&
+        finalSalePrice < listPrice,
+      ...(priceError ? { priceError } : {}),
+    };
+  }
+
+  /** Obtiene el precio standard configurado para marketplace. */
+  private async getPrices(
+    itemId: string,
+    accessToken: string,
+  ): Promise<{
+    listPrice: number | null;
+    currencyId?: string;
+    priceError?: { status: number; message: string };
+  }> {
+    try {
+      const data = await this.requestJson<unknown>(
+        `${API_URL}/items/${encodeURIComponent(itemId)}/prices`,
+        {
+          headers: {
+            ...this.auth(accessToken),
+            'Content-Type': 'application/json',
+          },
+        },
+        'prices',
+      );
+      if (
+        !isObject(data) ||
+        data.id !== itemId ||
+        !Array.isArray(data.prices)
+      ) {
+        throw new BadGatewayException('Respuesta de precios inválida');
+      }
+
+      const prices = data.prices.filter(
+        (price): price is MercadoLibrePriceNode =>
+          isObject(price) &&
+          price.type === 'standard' &&
+          typeof price.amount === 'number' &&
+          Number.isFinite(price.amount) &&
+          isString(price.currency_id) &&
+          isObject(price.conditions) &&
+          Array.isArray(price.conditions.context_restrictions) &&
+          price.conditions.context_restrictions.every(isString),
+      );
+
+      const response: MercadoLibrePricesResponse = { id: data.id, prices };
+      const standardPrice =
+        response.prices.find((price) =>
+          price.conditions.context_restrictions.includes('channel_marketplace'),
+        ) ??
+        response.prices.find(
+          (price) => price.conditions.context_restrictions.length === 0,
+        ) ??
+        response.prices[0];
+
+      return {
+        listPrice: standardPrice?.amount ?? null,
+        currencyId: standardPrice?.currency_id,
+      };
+    } catch (error) {
+      return {
+        listPrice: null,
+        priceError: this.getPricingError(
+          error,
+          'No se pudo consultar el precio standard',
+        ),
+      };
+    }
   }
 
   /** Consulta el precio real sin interrumpir las otras condiciones. */
@@ -475,28 +635,42 @@ export class MercadolibreService {
         throw new BadGatewayException('Respuesta de precio inválida');
       }
 
-      return {
-        salePrice: data.amount,
-        regularPrice: data.regular_amount,
-        currencyId: data.currency_id,
+      const response: MercadoLibreSalePriceResponse = {
+        amount: data.amount,
+        regular_amount: data.regular_amount,
+        currency_id: data.currency_id,
       };
-    } catch (error) {
-      const status = error instanceof HttpException ? error.getStatus() : 502;
-      const response =
-        error instanceof HttpException ? error.getResponse() : undefined;
-      const message =
-        typeof response === 'string'
-          ? response
-          : isObject(response) && isString(response.message)
-            ? response.message
-            : 'No se pudo consultar el precio de venta';
 
       return {
+        salePrice: response.amount,
+        promotionRegularPrice: response.regular_amount,
+        currencyId: response.currency_id,
+      };
+    } catch (error) {
+      return {
         salePrice: null,
-        regularPrice: null,
-        priceError: { status, message: message.slice(0, 500) },
+        promotionRegularPrice: null,
+        priceError: this.getPricingError(
+          error,
+          'No se pudo consultar el precio de venta',
+        ),
       };
     }
+  }
+
+  /** Convierte un error de precios en una respuesta segura. */
+  private getPricingError(error: unknown, fallback: string) {
+    const status = error instanceof HttpException ? error.getStatus() : 502;
+    const response =
+      error instanceof HttpException ? error.getResponse() : undefined;
+    const message =
+      typeof response === 'string'
+        ? response
+        : isObject(response) && isString(response.message)
+          ? response.message
+          : fallback;
+
+    return { status, message: message.slice(0, 500) };
   }
 
   /** Consulta hasta 20 ítems; un fallo no elimina los otros lotes. */
@@ -684,7 +858,7 @@ export class MercadolibreService {
         status: 400,
       });
     }
-    if (kind === 'salePrice') {
+    if (kind === 'prices' || kind === 'salePrice') {
       const message =
         isObject(safeData) && isString(safeData.message)
           ? safeData.message.slice(0, 500)

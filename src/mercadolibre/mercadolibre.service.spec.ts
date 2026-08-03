@@ -9,6 +9,9 @@ const configValues: Record<string, string> = {
   ML_STATE_SECRET: 'test-state-secret-with-at-least-32-bytes',
 };
 
+const PRICED_ITEM_ID = 'MLA3042295334';
+const USER_PRODUCT_ID = 'MLAU123456789';
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -87,6 +90,53 @@ function multigetResponse(ids: string[]): Response {
   return jsonResponse(
     ids.map((id) => ({ code: 200, body: upstreamPublication(id) })),
   );
+}
+
+function pricedItem() {
+  return {
+    id: PRICED_ITEM_ID,
+    title: 'Publicación con promoción',
+    status: 'active',
+    currency_id: 'ARS',
+    price: 24_750,
+    base_price: 24_750,
+    original_price: 27_000,
+  };
+}
+
+function pricesResponse(marketplaceAmount = 40_000) {
+  return {
+    id: PRICED_ITEM_ID,
+    prices: [
+      {
+        type: 'standard',
+        amount: 24_750,
+        currency_id: 'ARS',
+        conditions: { context_restrictions: [] },
+      },
+      {
+        type: 'standard',
+        amount: marketplaceAmount,
+        currency_id: 'ARS',
+        conditions: { context_restrictions: ['channel_marketplace'] },
+      },
+      {
+        type: 'promotion',
+        amount: 24_750,
+        regular_amount: 27_000,
+        currency_id: 'ARS',
+        conditions: { context_restrictions: ['channel_marketplace'] },
+      },
+    ],
+  };
+}
+
+function salePriceResponse() {
+  return {
+    amount: 24_750,
+    regular_amount: 27_000,
+    currency_id: 'ARS',
+  };
 }
 
 describe('MercadolibreService', () => {
@@ -367,37 +417,83 @@ describe('MercadolibreService', () => {
       });
     });
 
-    it('gets one publication with a valid access token', async () => {
+    it('gets one publication with its current and legacy pricing', async () => {
       jest
         .spyOn(service, 'getValidAccessToken')
         .mockResolvedValue('valid-access-token');
-      fetchMock.mockResolvedValueOnce(
-        jsonResponse(upstreamPublication('MLA100')),
-      );
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse(pricedItem()))
+        .mockResolvedValueOnce(jsonResponse(pricesResponse()))
+        .mockResolvedValueOnce(jsonResponse(salePriceResponse()));
 
-      await expect(service.getPublication('MLA100')).resolves.toEqual(
-        safePublication('MLA100'),
-      );
-      const [url, init] = fetchMock.mock.calls[0];
-      expect(requestUrl(url)).toBe('https://api.mercadolibre.com/items/MLA100');
+      const result = await service.getPublication(PRICED_ITEM_ID);
+
+      expect(result).toEqual({
+        id: PRICED_ITEM_ID,
+        title: 'Publicación con promoción',
+        status: 'active',
+        currency_id: 'ARS',
+        pricing: {
+          listPrice: 40_000,
+          salePrice: 24_750,
+          promotionRegularPrice: 27_000,
+          currencyId: 'ARS',
+          hasPromotion: true,
+        },
+        legacyPricing: {
+          price: 24_750,
+          basePrice: 24_750,
+          originalPrice: 27_000,
+        },
+      });
+      expect(result).not.toHaveProperty('price');
+      expect(result).not.toHaveProperty('base_price');
+      expect(result).not.toHaveProperty('original_price');
+      expect(fetchMock.mock.calls.map(([input]) => requestUrl(input))).toEqual([
+        `https://api.mercadolibre.com/items/${PRICED_ITEM_ID}`,
+        `https://api.mercadolibre.com/items/${PRICED_ITEM_ID}/prices`,
+        `https://api.mercadolibre.com/items/${PRICED_ITEM_ID}/sale_price?context=channel_marketplace`,
+      ]);
+      const [, init] = fetchMock.mock.calls[0];
       expect(new Headers(init?.headers).get('authorization')).toBe(
         'Bearer valid-access-token',
       );
+      const [, pricesInit] = fetchMock.mock.calls[1];
+      expect(new Headers(pricesInit?.headers).get('authorization')).toBe(
+        'Bearer valid-access-token',
+      );
+      expect(new Headers(pricesInit?.headers).get('content-type')).toBe(
+        'application/json',
+      );
     });
 
-    it('updates a publication price with a valid access token', async () => {
+    it('updates the list price and returns the active promotion', async () => {
       jest
         .spyOn(service, 'getValidAccessToken')
         .mockResolvedValue('valid-access-token');
-      fetchMock.mockResolvedValueOnce(
-        jsonResponse({ ...upstreamPublication('MLA100'), price: 1500 }),
-      );
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse({ id: PRICED_ITEM_ID }))
+        .mockResolvedValueOnce(jsonResponse(pricesResponse()))
+        .mockResolvedValueOnce(jsonResponse(salePriceResponse()));
 
       await expect(
-        service.updatePublicationPrice('MLA100', 1500),
-      ).resolves.toEqual({ ...safePublication('MLA100'), price: 1500 });
-      const [url, init] = fetchMock.mock.calls[0];
-      expect(requestUrl(url)).toBe('https://api.mercadolibre.com/items/MLA100');
+        service.updatePublicationPrice(PRICED_ITEM_ID, 40_000),
+      ).resolves.toEqual({
+        ok: true,
+        itemId: PRICED_ITEM_ID,
+        requestedPrice: 40_000,
+        listPriceAfterUpdate: 40_000,
+        salePriceAfterUpdate: 24_750,
+        promotionRegularPrice: 27_000,
+        hasPromotion: true,
+      });
+
+      expect(fetchMock.mock.calls.map(([input]) => requestUrl(input))).toEqual([
+        `https://api.mercadolibre.com/items/${PRICED_ITEM_ID}`,
+        `https://api.mercadolibre.com/items/${PRICED_ITEM_ID}/prices`,
+        `https://api.mercadolibre.com/items/${PRICED_ITEM_ID}/sale_price?context=channel_marketplace`,
+      ]);
+      const [, init] = fetchMock.mock.calls[0];
       expect(init?.method).toBe('PUT');
       expect(new Headers(init?.headers).get('authorization')).toBe(
         'Bearer valid-access-token',
@@ -405,7 +501,131 @@ describe('MercadolibreService', () => {
       expect(new Headers(init?.headers).get('content-type')).toBe(
         'application/json',
       );
-      expect(init?.body).toBe(JSON.stringify({ price: 1500 }));
+      expect(init?.body).toBe(JSON.stringify({ price: 40_000 }));
+    });
+
+    it('warns only when the standard price differs from the requested price', async () => {
+      jest
+        .spyOn(service, 'getValidAccessToken')
+        .mockResolvedValue('valid-access-token');
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse({ id: PRICED_ITEM_ID }))
+        .mockResolvedValueOnce(jsonResponse(pricesResponse(39_999)))
+        .mockResolvedValueOnce(jsonResponse(salePriceResponse()));
+
+      await expect(
+        service.updatePublicationPrice(PRICED_ITEM_ID, 40_000),
+      ).resolves.toEqual({
+        ok: true,
+        itemId: PRICED_ITEM_ID,
+        requestedPrice: 40_000,
+        listPriceAfterUpdate: 39_999,
+        salePriceAfterUpdate: 24_750,
+        promotionRegularPrice: 27_000,
+        hasPromotion: true,
+        warning: 'El precio standard no coincide con el precio solicitado',
+      });
+    });
+
+    it('gets active User Product pricing without duplicate legacy fields', async () => {
+      jest
+        .spyOn(service, 'getValidAccessToken')
+        .mockResolvedValue('valid-access-token');
+      jest.spyOn(service, 'getStoredConnection').mockResolvedValue(connection);
+      fetchMock
+        .mockResolvedValueOnce(
+          jsonResponse({
+            id: USER_PRODUCT_ID,
+            name: 'Producto de prueba',
+            family_id: 'FAMILY-1',
+            attributes: [],
+            pictures: [],
+          }),
+        )
+        .mockResolvedValueOnce(jsonResponse({ results: [PRICED_ITEM_ID] }))
+        .mockResolvedValueOnce(
+          jsonResponse([
+            {
+              code: 200,
+              body: {
+                ...pricedItem(),
+                sub_status: [],
+                listing_type_id: 'gold_special',
+                permalink: `https://articulo.mercadolibre.com.ar/${PRICED_ITEM_ID}`,
+              },
+            },
+          ]),
+        )
+        .mockResolvedValueOnce(jsonResponse(pricesResponse()))
+        .mockResolvedValueOnce(jsonResponse(salePriceResponse()));
+
+      const result = await service.getUserProductPrices(USER_PRODUCT_ID);
+      const condition = result.conditions[0];
+
+      expect(condition).toEqual({
+        itemId: PRICED_ITEM_ID,
+        status: 'active',
+        subStatus: [],
+        listingType: 'gold_special',
+        listPrice: 40_000,
+        salePrice: 24_750,
+        promotionRegularPrice: 27_000,
+        currencyId: 'ARS',
+        hasPromotion: true,
+        permalink: `https://articulo.mercadolibre.com.ar/${PRICED_ITEM_ID}`,
+        legacyPricing: {
+          priceFromItem: 24_750,
+          originalPriceFromItem: 27_000,
+        },
+      });
+      expect(condition).not.toHaveProperty('priceFromItem');
+      expect(condition).not.toHaveProperty('regularPrice');
+    });
+
+    it('keeps a User Product condition when /prices responds 403', async () => {
+      jest
+        .spyOn(service, 'getValidAccessToken')
+        .mockResolvedValue('valid-access-token');
+      jest.spyOn(service, 'getStoredConnection').mockResolvedValue(connection);
+      fetchMock
+        .mockResolvedValueOnce(
+          jsonResponse({ id: USER_PRODUCT_ID, name: 'Producto de prueba' }),
+        )
+        .mockResolvedValueOnce(jsonResponse({ results: [PRICED_ITEM_ID] }))
+        .mockResolvedValueOnce(
+          jsonResponse([
+            {
+              code: 200,
+              body: {
+                ...pricedItem(),
+                sub_status: [],
+                listing_type_id: 'gold_special',
+              },
+            },
+          ]),
+        )
+        .mockResolvedValueOnce(
+          jsonResponse(
+            { message: 'No autorizado para consultar precios' },
+            403,
+          ),
+        )
+        .mockResolvedValueOnce(jsonResponse(salePriceResponse()));
+
+      const result = await service.getUserProductPrices(USER_PRODUCT_ID);
+
+      expect(result.conditions[0]).toMatchObject({
+        itemId: PRICED_ITEM_ID,
+        status: 'active',
+        listPrice: null,
+        salePrice: 24_750,
+        promotionRegularPrice: 27_000,
+        hasPromotion: false,
+        priceError: {
+          status: 403,
+          message: 'No autorizado para consultar precios',
+        },
+      });
     });
 
     it('preserves a safe Mercado Libre price error', async () => {
