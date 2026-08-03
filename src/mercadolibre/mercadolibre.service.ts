@@ -2,6 +2,7 @@ import {
   BadGatewayException,
   BadRequestException,
   ForbiddenException,
+  HttpException,
   Injectable,
   ServiceUnavailableException,
   UnauthorizedException,
@@ -24,7 +25,7 @@ const INVALID_JSON = Symbol('invalid-json');
 type JsonObject = Record<string, unknown>;
 type RequiredConfigKey =
   'ML_CLIENT_ID' | 'ML_CLIENT_SECRET' | 'ML_REDIRECT_URI' | 'ML_STATE_SECRET';
-type RequestKind = 'tokenExchange' | 'scroll';
+type RequestKind = 'tokenExchange' | 'scroll' | 'salePrice';
 type ItemError = { id: string; code: number; body: unknown };
 type BatchResult = {
   publications: JsonObject[];
@@ -36,6 +37,12 @@ type MercadoLibreTokens = {
   refresh_token: string;
   expires_in: number;
   user_id: number;
+};
+type SalePriceResult = {
+  salePrice: number | null;
+  regularPrice: number | null;
+  currencyId?: string;
+  priceError?: { status: number; message: string };
 };
 
 @Injectable()
@@ -310,6 +317,188 @@ export class MercadolibreService {
     return sanitize(data);
   }
 
+  /** Devuelve un User Product con sus condiciones de venta y precios. */
+  async getUserProductPrices(userProductId: string) {
+    const id = userProductId.trim();
+    if (!id.startsWith('MLAU')) {
+      throw new BadRequestException('El userProductId debe comenzar con MLAU');
+    }
+
+    const accessToken = await this.getValidAccessToken();
+    const connection = await this.getStoredConnection();
+    const userProductData = await this.requestJson<unknown>(
+      `${API_URL}/user-products/${encodeURIComponent(id)}`,
+      { headers: this.auth(accessToken) },
+    );
+    if (
+      !isObject(userProductData) ||
+      userProductData.id !== id ||
+      !isString(userProductData.name)
+    ) {
+      throw new BadGatewayException('Respuesta de User Product inválida');
+    }
+
+    const search = new URLSearchParams({ user_product_id: id });
+    const searchData = await this.requestJson<unknown>(
+      `${API_URL}/users/${connection.seller_id}/items/search?${search}`,
+      { headers: this.auth(accessToken) },
+    );
+    if (
+      !isObject(searchData) ||
+      !Array.isArray(searchData.results) ||
+      searchData.results.some(
+        (itemId) => !isString(itemId) || !/^MLA\d+$/.test(itemId),
+      )
+    ) {
+      throw new BadGatewayException('Respuesta de condiciones inválida');
+    }
+
+    const itemIds = [...new Set(searchData.results as string[])];
+    if (itemIds.length === 0) {
+      return { userProductId: id, conditions: [] };
+    }
+
+    const detailResults = await Promise.all(
+      chunk(itemIds, MULTIGET_SIZE).map((batch) =>
+        this.fetchBatch(batch, accessToken),
+      ),
+    );
+    if (detailResults.some((result) => result.errors.length > 0)) {
+      throw new BadGatewayException(
+        'No se pudieron consultar todas las condiciones de venta',
+      );
+    }
+
+    const items = detailResults.flatMap((result) => result.publications);
+    const conditions = await Promise.all(
+      items
+        .slice(0, MAX_CONCURRENT)
+        .map((item) => this.buildUserProductCondition(item, accessToken)),
+    );
+    for (
+      let index = MAX_CONCURRENT;
+      index < items.length;
+      index += MAX_CONCURRENT
+    ) {
+      conditions.push(
+        ...(await Promise.all(
+          items
+            .slice(index, index + MAX_CONCURRENT)
+            .map((item) => this.buildUserProductCondition(item, accessToken)),
+        )),
+      );
+    }
+
+    const priority: Record<string, number> = {
+      active: 0,
+      paused: 1,
+      closed: 2,
+    };
+    conditions.sort(
+      (first, second) =>
+        (priority[first.status] ?? 3) - (priority[second.status] ?? 3),
+    );
+
+    return {
+      userProduct: {
+        id,
+        name: userProductData.name,
+        familyId: userProductData.family_id ?? null,
+        attributes: Array.isArray(userProductData.attributes)
+          ? sanitize(userProductData.attributes)
+          : [],
+        pictures: Array.isArray(userProductData.pictures)
+          ? sanitize(userProductData.pictures)
+          : [],
+      },
+      conditions,
+    };
+  }
+
+  /** Arma una condición de venta y consulta su precio cuando corresponde. */
+  private async buildUserProductCondition(
+    item: JsonObject,
+    accessToken: string,
+  ) {
+    const itemId = isString(item.id) ? item.id : '';
+    const status = isString(item.status) ? item.status : 'unknown';
+    const currencyId = isString(item.currency_id) ? item.currency_id : null;
+    const condition = {
+      itemId,
+      status,
+      subStatus: Array.isArray(item.sub_status)
+        ? item.sub_status.filter(isString)
+        : [],
+      listingType: isString(item.listing_type_id) ? item.listing_type_id : null,
+      priceFromItem:
+        typeof item.price === 'number' && Number.isFinite(item.price)
+          ? item.price
+          : null,
+      salePrice: null as number | null,
+      regularPrice: null as number | null,
+      currencyId,
+      permalink: isString(item.permalink) ? item.permalink : null,
+    };
+
+    if ((status !== 'active' && status !== 'paused') || !itemId) {
+      return condition;
+    }
+
+    const salePrice = await this.getSalePrice(itemId, accessToken);
+    return {
+      ...condition,
+      ...salePrice,
+      currencyId: salePrice.currencyId ?? currencyId,
+    };
+  }
+
+  /** Consulta el precio real sin interrumpir las otras condiciones. */
+  private async getSalePrice(
+    itemId: string,
+    accessToken: string,
+  ): Promise<SalePriceResult> {
+    try {
+      const data = await this.requestJson<unknown>(
+        `${API_URL}/items/${encodeURIComponent(itemId)}/sale_price?context=channel_marketplace`,
+        { headers: this.auth(accessToken) },
+        'salePrice',
+      );
+      if (
+        !isObject(data) ||
+        typeof data.amount !== 'number' ||
+        !Number.isFinite(data.amount) ||
+        (data.regular_amount !== null &&
+          (typeof data.regular_amount !== 'number' ||
+            !Number.isFinite(data.regular_amount))) ||
+        !isString(data.currency_id)
+      ) {
+        throw new BadGatewayException('Respuesta de precio inválida');
+      }
+
+      return {
+        salePrice: data.amount,
+        regularPrice: data.regular_amount,
+        currencyId: data.currency_id,
+      };
+    } catch (error) {
+      const status = error instanceof HttpException ? error.getStatus() : 502;
+      const response =
+        error instanceof HttpException ? error.getResponse() : undefined;
+      const message =
+        typeof response === 'string'
+          ? response
+          : isObject(response) && isString(response.message)
+            ? response.message
+            : 'No se pudo consultar el precio de venta';
+
+      return {
+        salePrice: null,
+        regularPrice: null,
+        priceError: { status, message: message.slice(0, 500) },
+      };
+    }
+  }
+
   /** Consulta hasta 20 ítems; un fallo no elimina los otros lotes. */
   private async fetchBatch(
     ids: string[],
@@ -494,6 +683,13 @@ export class MercadolibreService {
           : 'Mercado Libre no informó el motivo',
         status: 400,
       });
+    }
+    if (kind === 'salePrice') {
+      const message =
+        isObject(safeData) && isString(safeData.message)
+          ? safeData.message.slice(0, 500)
+          : 'Mercado Libre rechazó la consulta de precio';
+      throw new HttpException(message, status);
     }
     if (kind === 'scroll' && (status === 400 || status === 404)) {
       throw new BadGatewayException('El scroll_id está ausente o venció');

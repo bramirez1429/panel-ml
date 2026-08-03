@@ -95,6 +95,12 @@ export class MercadolibreController {
     return this.mercadolibreService.updatePublicationPrice(itemId, body.price);
   }
 
+  /** Devuelve las condiciones de venta y precios de un User Product. */
+  @Get('user-products/:userProductId/precios')
+  getUserProductPrices(@Param('userProductId') userProductId: string) {
+    return this.mercadolibreService.getUserProductPrices(userProductId);
+  }
+
   /** Confirma rápidamente la recepción del webhook. */
   @Post('webhook')
   @HttpCode(200)
