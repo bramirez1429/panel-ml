@@ -557,37 +557,44 @@ describe('MercadolibreService', () => {
       }
     });
 
-    it('fails fast when the scan repeats the exact same page without advancing', async () => {
+    it('deduplicates a repeated page and continues until results is empty', async () => {
       const repeatedPage = ['MLA001', 'MLA002'];
       let searchCall = 0;
 
       fetchMock.mockImplementation((input) => {
         const url = new URL(requestUrl(input));
-        if (!url.pathname.endsWith('/items/search')) {
-          return Promise.reject(
-            new Error('multiget must not run after a repeated scan page'),
+        if (url.pathname.endsWith('/items/search')) {
+          searchCall += 1;
+          if (searchCall === 1) {
+            return Promise.resolve(
+              jsonResponse({
+                paging: { total: 2 },
+                scroll_id: 'stable-scroll-id',
+                results: repeatedPage,
+              }),
+            );
+          }
+
+          return Promise.resolve(
+            jsonResponse({
+              results: searchCall === 2 ? repeatedPage : [],
+            }),
           );
         }
 
-        searchCall += 1;
-        return Promise.resolve(
-          jsonResponse(
-            searchCall === 1
-              ? {
-                  paging: { total: 2 },
-                  scroll_id: 'stable-scroll-id',
-                  results: repeatedPage,
-                }
-              : { results: repeatedPage },
-          ),
-        );
+        return Promise.resolve(multigetResponse(detailIds(input)));
       });
 
-      await expect(
-        service.getAllPublications(123456, 'access-token'),
-      ).rejects.toBeInstanceOf(HttpException);
-      expect(searchCall).toBe(2);
-      expect(fetchMock).toHaveBeenCalledTimes(2);
+      const result = await service.getAllPublications(123456, 'access-token');
+
+      expect(result).toMatchObject({
+        totalReported: 2,
+        idsRetrieved: 2,
+        publicationsRetrieved: 2,
+        failed: 0,
+      });
+      expect(searchCall).toBe(3);
+      expect(fetchMock).toHaveBeenCalledTimes(4);
     });
 
     it.each([401, 403, 429, 500])(

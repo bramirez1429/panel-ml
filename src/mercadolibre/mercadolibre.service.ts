@@ -208,7 +208,6 @@ export class MercadolibreService {
     accessToken: string,
   ): Promise<MercadoLibreScanResult> {
     const uniqueIds = new Set<string>();
-    const seenPages = new Set<string>();
     let totalReported: number | undefined;
     let scrollId: string | undefined;
     let isInitialRequest = true;
@@ -245,14 +244,6 @@ export class MercadolibreService {
       } else if (isInitialRequest) {
         scrollId = page.scrollId;
       }
-
-      const pageSignature = [...page.results].sort().join('\u0000');
-      if (seenPages.has(pageSignature)) {
-        throw new BadGatewayException(
-          'Mercado Libre repitió una página del scroll sin avanzar',
-        );
-      }
-      seenPages.add(pageSignature);
 
       for (const id of page.results) {
         uniqueIds.add(id);
