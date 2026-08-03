@@ -1,6 +1,5 @@
 import { HttpException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createHash } from 'node:crypto';
 import { MercadolibreService } from './mercadolibre.service';
 
 const configValues: Record<string, string> = {
@@ -142,8 +141,6 @@ describe('MercadolibreService', () => {
       const secondUrl = new URL(service.createAuthorizationUrl());
       const firstState = firstUrl.searchParams.get('state');
       const secondState = secondUrl.searchParams.get('state');
-      const firstChallenge = firstUrl.searchParams.get('code_challenge');
-      const secondChallenge = secondUrl.searchParams.get('code_challenge');
 
       expect(`${firstUrl.origin}${firstUrl.pathname}`).toBe(
         'https://auth.mercadolibre.com.ar/authorization',
@@ -158,10 +155,6 @@ describe('MercadolibreService', () => {
       expect(firstState).not.toBe(secondState);
       expect(service.verifyState(firstState!)).toBe(true);
       expect(service.verifyState(secondState!)).toBe(true);
-      expect(firstUrl.searchParams.get('code_challenge_method')).toBe('S256');
-      expect(firstChallenge).toEqual(expect.any(String));
-      expect(secondChallenge).toEqual(expect.any(String));
-      expect(firstChallenge).not.toBe(secondChallenge);
     });
 
     it('rejects malformed, tampered and expired states', () => {
@@ -182,9 +175,6 @@ describe('MercadolibreService', () => {
 
   describe('account API', () => {
     it('exchanges the code as form data and returns only the access token', async () => {
-      const authorizationUrl = new URL(service.createAuthorizationUrl());
-      const state = authorizationUrl.searchParams.get('state')!;
-      const challenge = authorizationUrl.searchParams.get('code_challenge');
       fetchMock.mockResolvedValueOnce(
         jsonResponse({
           access_token: 'access-token-value',
@@ -192,21 +182,16 @@ describe('MercadolibreService', () => {
         }),
       );
 
-      await expect(
-        service.exchangeCode('authorization-code', state),
-      ).resolves.toBe('access-token-value');
+      await expect(service.exchangeCode('authorization-code')).resolves.toBe(
+        'access-token-value',
+      );
 
       const [url, init] = fetchMock.mock.calls[0];
       const body = formBody(init);
-      const verifier = body.get('code_verifier');
       expect(requestUrl(url)).toBe('https://api.mercadolibre.com/oauth/token');
       expect(init?.method).toBe('POST');
       expect(new Headers(init?.headers).get('content-type')).toBe(
         'application/x-www-form-urlencoded',
-      );
-      expect(verifier).toEqual(expect.any(String));
-      expect(createHash('sha256').update(verifier!).digest('base64url')).toBe(
-        challenge,
       );
       expect(Object.fromEntries(body)).toEqual({
         grant_type: 'authorization_code',
@@ -214,14 +199,10 @@ describe('MercadolibreService', () => {
         client_secret: 'test-client-secret',
         code: 'authorization-code',
         redirect_uri: configValues.ML_REDIRECT_URI,
-        code_verifier: verifier,
       });
     });
 
     it('allowlists OAuth error codes without exposing the upstream body', async () => {
-      const state = new URL(service.createAuthorizationUrl()).searchParams.get(
-        'state',
-      )!;
       const cases = [
         { upstreamCode: 'invalid_grant', publicCode: 'invalid_grant' },
         { upstreamCode: 'attacker_controlled', publicCode: 'oauth_error' },
@@ -241,7 +222,7 @@ describe('MercadolibreService', () => {
         );
 
         try {
-          await service.exchangeCode('expired-code', state);
+          await service.exchangeCode('expired-code');
           throw new Error('Expected exchangeCode to reject');
         } catch (error) {
           expect(error).toBeInstanceOf(HttpException);

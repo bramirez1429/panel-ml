@@ -66,10 +66,7 @@ describe('MercadolibreController', () => {
     );
 
     expect(service.verifyState).toHaveBeenCalledWith('valid-state');
-    expect(service.exchangeCode).toHaveBeenCalledWith(
-      'authorization-code',
-      'valid-state',
-    );
+    expect(service.exchangeCode).toHaveBeenCalledWith('authorization-code');
     expect(service.getCurrentUser).toHaveBeenCalledWith('private-access-token');
     expect(service.getAllPublications).toHaveBeenCalledWith(
       seller.id,

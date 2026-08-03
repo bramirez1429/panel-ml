@@ -7,12 +7,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import {
-  createHash,
-  createHmac,
-  randomBytes,
-  timingSafeEqual,
-} from 'node:crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
 const AUTH_URL = 'https://auth.mercadolibre.com.ar/authorization';
 const API_URL = 'https://api.mercadolibre.com';
@@ -53,14 +48,11 @@ export class MercadolibreService {
   /** Crea la URL para iniciar OAuth con un state firmado. */
   createAuthorizationUrl(): string {
     const state = this.createState();
-    const verifier = this.createCodeVerifier(state);
     const query = new URLSearchParams({
       response_type: 'code',
       client_id: this.config('ML_CLIENT_ID'),
       redirect_uri: this.config('ML_REDIRECT_URI'),
       state,
-      code_challenge: createHash('sha256').update(verifier).digest('base64url'),
-      code_challenge_method: 'S256',
     });
     return `${AUTH_URL}?${query}`;
   }
@@ -84,7 +76,7 @@ export class MercadolibreService {
   }
 
   /** Intercambia el code por un token que se usa solo en el backend. */
-  async exchangeCode(code: string, state: string): Promise<string> {
+  async exchangeCode(code: string): Promise<string> {
     if (!code?.trim()) {
       throw new BadRequestException('Falta el codigo de autorizacion');
     }
@@ -100,7 +92,6 @@ export class MercadolibreService {
           client_secret: this.config('ML_CLIENT_SECRET'),
           code,
           redirect_uri: this.config('ML_REDIRECT_URI'),
-          code_verifier: this.createCodeVerifier(state),
         }),
       },
       'oauth',
@@ -279,12 +270,6 @@ export class MercadolibreService {
     return `${value}.${this.sign(value).toString('base64url')}`;
   }
 
-  private createCodeVerifier(state: string): string {
-    return createHmac('sha256', this.config('ML_STATE_SECRET'))
-      .update(`pkce:${state}`)
-      .digest('base64url');
-  }
-
   private sign(value: string): Buffer {
     return createHmac('sha256', this.config('ML_STATE_SECRET'))
       .update(value)
@@ -396,7 +381,7 @@ function oauthErrorMessage(code: string): string {
     case 'invalid_operator_user_id':
       return 'Debes autorizar con la cuenta administradora de Mercado Libre';
     case 'invalid_request':
-      return 'Solicitud OAuth invalida. Verifica redirect_uri y la configuracion PKCE';
+      return 'Solicitud OAuth invalida. Verifica redirect_uri y la configuracion de la aplicacion';
     default:
       return 'Mercado Libre rechazo la autorizacion';
   }
