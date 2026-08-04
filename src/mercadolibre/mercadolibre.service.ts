@@ -619,12 +619,35 @@ export class MercadolibreService {
     const id = this.validateMlaItemId(itemId);
     this.validatePricingInput(input);
     const priceDiscountInput = this.validatePriceDiscountInput(input);
-    if (input.confirmReplaceDeal !== true) {
-      throw new ConflictException({
-        ok: false,
+    if (input.confirmReplaceDeal === false) {
+      return {
+        ok: true,
+        preview: true,
         requiresConfirmation: true,
-        message: 'Para retirar el DEAL debe enviar confirmReplaceDeal: true',
-      });
+        message: 'Vista previa: no se realizó ningún cambio',
+        itemId: id,
+        requested: {
+          listPrice: input.listPrice,
+          salePrice: input.salePrice,
+          startDate: priceDiscountInput.startDate,
+          finishDate: priceDiscountInput.finishDate,
+        },
+        discountPercentage: priceDiscountInput.discountPercentage,
+        operations: {
+          removeCurrentDeal: true,
+          updateListPrice: input.listPrice,
+          createPriceDiscount: {
+            salePrice: input.salePrice,
+            startDate: priceDiscountInput.startDate,
+            finishDate: priceDiscountInput.finishDate,
+          },
+        },
+      };
+    }
+    if (input.confirmReplaceDeal !== true) {
+      throw new BadRequestException(
+        'confirmReplaceDeal debe ser un valor booleano',
+      );
     }
 
     const accessToken = await this.getValidAccessToken();

@@ -1,6 +1,5 @@
 import { Type } from 'class-transformer';
 import {
-  Equals,
   IsBoolean,
   IsDefined,
   IsISO8601,
@@ -68,8 +67,6 @@ export class ReplaceDealDto {
   @IsISO8601({ strict: true })
   finishDate!: string;
 
-  @IsDefined()
   @IsBoolean()
-  @Equals(true)
   confirmReplaceDeal!: boolean;
 }

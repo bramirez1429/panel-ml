@@ -221,18 +221,18 @@ describe('MercadolibreController', () => {
     );
   });
 
-  it('delegates DEAL replacement to its separate service method', async () => {
+  it('delegates DEAL preview with confirmReplaceDeal false', async () => {
     const body = {
       listPrice: 40_000,
       salePrice: 30_000,
       startDate: '2026-08-04T00:00:00Z',
       finishDate: '2026-08-17T23:59:59Z',
-      confirmReplaceDeal: true,
+      confirmReplaceDeal: false,
     };
     const updated = {
       ok: true as const,
+      preview: true as const,
       itemId: 'MLA3042295334',
-      previousDealDeleted: true,
     };
     service.replaceDealWithPriceDiscount.mockResolvedValue(updated);
 
@@ -340,7 +340,7 @@ describe('MercadolibreController', () => {
     await expect(validate(invalid)).resolves.not.toHaveLength(0);
   });
 
-  it('requires confirmReplaceDeal to be exactly true', async () => {
+  it('accepts false and true for confirmReplaceDeal', async () => {
     const values = {
       listPrice: 40_000,
       salePrice: 30_000,
@@ -352,7 +352,7 @@ describe('MercadolibreController', () => {
       confirmReplaceDeal: true,
     });
     const missing = plainToInstance(ReplaceDealDto, values);
-    const denied = plainToInstance(ReplaceDealDto, {
+    const preview = plainToInstance(ReplaceDealDto, {
       ...values,
       confirmReplaceDeal: false,
     });
@@ -362,8 +362,8 @@ describe('MercadolibreController', () => {
     });
 
     await expect(validate(confirmed)).resolves.toHaveLength(0);
+    await expect(validate(preview)).resolves.toHaveLength(0);
     await expect(validate(missing)).resolves.not.toHaveLength(0);
-    await expect(validate(denied)).resolves.not.toHaveLength(0);
     await expect(validate(text)).resolves.not.toHaveLength(0);
   });
 

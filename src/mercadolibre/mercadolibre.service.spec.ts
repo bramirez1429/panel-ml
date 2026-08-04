@@ -1266,7 +1266,7 @@ describe('MercadolibreService', () => {
       },
     );
 
-    it('requires explicit confirmation before replacing a DEAL', async () => {
+    it('returns a preview without external calls when confirmation is false', async () => {
       const getValidAccessToken = jest.spyOn(service, 'getValidAccessToken');
 
       await expect(
@@ -1274,7 +1274,29 @@ describe('MercadolibreService', () => {
           PRICED_ITEM_ID,
           replaceDealInput(false),
         ),
-      ).rejects.toMatchObject({ status: 409 });
+      ).resolves.toEqual({
+        ok: true,
+        preview: true,
+        requiresConfirmation: true,
+        message: 'Vista previa: no se realizó ningún cambio',
+        itemId: PRICED_ITEM_ID,
+        requested: {
+          listPrice: 40_000,
+          salePrice: 30_000,
+          startDate: PROMOTION_START_DATE,
+          finishDate: PROMOTION_FINISH_DATE,
+        },
+        discountPercentage: 25,
+        operations: {
+          removeCurrentDeal: true,
+          updateListPrice: 40_000,
+          createPriceDiscount: {
+            salePrice: 30_000,
+            startDate: PROMOTION_START_DATE,
+            finishDate: PROMOTION_FINISH_DATE,
+          },
+        },
+      });
 
       expect(getValidAccessToken).not.toHaveBeenCalled();
       expect(fetchMock).not.toHaveBeenCalled();
