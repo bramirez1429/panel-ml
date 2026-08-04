@@ -177,6 +177,16 @@ function dealPricingInput() {
   };
 }
 
+function replaceDealInput(confirmReplaceDeal = true) {
+  return {
+    listPrice: 40_000,
+    salePrice: 30_000,
+    startDate: PROMOTION_START_DATE,
+    finishDate: PROMOTION_FINISH_DATE,
+    confirmReplaceDeal,
+  };
+}
+
 function promotionResponse(
   type = 'PRICE_DISCOUNT',
   overrides: Record<string, unknown> = {},
@@ -1255,6 +1265,335 @@ describe('MercadolibreService', () => {
         );
       },
     );
+
+    it('requires explicit confirmation before replacing a DEAL', async () => {
+      const getValidAccessToken = jest.spyOn(service, 'getValidAccessToken');
+
+      await expect(
+        service.replaceDealWithPriceDiscount(
+          PRICED_ITEM_ID,
+          replaceDealInput(false),
+        ),
+      ).rejects.toMatchObject({ status: 409 });
+
+      expect(getValidAccessToken).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it.each(['pending', 'started'])(
+      'replaces a %s DEAL using the separate destructive flow',
+      async (dealStatus) => {
+        jest
+          .spyOn(service, 'getValidAccessToken')
+          .mockResolvedValue('valid-access-token');
+        const previousDeal = dealPromotionResponse({ status: dealStatus });
+        const finalPriceDiscountStatus =
+          dealStatus === 'pending' ? 'sync_requested' : 'started';
+        const newPromotion = promotionResponse('PRICE_DISCOUNT', {
+          id: 'OFFER-MLA3042295334-NEW',
+          status: finalPriceDiscountStatus,
+          price: 30_000,
+          original_price: 40_000,
+          start_date: PROMOTION_START_DATE,
+          finish_date: PROMOTION_FINISH_DATE,
+          name: 'Nuevo descuento',
+        });
+        fetchMock
+          .mockResolvedValueOnce(jsonResponse(pricedItem()))
+          .mockResolvedValueOnce(jsonResponse([previousDeal]))
+          .mockResolvedValueOnce(emptyResponse(200))
+          .mockResolvedValueOnce(jsonResponse([]))
+          .mockResolvedValueOnce(jsonResponse(pricesResponse(35_000)))
+          .mockResolvedValueOnce(jsonResponse({ id: PRICED_ITEM_ID }))
+          .mockResolvedValueOnce(jsonResponse(pricesResponse()))
+          .mockResolvedValueOnce(
+            jsonResponse({ price: 30_000, original_price: 40_000 }),
+          )
+          .mockResolvedValueOnce(jsonResponse(pricesResponse()))
+          .mockResolvedValueOnce(jsonResponse([newPromotion]))
+          .mockResolvedValueOnce(jsonResponse(finalSalePriceResponse()));
+
+        await expect(
+          service.replaceDealWithPriceDiscount(
+            PRICED_ITEM_ID,
+            replaceDealInput(),
+          ),
+        ).resolves.toMatchObject({
+          ok: true,
+          itemId: PRICED_ITEM_ID,
+          previousDealDeleted: true,
+          newPromotionRequestAccepted: true,
+          newPromotionCreated: true,
+          requested: { listPrice: 40_000, salePrice: 30_000 },
+          discountPercentage: 25,
+          pricing: {
+            listPrice: 40_000,
+            salePrice: 30_000,
+            promotionRegularPrice: 40_000,
+            currencyId: 'ARS',
+            hasPromotion: true,
+          },
+          promotion: {
+            id: 'OFFER-MLA3042295334-NEW',
+            type: 'PRICE_DISCOUNT',
+            status: finalPriceDiscountStatus,
+          },
+        });
+
+        const calls = fetchMock.mock.calls.map(([input, init]) => ({
+          method: init?.method ?? 'GET',
+          url: new URL(requestUrl(input)),
+        }));
+        expect(calls.map(({ method }) => method)).toEqual([
+          'GET',
+          'GET',
+          'DELETE',
+          'GET',
+          'GET',
+          'PUT',
+          'GET',
+          'POST',
+          'GET',
+          'GET',
+          'GET',
+        ]);
+        expect(calls[2].url.pathname).toBe(
+          `/seller-promotions/items/${PRICED_ITEM_ID}`,
+        );
+        expect(calls[2].url.searchParams.get('promotion_type')).toBe('DEAL');
+        expect(calls[2].url.searchParams.get('promotion_id')).toBe(
+          'P-MLA17845002',
+        );
+        expect(calls[2].url.searchParams.get('app_version')).toBe('v2');
+        expect(fetchMock.mock.calls[2][1]?.body).toBeUndefined();
+        expect(calls[5].url.href).toBe(
+          `https://api.mercadolibre.com/items/${PRICED_ITEM_ID}`,
+        );
+        expect(jsonBody(fetchMock.mock.calls[5][1])).toEqual({ price: 40_000 });
+        expect(calls[7].url.href).toBe(
+          `https://api.mercadolibre.com/seller-promotions/items/${PRICED_ITEM_ID}?app_version=v2`,
+        );
+        expect(jsonBody(fetchMock.mock.calls[7][1])).toEqual({
+          deal_price: 30_000,
+          start_date: PROMOTION_START_DATE,
+          finish_date: PROMOTION_FINISH_DATE,
+          promotion_type: 'PRICE_DISCOUNT',
+        });
+        expect(
+          fetchMock.mock.calls.some(
+            ([input, init]) =>
+              init?.method === 'PUT' &&
+              requestUrl(input).includes('/seller-promotions/items/'),
+          ),
+        ).toBe(false);
+      },
+    );
+
+    it.each([
+      ['candidate DEAL', dealPromotionResponse({ status: 'candidate' })],
+      ['another promotion type', promotionResponse('SMART')],
+    ])('does not mutate %s', async (_label, promotion) => {
+      jest
+        .spyOn(service, 'getValidAccessToken')
+        .mockResolvedValue('valid-access-token');
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse(pricedItem()))
+        .mockResolvedValueOnce(jsonResponse([promotion]));
+
+      await expect(
+        service.replaceDealWithPriceDiscount(
+          PRICED_ITEM_ID,
+          replaceDealInput(),
+        ),
+      ).rejects.toMatchObject({ status: 409 });
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(
+        fetchMock.mock.calls.some(([, init]) =>
+          ['DELETE', 'PUT', 'POST'].includes(init?.method ?? ''),
+        ),
+      ).toBe(false);
+    });
+
+    it('does not remove DEAL from a paused publication', async () => {
+      jest
+        .spyOn(service, 'getValidAccessToken')
+        .mockResolvedValue('valid-access-token');
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({ ...pricedItem(), status: 'paused' }),
+      );
+
+      await expect(
+        service.replaceDealWithPriceDiscount(
+          PRICED_ITEM_ID,
+          replaceDealInput(),
+        ),
+      ).rejects.toMatchObject({ status: 400 });
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(
+        fetchMock.mock.calls.some(([, init]) => init?.method === 'DELETE'),
+      ).toBe(false);
+    });
+
+    it.each(['restore_requested', 'sync_requested'])(
+      'does not remove DEAL while PRICE_DISCOUNT is %s',
+      async (status) => {
+        jest
+          .spyOn(service, 'getValidAccessToken')
+          .mockResolvedValue('valid-access-token');
+        fetchMock
+          .mockResolvedValueOnce(jsonResponse(pricedItem()))
+          .mockResolvedValueOnce(
+            jsonResponse([
+              dealPromotionResponse(),
+              promotionResponse('PRICE_DISCOUNT', { status }),
+            ]),
+          );
+
+        await expect(
+          service.replaceDealWithPriceDiscount(
+            PRICED_ITEM_ID,
+            replaceDealInput(),
+          ),
+        ).rejects.toMatchObject({ status: 409 });
+
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(
+          fetchMock.mock.calls.some(([, init]) => init?.method === 'DELETE'),
+        ).toBe(false);
+      },
+    );
+
+    it('preserves a safe Mercado Libre error when DEAL DELETE fails', async () => {
+      jest
+        .spyOn(service, 'getValidAccessToken')
+        .mockResolvedValue('valid-access-token');
+      const upstreamError = {
+        key: 'promotion_not_allowed',
+        message: 'The DEAL cannot be removed',
+        error: 'forbidden',
+        cause: [{ code: 'deal_locked', message: 'Campaign is locked' }],
+        access_token: 'must-not-leak',
+      };
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse(pricedItem()))
+        .mockResolvedValueOnce(jsonResponse([dealPromotionResponse()]))
+        .mockResolvedValueOnce(jsonResponse(upstreamError, 403));
+
+      let error: unknown;
+      try {
+        await service.replaceDealWithPriceDiscount(
+          PRICED_ITEM_ID,
+          replaceDealInput(),
+        );
+      } catch (caught) {
+        error = caught;
+      }
+
+      expect(error).toBeInstanceOf(HttpException);
+      expect((error as HttpException).getStatus()).toBe(403);
+      const response = (error as HttpException).getResponse();
+      expect(response).toMatchObject({
+        key: upstreamError.key,
+        message: upstreamError.message,
+        error: upstreamError.error,
+        cause: upstreamError.cause,
+      });
+      expect(JSON.stringify(response)).not.toContain('must-not-leak');
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    });
+
+    it('reports partial state when PRICE_DISCOUNT creation fails after DELETE', async () => {
+      jest
+        .spyOn(service, 'getValidAccessToken')
+        .mockResolvedValue('valid-access-token');
+      const upstreamError = {
+        key: 'promotion_not_allowed',
+        message: 'The PRICE_DISCOUNT cannot be created',
+        error: 'forbidden',
+        cause: [{ code: 'invalid_deal_price', message: 'Invalid price' }],
+        refresh_token: 'must-not-leak',
+      };
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse(pricedItem()))
+        .mockResolvedValueOnce(jsonResponse([dealPromotionResponse()]))
+        .mockResolvedValueOnce(emptyResponse(200))
+        .mockResolvedValueOnce(jsonResponse([]))
+        .mockResolvedValueOnce(jsonResponse(pricesResponse()))
+        .mockResolvedValueOnce(jsonResponse(upstreamError, 403));
+
+      let error: unknown;
+      try {
+        await service.replaceDealWithPriceDiscount(
+          PRICED_ITEM_ID,
+          replaceDealInput(),
+        );
+      } catch (caught) {
+        error = caught;
+      }
+
+      expect(error).toBeInstanceOf(HttpException);
+      expect((error as HttpException).getStatus()).toBe(403);
+      const response = (error as HttpException).getResponse();
+      expect(response).toMatchObject({
+        ok: false,
+        dealDeleteAccepted: true,
+        previousDealDeleted: true,
+        listPriceUpdated: true,
+        newPromotionRequestAccepted: false,
+        newPromotionCreated: false,
+        mercadoLibreError: {
+          key: upstreamError.key,
+          message: upstreamError.message,
+          error: upstreamError.error,
+          cause: upstreamError.cause,
+        },
+      });
+      expect(JSON.stringify(response)).not.toContain('must-not-leak');
+      expect(fetchMock).toHaveBeenCalledTimes(6);
+      expect(
+        fetchMock.mock.calls.map(([, init]) => init?.method ?? 'GET'),
+      ).toEqual(['GET', 'GET', 'DELETE', 'GET', 'GET', 'POST']);
+    });
+
+    it('does not return success when PRICE_DISCOUNT is missing at the end', async () => {
+      jest
+        .spyOn(service, 'getValidAccessToken')
+        .mockResolvedValue('valid-access-token');
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse(pricedItem()))
+        .mockResolvedValueOnce(jsonResponse([dealPromotionResponse()]))
+        .mockResolvedValueOnce(emptyResponse(200))
+        .mockResolvedValueOnce(jsonResponse([]))
+        .mockResolvedValueOnce(jsonResponse(pricesResponse()))
+        .mockResolvedValueOnce(
+          jsonResponse({ price: 30_000, original_price: 40_000 }),
+        )
+        .mockResolvedValueOnce(jsonResponse(pricesResponse()))
+        .mockResolvedValueOnce(jsonResponse([]))
+        .mockResolvedValueOnce(jsonResponse(finalSalePriceResponse()));
+
+      let error: unknown;
+      try {
+        await service.replaceDealWithPriceDiscount(
+          PRICED_ITEM_ID,
+          replaceDealInput(),
+        );
+      } catch (caught) {
+        error = caught;
+      }
+
+      expect(error).toBeInstanceOf(HttpException);
+      expect((error as HttpException).getStatus()).toBe(502);
+      expect((error as HttpException).getResponse()).toMatchObject({
+        ok: false,
+        previousDealDeleted: true,
+        listPriceUpdated: true,
+        newPromotionRequestAccepted: true,
+        newPromotionCreated: false,
+      });
+    });
 
     it('creates a PRICE_DISCOUNT when there is no active promotion', async () => {
       jest

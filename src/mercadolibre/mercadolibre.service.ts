@@ -14,7 +14,7 @@ import {
   MercadoLibreConnection,
   SupabaseService,
 } from '../database/supabase.service';
-import type { UpdatePricingDto } from './update-price.dto';
+import type { ReplaceDealDto, UpdatePricingDto } from './update-price.dto';
 
 const AUTHORIZATION_URL = 'https://auth.mercadolibre.com.ar/authorization';
 const API_URL = 'https://api.mercadolibre.com';
@@ -614,6 +614,223 @@ export class MercadolibreService {
     };
   }
 
+  /** Retira un DEAL y crea un PRICE_DISCOUNT en un flujo separado. */
+  async replaceDealWithPriceDiscount(itemId: string, input: ReplaceDealDto) {
+    const id = this.validateMlaItemId(itemId);
+    this.validatePricingInput(input);
+    const priceDiscountInput = this.validatePriceDiscountInput(input);
+    if (input.confirmReplaceDeal !== true) {
+      throw new ConflictException({
+        ok: false,
+        requiresConfirmation: true,
+        message: 'Para retirar el DEAL debe enviar confirmReplaceDeal: true',
+      });
+    }
+
+    const accessToken = await this.getValidAccessToken();
+    const item = await this.requestJson<unknown>(
+      `${API_URL}/items/${encodeURIComponent(id)}`,
+      { headers: this.auth(accessToken) },
+      'promotion',
+    );
+    if (!isObject(item) || item.id !== id || !isString(item.status)) {
+      throw new BadGatewayException('Respuesta de publicación inválida');
+    }
+    if (item.status !== 'active') {
+      throw new BadRequestException(
+        'La publicación debe estar activa para crear PRICE_DISCOUNT',
+      );
+    }
+
+    const promotions = await this.fetchItemPromotions(id, accessToken);
+    const editableDeals = promotions.filter((promotion) =>
+      this.isEditableDeal(promotion),
+    );
+    if (editableDeals.length !== 1) {
+      const candidateDeal = promotions.find(
+        (promotion) =>
+          promotion.type === 'DEAL' &&
+          promotion.status.toLowerCase() === 'candidate',
+      );
+      throw new ConflictException({
+        ok: false,
+        message: candidateDeal
+          ? 'El DEAL candidate no puede retirarse con esta ruta'
+          : 'Debe existir exactamente un DEAL pending o started',
+        ...(candidateDeal ? { promotion: candidateDeal } : {}),
+      });
+    }
+
+    const previousDeal = editableDeals[0];
+    if (!isString(previousDeal.id)) {
+      throw new BadGatewayException(
+        'Mercado Libre no informó el id de la promoción DEAL',
+      );
+    }
+    const otherActivePromotion = promotions.find(
+      (promotion) =>
+        this.blocksPriceDiscountCreation(promotion) &&
+        promotion !== previousDeal,
+    );
+    if (otherActivePromotion) {
+      throw new ConflictException({
+        ok: false,
+        message:
+          'Hay otra promoción activa y no es seguro crear PRICE_DISCOUNT',
+        activePromotion: otherActivePromotion,
+      });
+    }
+
+    const priceDiscount: PriceDiscountRequest = {
+      deal_price: input.salePrice,
+      start_date: priceDiscountInput.startDate,
+      finish_date: priceDiscountInput.finishDate,
+      promotion_type: 'PRICE_DISCOUNT',
+    };
+
+    await this.deleteDeal(id, previousDeal.id, accessToken);
+
+    let dealRemovalVerified = false;
+    let listPriceUpdated = false;
+    let newPromotionRequestAccepted = false;
+    let newPromotionCreated = false;
+    try {
+      const promotionsAfterDelete = await this.fetchItemPromotions(
+        id,
+        accessToken,
+      );
+      if (
+        promotionsAfterDelete.some((promotion) =>
+          this.isEditableDeal(promotion),
+        )
+      ) {
+        throw new BadGatewayException(
+          'Mercado Libre todavía informa un DEAL pending o started',
+        );
+      }
+      dealRemovalVerified = true;
+      const activeAfterDelete = promotionsAfterDelete.find((promotion) =>
+        this.blocksPriceDiscountCreation(promotion),
+      );
+      if (activeAfterDelete) {
+        throw new ConflictException({
+          message:
+            'Hay otra promoción activa y no es seguro crear PRICE_DISCOUNT',
+          activePromotion: activeAfterDelete,
+        });
+      }
+
+      await this.ensureStandardPrice(id, input.listPrice, accessToken);
+      listPriceUpdated = true;
+
+      const creationResult = await this.createPriceDiscount(
+        id,
+        accessToken,
+        priceDiscount,
+      );
+      newPromotionRequestAccepted = true;
+      if (
+        !isObject(creationResult) ||
+        typeof creationResult.price !== 'number' ||
+        !Number.isFinite(creationResult.price)
+      ) {
+        throw new BadGatewayException(
+          'Mercado Libre devolvió una respuesta inválida al crear PRICE_DISCOUNT',
+        );
+      }
+      if (creationResult.price !== input.salePrice) {
+        throw new BadGatewayException({
+          message:
+            'Mercado Libre no confirmó el precio solicitado para PRICE_DISCOUNT',
+          requestedSalePrice: input.salePrice,
+          confirmedSalePrice: creationResult.price,
+        });
+      }
+
+      const [pricing, finalPromotions] = await Promise.all([
+        this.getPricing(id, accessToken, true),
+        this.fetchItemPromotions(id, accessToken),
+      ]);
+      if (finalPromotions.some((promotion) => this.isEditableDeal(promotion))) {
+        dealRemovalVerified = false;
+        throw new BadGatewayException(
+          'Mercado Libre volvió a informar un DEAL pending o started',
+        );
+      }
+      if (pricing.listPrice !== input.listPrice) {
+        listPriceUpdated = false;
+        throw new BadGatewayException({
+          message: 'El precio standard no coincide con el precio solicitado',
+          requestedPrice: input.listPrice,
+          listPriceAfterUpdate: pricing.listPrice,
+        });
+      }
+
+      const finalPromotion = finalPromotions.find((promotion) =>
+        this.isCreatedPriceDiscount(promotion),
+      );
+      if (!finalPromotion) {
+        throw new BadGatewayException(
+          'Mercado Libre no devolvió el PRICE_DISCOUNT creado',
+        );
+      }
+      newPromotionCreated = true;
+
+      return {
+        ok: true,
+        itemId: id,
+        dealDeleteAccepted: true,
+        previousDealDeleted: true,
+        listPriceUpdated: true,
+        newPromotionRequestAccepted: true,
+        newPromotionCreated: true,
+        requested: {
+          listPrice: input.listPrice,
+          salePrice: input.salePrice,
+        },
+        discountPercentage: priceDiscountInput.discountPercentage,
+        pricing,
+        promotion: finalPromotion,
+      };
+    } catch (error) {
+      const status = error instanceof HttpException ? error.getStatus() : 502;
+      const response =
+        error instanceof HttpException ? error.getResponse() : undefined;
+      const mercadoLibreError = sanitize(
+        isObject(response)
+          ? response
+          : {
+              message:
+                typeof response === 'string'
+                  ? response
+                  : 'No se pudo conectar con Mercado Libre',
+            },
+      );
+      const message = !dealRemovalVerified
+        ? 'Mercado Libre aceptó el DELETE, pero no se pudo verificar el retiro del DEAL'
+        : !listPriceUpdated
+          ? 'El DEAL fue retirado, pero no se pudo continuar con el reemplazo'
+          : !newPromotionRequestAccepted
+            ? 'El DEAL fue retirado y el precio de lista quedó actualizado, pero falló la creación de PRICE_DISCOUNT'
+            : 'La operación terminó, pero falló la verificación final';
+
+      throw new HttpException(
+        {
+          ok: false,
+          dealDeleteAccepted: true,
+          previousDealDeleted: dealRemovalVerified,
+          listPriceUpdated,
+          newPromotionRequestAccepted,
+          newPromotionCreated,
+          message,
+          previousDeal,
+          mercadoLibreError,
+        },
+        status,
+      );
+    }
+  }
+
   /** Devuelve un User Product con sus condiciones de venta y precios. */
   async getUserProductPrices(userProductId: string) {
     const id = userProductId.trim();
@@ -1064,13 +1281,34 @@ export class MercadolibreService {
     );
   }
 
+  /** Indica si PRICE_DISCOUNT fue creado o está activándose. */
+  private isCreatedPriceDiscount(promotion: ItemPromotion): boolean {
+    const status = promotion.status.toLowerCase();
+    return (
+      promotion.type === 'PRICE_DISCOUNT' &&
+      (status === 'started' ||
+        status === 'pending' ||
+        status === 'sync_requested')
+    );
+  }
+
+  /** Evita crear otro descuento mientras existe una promoción incompatible. */
+  private blocksPriceDiscountCreation(promotion: ItemPromotion): boolean {
+    if (this.isActivePromotion(promotion)) return true;
+    const status = promotion.status.toLowerCase();
+    return (
+      promotion.type === 'PRICE_DISCOUNT' &&
+      (status === 'sync_requested' || status === 'restore_requested')
+    );
+  }
+
   /** Crea un descuento individual PRICE_DISCOUNT. */
   private async createPriceDiscount(
     itemId: string,
     accessToken: string,
     body: PriceDiscountRequest,
-  ): Promise<void> {
-    await this.requestJson<unknown>(
+  ): Promise<unknown> {
+    return this.requestJson<unknown>(
       `${API_URL}/seller-promotions/items/${encodeURIComponent(itemId)}?app_version=v2`,
       {
         method: 'POST',
@@ -1081,6 +1319,46 @@ export class MercadolibreService {
         body: JSON.stringify(body),
       },
       'promotion',
+    );
+  }
+
+  /** Retira un ítem de un DEAL específico y exige HTTP 200. */
+  private async deleteDeal(
+    itemId: string,
+    promotionId: string,
+    accessToken: string,
+  ): Promise<void> {
+    const query = new URLSearchParams({
+      promotion_type: 'DEAL',
+      promotion_id: promotionId,
+      app_version: 'v2',
+    });
+    let response: Response;
+    try {
+      response = await fetch(
+        `${API_URL}/seller-promotions/items/${encodeURIComponent(itemId)}?${query}`,
+        {
+          method: 'DELETE',
+          headers: this.auth(accessToken),
+          signal: AbortSignal.timeout(TIMEOUT),
+        },
+      );
+    } catch {
+      throw new BadGatewayException('No se pudo conectar con Mercado Libre');
+    }
+
+    if (response.status === 200) return;
+    if (response.ok) {
+      throw new BadGatewayException(
+        'Mercado Libre no confirmó el retiro del DEAL con HTTP 200',
+      );
+    }
+
+    const data = await readJson(response);
+    this.throwApiError(
+      response.status,
+      'promotion',
+      data === INVALID_JSON ? undefined : data,
     );
   }
 

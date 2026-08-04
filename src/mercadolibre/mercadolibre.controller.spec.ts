@@ -7,7 +7,11 @@ import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { MercadolibreController } from './mercadolibre.controller';
 import { MercadolibreService } from './mercadolibre.service';
-import { UpdatePriceDto, UpdatePricingDto } from './update-price.dto';
+import {
+  ReplaceDealDto,
+  UpdatePriceDto,
+  UpdatePricingDto,
+} from './update-price.dto';
 
 type ServiceMock = jest.Mocked<
   Pick<
@@ -21,7 +25,9 @@ type ServiceMock = jest.Mocked<
     | 'getPublication'
     | 'updatePublicationPrice'
     | 'getItemPromotions'
+    | 'getUserProductPrices'
     | 'updatePublicationPricing'
+    | 'replaceDealWithPriceDiscount'
   >
 >;
 
@@ -40,7 +46,9 @@ describe('MercadolibreController', () => {
       getPublication: jest.fn(),
       updatePublicationPrice: jest.fn(),
       getItemPromotions: jest.fn(),
+      getUserProductPrices: jest.fn(),
       updatePublicationPricing: jest.fn(),
+      replaceDealWithPriceDiscount: jest.fn(),
     };
     controller = new MercadolibreController(
       service as unknown as MercadolibreService,
@@ -155,6 +163,25 @@ describe('MercadolibreController', () => {
     expect(service.getItemPromotions).toHaveBeenCalledWith('MLA3042295334');
   });
 
+  it('keeps delegating User Product price requests', async () => {
+    const result = {
+      userProduct: {
+        id: 'MLAU3837253957',
+        name: 'Producto',
+        familyId: null,
+        attributes: [],
+        pictures: [],
+      },
+      conditions: [],
+    };
+    service.getUserProductPrices.mockResolvedValue(result);
+
+    await expect(
+      controller.getUserProductPrices('MLAU3837253957'),
+    ).resolves.toBe(result);
+    expect(service.getUserProductPrices).toHaveBeenCalledWith('MLAU3837253957');
+  });
+
   it('delegates list and promotional price updates', async () => {
     const body = {
       listPrice: 40_000,
@@ -192,6 +219,31 @@ describe('MercadolibreController', () => {
       'MLA3042295334',
       body,
     );
+  });
+
+  it('delegates DEAL replacement to its separate service method', async () => {
+    const body = {
+      listPrice: 40_000,
+      salePrice: 30_000,
+      startDate: '2026-08-04T00:00:00Z',
+      finishDate: '2026-08-17T23:59:59Z',
+      confirmReplaceDeal: true,
+    };
+    const updated = {
+      ok: true as const,
+      itemId: 'MLA3042295334',
+      previousDealDeleted: true,
+    };
+    service.replaceDealWithPriceDiscount.mockResolvedValue(updated);
+
+    await expect(controller.replaceDeal('MLA3042295334', body)).resolves.toBe(
+      updated,
+    );
+    expect(service.replaceDealWithPriceDiscount).toHaveBeenCalledWith(
+      'MLA3042295334',
+      body,
+    );
+    expect(service.updatePublicationPricing).not.toHaveBeenCalled();
   });
 
   it('validates that the price is a positive number', async () => {
@@ -286,6 +338,33 @@ describe('MercadolibreController', () => {
     await expect(validate(omitted)).resolves.toHaveLength(0);
     await expect(validate(confirmed)).resolves.toHaveLength(0);
     await expect(validate(invalid)).resolves.not.toHaveLength(0);
+  });
+
+  it('requires confirmReplaceDeal to be exactly true', async () => {
+    const values = {
+      listPrice: 40_000,
+      salePrice: 30_000,
+      startDate: '2026-08-04T00:00:00Z',
+      finishDate: '2026-08-17T23:59:59Z',
+    };
+    const confirmed = plainToInstance(ReplaceDealDto, {
+      ...values,
+      confirmReplaceDeal: true,
+    });
+    const missing = plainToInstance(ReplaceDealDto, values);
+    const denied = plainToInstance(ReplaceDealDto, {
+      ...values,
+      confirmReplaceDeal: false,
+    });
+    const text = plainToInstance(ReplaceDealDto, {
+      ...values,
+      confirmReplaceDeal: 'true',
+    });
+
+    await expect(validate(confirmed)).resolves.toHaveLength(0);
+    await expect(validate(missing)).resolves.not.toHaveLength(0);
+    await expect(validate(denied)).resolves.not.toHaveLength(0);
+    await expect(validate(text)).resolves.not.toHaveLength(0);
   });
 
   it('rejects promotionRegularPrice as an unsupported body field', async () => {

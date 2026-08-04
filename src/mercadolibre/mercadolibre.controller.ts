@@ -14,7 +14,11 @@ import {
   ValidationPipe,
 } from '@nestjs/common';
 import { MercadolibreService } from './mercadolibre.service';
-import { UpdatePriceDto, UpdatePricingDto } from './update-price.dto';
+import {
+  ReplaceDealDto,
+  UpdatePriceDto,
+  UpdatePricingDto,
+} from './update-price.dto';
 
 @Controller('mercadolibre')
 export class MercadolibreController {
@@ -115,6 +119,19 @@ export class MercadolibreController {
     @Body() body: UpdatePricingDto,
   ) {
     return this.mercadolibreService.updatePublicationPricing(itemId, body);
+  }
+
+  /** Retira un DEAL y crea un PRICE_DISCOUNT con confirmación explícita. */
+  @Put('publicaciones/:itemId/reemplazar-deal')
+  @UsePipes(
+    new ValidationPipe({
+      transform: true,
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    }),
+  )
+  replaceDeal(@Param('itemId') itemId: string, @Body() body: ReplaceDealDto) {
+    return this.mercadolibreService.replaceDealWithPriceDiscount(itemId, body);
   }
 
   /** Devuelve las condiciones de venta y precios de un User Product. */

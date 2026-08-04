@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  Equals,
   IsBoolean,
   IsDefined,
   IsISO8601,
@@ -45,4 +46,30 @@ export class UpdatePricingDto {
   @IsOptional()
   @IsBoolean()
   confirmPromotionReplace?: boolean;
+}
+
+/** Valida el reemplazo explícito de un DEAL por PRICE_DISCOUNT. */
+export class ReplaceDealDto {
+  @IsDefined()
+  @IsNumber({ allowInfinity: false, allowNaN: false })
+  @IsPositive()
+  listPrice!: number;
+
+  @IsDefined()
+  @IsNumber({ allowInfinity: false, allowNaN: false })
+  @IsPositive()
+  salePrice!: number;
+
+  @IsDefined()
+  @IsISO8601({ strict: true })
+  startDate!: string;
+
+  @IsDefined()
+  @IsISO8601({ strict: true })
+  finishDate!: string;
+
+  @IsDefined()
+  @IsBoolean()
+  @Equals(true)
+  confirmReplaceDeal!: boolean;
 }
