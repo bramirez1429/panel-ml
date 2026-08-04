@@ -14,7 +14,7 @@ import {
   ValidationPipe,
 } from '@nestjs/common';
 import { MercadolibreService } from './mercadolibre.service';
-import { UpdatePriceDto } from './update-price.dto';
+import { UpdatePriceDto, UpdatePricingDto } from './update-price.dto';
 
 @Controller('mercadolibre')
 export class MercadolibreController {
@@ -76,6 +76,12 @@ export class MercadolibreController {
     );
   }
 
+  /** Devuelve las promociones asociadas a una publicación. */
+  @Get('publicaciones/:itemId/promociones')
+  getItemPromotions(@Param('itemId') itemId: string) {
+    return this.mercadolibreService.getItemPromotions(itemId);
+  }
+
   /** Devuelve una publicación completa. */
   @Get('publicaciones/:itemId')
   getPublication(@Param('itemId') itemId: string) {
@@ -93,6 +99,22 @@ export class MercadolibreController {
   )
   updatePrice(@Param('itemId') itemId: string, @Body() body: UpdatePriceDto) {
     return this.mercadolibreService.updatePublicationPrice(itemId, body.price);
+  }
+
+  /** Actualiza el precio standard y un descuento individual. */
+  @Put('publicaciones/:itemId/pricing')
+  @UsePipes(
+    new ValidationPipe({
+      transform: true,
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    }),
+  )
+  updatePricing(
+    @Param('itemId') itemId: string,
+    @Body() body: UpdatePricingDto,
+  ) {
+    return this.mercadolibreService.updatePublicationPricing(itemId, body);
   }
 
   /** Devuelve las condiciones de venta y precios de un User Product. */

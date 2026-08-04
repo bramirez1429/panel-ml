@@ -1,6 +1,7 @@
 import {
   BadGatewayException,
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   HttpException,
   Injectable,
@@ -13,6 +14,7 @@ import {
   MercadoLibreConnection,
   SupabaseService,
 } from '../database/supabase.service';
+import type { UpdatePricingDto } from './update-price.dto';
 
 const AUTHORIZATION_URL = 'https://auth.mercadolibre.com.ar/authorization';
 const API_URL = 'https://api.mercadolibre.com';
@@ -21,11 +23,18 @@ const TIMEOUT = 10_000;
 const MULTIGET_SIZE = 20;
 const MAX_CONCURRENT = 4;
 const INVALID_JSON = Symbol('invalid-json');
+const ACTIVE_PROMOTION_STATUSES = new Set([
+  'started',
+  'active',
+  'pending',
+  'programmed',
+]);
 
 type JsonObject = Record<string, unknown>;
 type RequiredConfigKey =
   'ML_CLIENT_ID' | 'ML_CLIENT_SECRET' | 'ML_REDIRECT_URI' | 'ML_STATE_SECRET';
-type RequestKind = 'tokenExchange' | 'scroll' | 'prices' | 'salePrice';
+type RequestKind =
+  'tokenExchange' | 'scroll' | 'prices' | 'salePrice' | 'promotion';
 type ItemError = { id: string; code: number; body: unknown };
 type BatchResult = {
   publications: JsonObject[];
@@ -55,6 +64,25 @@ interface MercadoLibreSalePriceResponse {
   amount: number;
   regular_amount: number | null;
   currency_id: string;
+}
+
+export interface ItemPromotion {
+  id?: string;
+  type: string;
+  status: string;
+  price?: number;
+  topPrice?: number;
+  originalPrice?: number;
+  startDate?: string;
+  finishDate?: string;
+  name?: string;
+}
+
+interface PriceDiscountRequest {
+  deal_price: number;
+  start_date: string;
+  finish_date: string;
+  promotion_type: 'PRICE_DISCOUNT';
 }
 
 type SalePriceResult = {
@@ -342,6 +370,21 @@ export class MercadolibreService {
     };
   }
 
+  /** Consulta las promociones asociadas a una publicación. */
+  async getItemPromotions(itemId: string) {
+    const id = this.validateMlaItemId(itemId);
+    const accessToken = await this.getValidAccessToken();
+    const promotions = await this.fetchItemPromotions(id, accessToken);
+
+    return {
+      itemId: id,
+      promotions,
+      activePromotion:
+        promotions.find((promotion) => this.isActivePromotion(promotion)) ??
+        null,
+    };
+  }
+
   /** Modifica el precio de una publicación. */
   async updatePublicationPrice(itemId: string, price: number) {
     if (!Number.isFinite(price) || price <= 0) {
@@ -379,6 +422,158 @@ export class MercadolibreService {
           ...result,
           warning: 'El precio standard no coincide con el precio solicitado',
         };
+  }
+
+  /** Actualiza el precio standard y crea o reemplaza PRICE_DISCOUNT. */
+  async updatePublicationPricing(itemId: string, input: UpdatePricingDto) {
+    const id = this.validateMlaItemId(itemId);
+    this.validatePricingInput(input);
+
+    const discountPercentage =
+      ((input.listPrice - input.salePrice) / input.listPrice) * 100;
+    const accessToken = await this.getValidAccessToken();
+    const item = await this.requestJson<unknown>(
+      `${API_URL}/items/${encodeURIComponent(id)}`,
+      { headers: this.auth(accessToken) },
+      'promotion',
+    );
+    if (!isObject(item) || item.id !== id || !isString(item.status)) {
+      throw new BadGatewayException('Respuesta de publicación inválida');
+    }
+    if (item.status !== 'active' && item.status !== 'paused') {
+      throw new BadRequestException(
+        'La publicación debe estar activa o pausada',
+      );
+    }
+
+    const promotions = await this.fetchItemPromotions(id, accessToken);
+    const activePromotions = promotions.filter((promotion) =>
+      this.isActivePromotion(promotion),
+    );
+    const otherPromotion = activePromotions.find(
+      (promotion) => promotion.type !== 'PRICE_DISCOUNT',
+    );
+    if (otherPromotion) {
+      throw new ConflictException({
+        ok: false,
+        message:
+          'La promoción activa no es PRICE_DISCOUNT y requiere un flujo específico',
+        activePromotion: otherPromotion,
+      });
+    }
+
+    const previousPromotion = activePromotions.find(
+      (promotion) => promotion.type === 'PRICE_DISCOUNT',
+    );
+    if (previousPromotion && input.confirmPromotionReplace !== true) {
+      throw new ConflictException({
+        ok: false,
+        requiresConfirmation: true,
+        message: 'Existe un PRICE_DISCOUNT activo y debe reemplazarse',
+        activePromotion: previousPromotion,
+      });
+    }
+
+    await this.requestJson<unknown>(
+      `${API_URL}/items/${encodeURIComponent(id)}`,
+      {
+        method: 'PUT',
+        headers: {
+          ...this.auth(accessToken),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ price: input.listPrice }),
+      },
+      'promotion',
+    );
+
+    const standardPrice = await this.getPrices(id, accessToken, true);
+    if (standardPrice.listPrice !== input.listPrice) {
+      throw new BadGatewayException({
+        message: 'El precio standard no coincide con el precio solicitado',
+        requestedPrice: input.listPrice,
+        listPriceAfterUpdate: standardPrice.listPrice,
+      });
+    }
+
+    const priceDiscount: PriceDiscountRequest = {
+      deal_price: input.salePrice,
+      start_date: input.startDate,
+      finish_date: input.finishDate,
+      promotion_type: 'PRICE_DISCOUNT',
+    };
+
+    let previousPromotionDeleted = false;
+    if (previousPromotion) {
+      const currentPromotions = await this.fetchItemPromotions(id, accessToken);
+      const currentPriceDiscount = currentPromotions.find(
+        (promotion) =>
+          promotion.type === 'PRICE_DISCOUNT' &&
+          this.isActivePromotion(promotion),
+      );
+      if (currentPriceDiscount) {
+        await this.deletePriceDiscount(id, accessToken);
+      }
+      previousPromotionDeleted = true;
+    }
+
+    try {
+      await this.createPriceDiscount(id, accessToken, priceDiscount);
+    } catch (error) {
+      if (!previousPromotionDeleted || !previousPromotion) {
+        throw error;
+      }
+
+      const status = error instanceof HttpException ? error.getStatus() : 502;
+      const response =
+        error instanceof HttpException ? error.getResponse() : undefined;
+      const mercadoLibreError = sanitize(
+        isObject(response)
+          ? response
+          : {
+              message:
+                typeof response === 'string'
+                  ? response
+                  : 'No se pudo conectar con Mercado Libre',
+            },
+      );
+
+      throw new HttpException(
+        {
+          ok: false,
+          listPriceUpdated: true,
+          previousPromotionDeleted: true,
+          newPromotionCreated: false,
+          message:
+            'Se actualizó el precio de lista, pero falló la creación de la nueva promoción',
+          previousPromotion,
+          mercadoLibreError,
+        },
+        status,
+      );
+    }
+
+    const [pricing, finalPromotions] = await Promise.all([
+      this.getPricing(id, accessToken, true),
+      this.fetchItemPromotions(id, accessToken),
+    ]);
+    const finalPromotion = finalPromotions.find(
+      (promotion) =>
+        promotion.type === 'PRICE_DISCOUNT' &&
+        this.isActivePromotion(promotion),
+    );
+
+    return {
+      ok: true,
+      itemId: id,
+      requested: {
+        listPrice: input.listPrice,
+        salePrice: input.salePrice,
+      },
+      discountPercentage,
+      pricing,
+      promotion: finalPromotion ?? null,
+    };
   }
 
   /** Devuelve un User Product con sus condiciones de venta y precios. */
@@ -526,10 +721,193 @@ export class MercadolibreService {
     };
   }
 
+  /** Valida los datos antes de modificar precios o promociones. */
+  private validatePricingInput(input: UpdatePricingDto): void {
+    if (
+      !input ||
+      typeof input.listPrice !== 'number' ||
+      !Number.isFinite(input.listPrice) ||
+      input.listPrice <= 0
+    ) {
+      throw new BadRequestException('listPrice debe ser mayor que cero');
+    }
+    if (
+      typeof input.salePrice !== 'number' ||
+      !Number.isFinite(input.salePrice) ||
+      input.salePrice <= 0
+    ) {
+      throw new BadRequestException('salePrice debe ser mayor que cero');
+    }
+    if (input.salePrice >= input.listPrice) {
+      throw new BadRequestException('salePrice debe ser menor que listPrice');
+    }
+    const discountPercentage =
+      ((input.listPrice - input.salePrice) / input.listPrice) * 100;
+    if (discountPercentage < 5 || discountPercentage >= 80) {
+      throw new BadRequestException(
+        'El descuento debe ser al menos 5% y menor que 80%',
+      );
+    }
+
+    const startTime =
+      typeof input.startDate === 'string'
+        ? Date.parse(input.startDate)
+        : Number.NaN;
+    const finishTime =
+      typeof input.finishDate === 'string'
+        ? Date.parse(input.finishDate)
+        : Number.NaN;
+    if (!Number.isFinite(startTime) || !Number.isFinite(finishTime)) {
+      throw new BadRequestException('startDate y finishDate deben ser válidas');
+    }
+    if (finishTime <= startTime) {
+      throw new BadRequestException(
+        'finishDate debe ser posterior a startDate',
+      );
+    }
+    if (finishTime - startTime > 14 * 24 * 60 * 60 * 1000) {
+      throw new BadRequestException(
+        'PRICE_DISCOUNT no puede durar más de 14 días',
+      );
+    }
+    if (
+      input.confirmPromotionReplace !== undefined &&
+      typeof input.confirmPromotionReplace !== 'boolean'
+    ) {
+      throw new BadRequestException(
+        'confirmPromotionReplace debe ser booleano',
+      );
+    }
+  }
+
+  /** Consulta y normaliza las promociones devueltas por Mercado Libre. */
+  private async fetchItemPromotions(
+    itemId: string,
+    accessToken: string,
+  ): Promise<ItemPromotion[]> {
+    const data = await this.requestJson<unknown>(
+      `${API_URL}/seller-promotions/items/${encodeURIComponent(itemId)}?app_version=v2`,
+      { headers: this.auth(accessToken) },
+      'promotion',
+    );
+    if (!Array.isArray(data)) {
+      throw new BadGatewayException('Respuesta de promociones inválida');
+    }
+
+    return data.map((value) => {
+      if (
+        !isObject(value) ||
+        !isString(value.type) ||
+        !isString(value.status) ||
+        (value.id !== undefined && typeof value.id !== 'string') ||
+        (value.price !== undefined &&
+          (typeof value.price !== 'number' || !Number.isFinite(value.price))) ||
+        (value.top_price !== undefined &&
+          (typeof value.top_price !== 'number' ||
+            !Number.isFinite(value.top_price))) ||
+        (value.original_price !== undefined &&
+          (typeof value.original_price !== 'number' ||
+            !Number.isFinite(value.original_price))) ||
+        (value.start_date !== undefined &&
+          typeof value.start_date !== 'string') ||
+        (value.finish_date !== undefined &&
+          typeof value.finish_date !== 'string') ||
+        (value.name !== undefined && typeof value.name !== 'string')
+      ) {
+        throw new BadGatewayException('Respuesta de promociones inválida');
+      }
+
+      const promotion: ItemPromotion = {
+        type: value.type,
+        status: value.status,
+      };
+      if (typeof value.id === 'string') promotion.id = value.id;
+      if (typeof value.price === 'number') promotion.price = value.price;
+      if (typeof value.top_price === 'number') {
+        promotion.topPrice = value.top_price;
+      }
+      if (typeof value.original_price === 'number') {
+        promotion.originalPrice = value.original_price;
+      }
+      if (typeof value.start_date === 'string') {
+        promotion.startDate = value.start_date;
+      }
+      if (typeof value.finish_date === 'string') {
+        promotion.finishDate = value.finish_date;
+      }
+      if (typeof value.name === 'string') promotion.name = value.name;
+
+      return promotion;
+    });
+  }
+
+  /** Indica si una promoción debe tratarse como activa. */
+  private isActivePromotion(promotion: ItemPromotion): boolean {
+    return ACTIVE_PROMOTION_STATUSES.has(promotion.status.toLowerCase());
+  }
+
+  /** Crea un descuento individual PRICE_DISCOUNT. */
+  private async createPriceDiscount(
+    itemId: string,
+    accessToken: string,
+    body: PriceDiscountRequest,
+  ): Promise<void> {
+    await this.requestJson<unknown>(
+      `${API_URL}/seller-promotions/items/${encodeURIComponent(itemId)}?app_version=v2`,
+      {
+        method: 'POST',
+        headers: {
+          ...this.auth(accessToken),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      },
+      'promotion',
+    );
+  }
+
+  /** Elimina PRICE_DISCOUNT y exige la respuesta HTTP 200 documentada. */
+  private async deletePriceDiscount(
+    itemId: string,
+    accessToken: string,
+  ): Promise<void> {
+    let response: Response;
+    try {
+      response = await fetch(
+        `${API_URL}/seller-promotions/items/${encodeURIComponent(itemId)}?promotion_type=PRICE_DISCOUNT&app_version=v2`,
+        {
+          method: 'DELETE',
+          headers: this.auth(accessToken),
+          signal: AbortSignal.timeout(TIMEOUT),
+        },
+      );
+    } catch {
+      throw new BadGatewayException('No se pudo conectar con Mercado Libre');
+    }
+
+    if (response.status === 200) return;
+    if (response.ok) {
+      throw new BadGatewayException(
+        'Mercado Libre no confirmó la eliminación con HTTP 200',
+      );
+    }
+
+    const data = await readJson(response);
+    this.throwApiError(
+      response.status,
+      'promotion',
+      data === INVALID_JSON ? undefined : data,
+    );
+  }
+
   /** Combina el precio standard y el precio final del comprador. */
-  private async getPricing(itemId: string, accessToken: string) {
-    const standardPrice = await this.getPrices(itemId, accessToken);
-    const salePrice = await this.getSalePrice(itemId, accessToken);
+  private async getPricing(
+    itemId: string,
+    accessToken: string,
+    strict = false,
+  ) {
+    const standardPrice = await this.getPrices(itemId, accessToken, strict);
+    const salePrice = await this.getSalePrice(itemId, accessToken, strict);
     const listPrice = standardPrice.listPrice;
     const finalSalePrice = salePrice.salePrice;
     const priceError = standardPrice.priceError ?? salePrice.priceError;
@@ -551,6 +929,7 @@ export class MercadolibreService {
   private async getPrices(
     itemId: string,
     accessToken: string,
+    strict = false,
   ): Promise<{
     listPrice: number | null;
     currencyId?: string;
@@ -565,7 +944,7 @@ export class MercadolibreService {
             'Content-Type': 'application/json',
           },
         },
-        'prices',
+        strict ? 'promotion' : 'prices',
       );
       if (
         !isObject(data) ||
@@ -602,6 +981,7 @@ export class MercadolibreService {
         currencyId: standardPrice?.currency_id,
       };
     } catch (error) {
+      if (strict) throw error;
       return {
         listPrice: null,
         priceError: this.getPricingError(
@@ -616,12 +996,13 @@ export class MercadolibreService {
   private async getSalePrice(
     itemId: string,
     accessToken: string,
+    strict = false,
   ): Promise<SalePriceResult> {
     try {
       const data = await this.requestJson<unknown>(
         `${API_URL}/items/${encodeURIComponent(itemId)}/sale_price?context=channel_marketplace`,
         { headers: this.auth(accessToken) },
-        'salePrice',
+        strict ? 'promotion' : 'salePrice',
       );
       if (
         !isObject(data) ||
@@ -647,6 +1028,7 @@ export class MercadolibreService {
         currencyId: response.currency_id,
       };
     } catch (error) {
+      if (strict) throw error;
       return {
         salePrice: null,
         promotionRegularPrice: null,
@@ -753,6 +1135,15 @@ export class MercadolibreService {
     return itemId;
   }
 
+  /** Valida un identificador MLA para las rutas de promociones. */
+  private validateMlaItemId(itemId: string): string {
+    const id = typeof itemId === 'string' ? itemId.trim() : '';
+    if (!/^MLA\d+$/.test(id)) {
+      throw new BadRequestException('El itemId debe comenzar con MLA');
+    }
+    return id;
+  }
+
   /** Crea un state aleatorio con una vigencia de diez minutos. */
   private createState(): string {
     const nonce = randomBytes(32).toString('base64url');
@@ -857,6 +1248,16 @@ export class MercadolibreService {
           : 'Mercado Libre no informó el motivo',
         status: 400,
       });
+    }
+    if (kind === 'promotion') {
+      throw new HttpException(
+        isObject(safeData)
+          ? safeData
+          : {
+              message: 'Mercado Libre rechazó la operación de promociones',
+            },
+        status,
+      );
     }
     if (kind === 'prices' || kind === 'salePrice') {
       const message =

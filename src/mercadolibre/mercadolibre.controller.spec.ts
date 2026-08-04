@@ -1,9 +1,13 @@
-import { BadRequestException, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  UnauthorizedException,
+  ValidationPipe,
+} from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { MercadolibreController } from './mercadolibre.controller';
 import { MercadolibreService } from './mercadolibre.service';
-import { UpdatePriceDto } from './update-price.dto';
+import { UpdatePriceDto, UpdatePricingDto } from './update-price.dto';
 
 type ServiceMock = jest.Mocked<
   Pick<
@@ -16,6 +20,8 @@ type ServiceMock = jest.Mocked<
     | 'getPublicationsPage'
     | 'getPublication'
     | 'updatePublicationPrice'
+    | 'getItemPromotions'
+    | 'updatePublicationPricing'
   >
 >;
 
@@ -33,6 +39,8 @@ describe('MercadolibreController', () => {
       getPublicationsPage: jest.fn(),
       getPublication: jest.fn(),
       updatePublicationPrice: jest.fn(),
+      getItemPromotions: jest.fn(),
+      updatePublicationPricing: jest.fn(),
     };
     controller = new MercadolibreController(
       service as unknown as MercadolibreService,
@@ -119,6 +127,73 @@ describe('MercadolibreController', () => {
     expect(service.updatePublicationPrice).toHaveBeenCalledWith('MLA100', 1500);
   });
 
+  it('delegates item promotion requests', async () => {
+    const promotions = {
+      itemId: 'MLA3042295334',
+      promotions: [
+        {
+          id: 'PROMO-1',
+          type: 'PRICE_DISCOUNT',
+          status: 'started',
+          price: 24_750,
+          originalPrice: 27_000,
+        },
+      ],
+      activePromotion: {
+        id: 'PROMO-1',
+        type: 'PRICE_DISCOUNT',
+        status: 'started',
+        price: 24_750,
+        originalPrice: 27_000,
+      },
+    };
+    service.getItemPromotions.mockResolvedValue(promotions);
+
+    await expect(controller.getItemPromotions('MLA3042295334')).resolves.toBe(
+      promotions,
+    );
+    expect(service.getItemPromotions).toHaveBeenCalledWith('MLA3042295334');
+  });
+
+  it('delegates list and promotional price updates', async () => {
+    const body = {
+      listPrice: 40_000,
+      salePrice: 30_000,
+      startDate: '2026-08-04T00:00:00Z',
+      finishDate: '2026-08-17T23:59:59Z',
+      confirmPromotionReplace: true,
+    };
+    const updated = {
+      ok: true as const,
+      itemId: 'MLA3042295334',
+      requested: { listPrice: 40_000, salePrice: 30_000 },
+      discountPercentage: 25,
+      pricing: {
+        listPrice: 40_000,
+        salePrice: 30_000,
+        promotionRegularPrice: 40_000,
+        currencyId: 'ARS',
+        hasPromotion: true,
+      },
+      promotion: {
+        id: 'PROMO-2',
+        type: 'PRICE_DISCOUNT',
+        status: 'started',
+        startDate: body.startDate,
+        finishDate: body.finishDate,
+      },
+    };
+    service.updatePublicationPricing.mockResolvedValue(updated);
+
+    await expect(controller.updatePricing('MLA3042295334', body)).resolves.toBe(
+      updated,
+    );
+    expect(service.updatePublicationPricing).toHaveBeenCalledWith(
+      'MLA3042295334',
+      body,
+    );
+  });
+
   it('validates that the price is a positive number', async () => {
     const valid = plainToInstance(UpdatePriceDto, { price: 1500 });
     const zero = plainToInstance(UpdatePriceDto, { price: 0 });
@@ -127,6 +202,87 @@ describe('MercadolibreController', () => {
     await expect(validate(valid)).resolves.toHaveLength(0);
     await expect(validate(zero)).resolves.not.toHaveLength(0);
     await expect(validate(missing)).resolves.not.toHaveLength(0);
+  });
+
+  it('validates pricing numbers and ISO dates', async () => {
+    const valid = plainToInstance(UpdatePricingDto, {
+      listPrice: 40_000,
+      salePrice: 30_000,
+      startDate: '2026-08-04T00:00:00Z',
+      finishDate: '2026-08-17T23:59:59Z',
+    });
+    const invalidListPrice = plainToInstance(UpdatePricingDto, {
+      ...valid,
+      listPrice: 0,
+    });
+    const invalidSalePrice = plainToInstance(UpdatePricingDto, {
+      ...valid,
+      salePrice: -1,
+    });
+    const invalidDates = plainToInstance(UpdatePricingDto, {
+      ...valid,
+      startDate: 'not-a-date',
+      finishDate: '2026-99-99',
+    });
+
+    await expect(validate(valid)).resolves.toHaveLength(0);
+    await expect(validate(invalidListPrice)).resolves.not.toHaveLength(0);
+    await expect(validate(invalidSalePrice)).resolves.not.toHaveLength(0);
+    await expect(validate(invalidDates)).resolves.not.toHaveLength(0);
+  });
+
+  it('keeps confirmation optional but only accepts a boolean', async () => {
+    const values = {
+      listPrice: 40_000,
+      salePrice: 30_000,
+      startDate: '2026-08-04T00:00:00Z',
+      finishDate: '2026-08-17T23:59:59Z',
+    };
+    const omitted = plainToInstance(UpdatePricingDto, values);
+    const confirmed = plainToInstance(UpdatePricingDto, {
+      ...values,
+      confirmPromotionReplace: true,
+    });
+    const invalid = plainToInstance(UpdatePricingDto, {
+      ...values,
+      confirmPromotionReplace: 'true',
+    });
+
+    await expect(validate(omitted)).resolves.toHaveLength(0);
+    await expect(validate(confirmed)).resolves.toHaveLength(0);
+    await expect(validate(invalid)).resolves.not.toHaveLength(0);
+  });
+
+  it('rejects promotionRegularPrice as an unsupported body field', async () => {
+    const pipe = new ValidationPipe({
+      transform: true,
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    });
+
+    await expect(
+      pipe.transform(
+        {
+          listPrice: 40_000,
+          salePrice: 30_000,
+          startDate: '2026-08-04T00:00:00Z',
+          finishDate: '2026-08-17T23:59:59Z',
+          promotionRegularPrice: 40_000,
+        },
+        { type: 'body', metatype: UpdatePricingDto },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('leaves the sale and list price relation to the service', async () => {
+    const equalPrices = plainToInstance(UpdatePricingDto, {
+      listPrice: 30_000,
+      salePrice: 30_000,
+      startDate: '2026-08-04T00:00:00Z',
+      finishDate: '2026-08-17T23:59:59Z',
+    });
+
+    await expect(validate(equalPrices)).resolves.toHaveLength(0);
   });
 
   it('rejects invalid state, provider errors and a missing code before exchange', async () => {
