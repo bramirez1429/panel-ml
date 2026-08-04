@@ -474,19 +474,6 @@ export class MercadolibreService {
       return this.updateDealPricing(id, input, deal, accessToken);
     }
 
-    const candidateDeal = promotions.find(
-      (promotion) =>
-        promotion.type === 'DEAL' &&
-        promotion.status.toLowerCase() === 'candidate',
-    );
-    if (candidateDeal && activePromotions.length === 0) {
-      throw new ConflictException({
-        ok: false,
-        message: 'La promoción DEAL candidate no puede modificarse',
-        promotion: candidateDeal,
-      });
-    }
-
     const otherPromotion = activePromotions.find(
       (promotion) => promotion.type !== 'PRICE_DISCOUNT',
     );
@@ -1290,7 +1277,7 @@ export class MercadolibreService {
     });
   }
 
-  /** Indica si una promoción debe tratarse como activa. */
+  /** Considera aplicada solo una promoción started, pending, active o programmed. */
   private isActivePromotion(promotion: ItemPromotion): boolean {
     return ACTIVE_PROMOTION_STATUSES.has(promotion.status.toLowerCase());
   }
