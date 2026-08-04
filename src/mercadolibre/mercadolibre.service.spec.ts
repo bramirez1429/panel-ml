@@ -222,6 +222,11 @@ function expectedPromotion(
     status: 'started',
     price: 24_750,
     originalPrice: 27_000,
+    minDiscountedPrice: null,
+    maxDiscountedPrice: null,
+    suggestedDiscountedPrice: null,
+    subType: null,
+    currency: null,
     startDate: '2026-07-01T00:00:00Z',
     finishDate: '2026-08-03T23:59:59Z',
     ...overrides,
@@ -728,7 +733,7 @@ describe('MercadolibreService', () => {
       });
     });
 
-    it('lists item promotions without inventing missing values', async () => {
+    it('returns candidate price limits and null for missing values', async () => {
       jest
         .spyOn(service, 'getValidAccessToken')
         .mockResolvedValue('valid-access-token');
@@ -739,6 +744,12 @@ describe('MercadolibreService', () => {
             type: 'PRICE_DISCOUNT',
             status: 'candidate',
             price: 0,
+            original_price: 50_000,
+            min_discounted_price: 15_000,
+            max_discounted_price: 28_000,
+            suggested_discounted_price: 25_000,
+            sub_type: 'INDIVIDUAL',
+            currency: 'ARS',
           },
           activePromotion,
         ]),
@@ -751,6 +762,12 @@ describe('MercadolibreService', () => {
             type: 'PRICE_DISCOUNT',
             status: 'candidate',
             price: 0,
+            originalPrice: 50_000,
+            minDiscountedPrice: 15_000,
+            maxDiscountedPrice: 28_000,
+            suggestedDiscountedPrice: 25_000,
+            subType: 'INDIVIDUAL',
+            currency: 'ARS',
           },
           {
             ...expectedPromotion(),

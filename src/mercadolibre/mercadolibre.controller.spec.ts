@@ -148,6 +148,11 @@ describe('MercadolibreController', () => {
           status: 'started',
           price: 24_750,
           originalPrice: 27_000,
+          minDiscountedPrice: null,
+          maxDiscountedPrice: null,
+          suggestedDiscountedPrice: null,
+          subType: null,
+          currency: null,
         },
       ],
       activePromotion: {
@@ -156,6 +161,11 @@ describe('MercadolibreController', () => {
         status: 'started',
         price: 24_750,
         originalPrice: 27_000,
+        minDiscountedPrice: null,
+        maxDiscountedPrice: null,
+        suggestedDiscountedPrice: null,
+        subType: null,
+        currency: null,
       },
     };
     service.getItemPromotions.mockResolvedValue(promotions);

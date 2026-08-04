@@ -77,6 +77,11 @@ export interface ItemPromotion {
   price?: number;
   topPrice?: number;
   originalPrice?: number;
+  minDiscountedPrice: number | null;
+  maxDiscountedPrice: number | null;
+  suggestedDiscountedPrice: number | null;
+  subType: string | null;
+  currency: string | null;
   startDate?: string;
   finishDate?: string;
   name?: string;
@@ -1360,6 +1365,24 @@ export class MercadolibreService {
         (value.original_price !== undefined &&
           (typeof value.original_price !== 'number' ||
             !Number.isFinite(value.original_price))) ||
+        (value.min_discounted_price !== undefined &&
+          value.min_discounted_price !== null &&
+          (typeof value.min_discounted_price !== 'number' ||
+            !Number.isFinite(value.min_discounted_price))) ||
+        (value.max_discounted_price !== undefined &&
+          value.max_discounted_price !== null &&
+          (typeof value.max_discounted_price !== 'number' ||
+            !Number.isFinite(value.max_discounted_price))) ||
+        (value.suggested_discounted_price !== undefined &&
+          value.suggested_discounted_price !== null &&
+          (typeof value.suggested_discounted_price !== 'number' ||
+            !Number.isFinite(value.suggested_discounted_price))) ||
+        (value.sub_type !== undefined &&
+          value.sub_type !== null &&
+          typeof value.sub_type !== 'string') ||
+        (value.currency !== undefined &&
+          value.currency !== null &&
+          typeof value.currency !== 'string') ||
         (value.start_date !== undefined &&
           typeof value.start_date !== 'string') ||
         (value.finish_date !== undefined &&
@@ -1372,6 +1395,20 @@ export class MercadolibreService {
       const promotion: ItemPromotion = {
         type: value.type,
         status: value.status,
+        minDiscountedPrice:
+          typeof value.min_discounted_price === 'number'
+            ? value.min_discounted_price
+            : null,
+        maxDiscountedPrice:
+          typeof value.max_discounted_price === 'number'
+            ? value.max_discounted_price
+            : null,
+        suggestedDiscountedPrice:
+          typeof value.suggested_discounted_price === 'number'
+            ? value.suggested_discounted_price
+            : null,
+        subType: typeof value.sub_type === 'string' ? value.sub_type : null,
+        currency: typeof value.currency === 'string' ? value.currency : null,
       };
       if (typeof value.id === 'string') promotion.id = value.id;
       if (typeof value.price === 'number') promotion.price = value.price;
