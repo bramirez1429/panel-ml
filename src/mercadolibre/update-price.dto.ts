@@ -17,7 +17,7 @@ export class UpdatePriceDto {
   price!: number;
 }
 
-/** Valida los precios y fechas de un descuento individual. */
+/** Valida los precios de lista y promoción de una publicación. */
 export class UpdatePricingDto {
   @IsDefined()
   @IsNumber({ allowInfinity: false, allowNaN: false })
@@ -29,13 +29,18 @@ export class UpdatePricingDto {
   @IsPositive()
   salePrice!: number;
 
-  @IsDefined()
+  @IsOptional()
   @IsISO8601({ strict: true })
-  startDate!: string;
+  startDate?: string;
 
-  @IsDefined()
+  @IsOptional()
   @IsISO8601({ strict: true })
-  finishDate!: string;
+  finishDate?: string;
+
+  @IsOptional()
+  @IsNumber({ allowInfinity: false, allowNaN: false })
+  @IsPositive()
+  topDealPrice?: number;
 
   @IsOptional()
   @IsBoolean()

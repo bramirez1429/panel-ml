@@ -205,6 +205,10 @@ describe('MercadolibreController', () => {
   });
 
   it('validates pricing numbers and ISO dates', async () => {
+    const dealWithoutDates = plainToInstance(UpdatePricingDto, {
+      listPrice: 40_000,
+      salePrice: 30_000,
+    });
     const valid = plainToInstance(UpdatePricingDto, {
       listPrice: 40_000,
       salePrice: 30_000,
@@ -225,10 +229,41 @@ describe('MercadolibreController', () => {
       finishDate: '2026-99-99',
     });
 
+    await expect(validate(dealWithoutDates)).resolves.toHaveLength(0);
     await expect(validate(valid)).resolves.toHaveLength(0);
     await expect(validate(invalidListPrice)).resolves.not.toHaveLength(0);
     await expect(validate(invalidSalePrice)).resolves.not.toHaveLength(0);
     await expect(validate(invalidDates)).resolves.not.toHaveLength(0);
+  });
+
+  it('keeps topDealPrice optional and validates a positive number', async () => {
+    const values = {
+      listPrice: 40_000,
+      salePrice: 30_000,
+    };
+    const omitted = plainToInstance(UpdatePricingDto, values);
+    const valid = plainToInstance(UpdatePricingDto, {
+      ...values,
+      topDealPrice: 25_000,
+    });
+    const zero = plainToInstance(UpdatePricingDto, {
+      ...values,
+      topDealPrice: 0,
+    });
+    const negative = plainToInstance(UpdatePricingDto, {
+      ...values,
+      topDealPrice: -1,
+    });
+    const notNumeric = plainToInstance(UpdatePricingDto, {
+      ...values,
+      topDealPrice: '25000',
+    });
+
+    await expect(validate(omitted)).resolves.toHaveLength(0);
+    await expect(validate(valid)).resolves.toHaveLength(0);
+    await expect(validate(zero)).resolves.not.toHaveLength(0);
+    await expect(validate(negative)).resolves.not.toHaveLength(0);
+    await expect(validate(notNumeric)).resolves.not.toHaveLength(0);
   });
 
   it('keeps confirmation optional but only accepts a boolean', async () => {

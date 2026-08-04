@@ -101,7 +101,7 @@ export class MercadolibreController {
     return this.mercadolibreService.updatePublicationPrice(itemId, body.price);
   }
 
-  /** Actualiza el precio standard y un descuento individual. */
+  /** Actualiza el precio standard y la promoción compatible. */
   @Put('publicaciones/:itemId/pricing')
   @UsePipes(
     new ValidationPipe({

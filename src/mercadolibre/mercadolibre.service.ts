@@ -85,6 +85,13 @@ interface PriceDiscountRequest {
   promotion_type: 'PRICE_DISCOUNT';
 }
 
+interface DealUpdateRequest {
+  deal_price: number;
+  promotion_id: string;
+  promotion_type: 'DEAL';
+  top_deal_price?: number;
+}
+
 type SalePriceResult = {
   salePrice: number | null;
   promotionRegularPrice: number | null;
@@ -424,13 +431,11 @@ export class MercadolibreService {
         };
   }
 
-  /** Actualiza el precio standard y crea o reemplaza PRICE_DISCOUNT. */
+  /** Actualiza el precio standard y la promoción compatible. */
   async updatePublicationPricing(itemId: string, input: UpdatePricingDto) {
     const id = this.validateMlaItemId(itemId);
     this.validatePricingInput(input);
 
-    const discountPercentage =
-      ((input.listPrice - input.salePrice) / input.listPrice) * 100;
     const accessToken = await this.getValidAccessToken();
     const item = await this.requestJson<unknown>(
       `${API_URL}/items/${encodeURIComponent(id)}`,
@@ -450,6 +455,38 @@ export class MercadolibreService {
     const activePromotions = promotions.filter((promotion) =>
       this.isActivePromotion(promotion),
     );
+    const editableDeals = promotions.filter((promotion) =>
+      this.isEditableDeal(promotion),
+    );
+    if (editableDeals.length > 0) {
+      const deal = editableDeals[0];
+      if (
+        editableDeals.length > 1 ||
+        activePromotions.some((promotion) => promotion !== deal)
+      ) {
+        throw new ConflictException({
+          ok: false,
+          message:
+            'Hay más de una promoción activa y se requiere un flujo específico',
+          activePromotions,
+        });
+      }
+      return this.updateDealPricing(id, input, deal, accessToken);
+    }
+
+    const candidateDeal = promotions.find(
+      (promotion) =>
+        promotion.type === 'DEAL' &&
+        promotion.status.toLowerCase() === 'candidate',
+    );
+    if (candidateDeal && activePromotions.length === 0) {
+      throw new ConflictException({
+        ok: false,
+        message: 'La promoción DEAL candidate no puede modificarse',
+        promotion: candidateDeal,
+      });
+    }
+
     const otherPromotion = activePromotions.find(
       (promotion) => promotion.type !== 'PRICE_DISCOUNT',
     );
@@ -465,6 +502,7 @@ export class MercadolibreService {
     const previousPromotion = activePromotions.find(
       (promotion) => promotion.type === 'PRICE_DISCOUNT',
     );
+    const priceDiscountInput = this.validatePriceDiscountInput(input);
     if (previousPromotion && input.confirmPromotionReplace !== true) {
       throw new ConflictException({
         ok: false,
@@ -498,8 +536,8 @@ export class MercadolibreService {
 
     const priceDiscount: PriceDiscountRequest = {
       deal_price: input.salePrice,
-      start_date: input.startDate,
-      finish_date: input.finishDate,
+      start_date: priceDiscountInput.startDate,
+      finish_date: priceDiscountInput.finishDate,
       promotion_type: 'PRICE_DISCOUNT',
     };
 
@@ -570,7 +608,7 @@ export class MercadolibreService {
         listPrice: input.listPrice,
         salePrice: input.salePrice,
       },
-      discountPercentage,
+      discountPercentage: priceDiscountInput.discountPercentage,
       pricing,
       promotion: finalPromotion ?? null,
     };
@@ -721,6 +759,146 @@ export class MercadolibreService {
     };
   }
 
+  /** Modifica directamente una promoción DEAL sin eliminarla. */
+  private async updateDealPricing(
+    itemId: string,
+    input: UpdatePricingDto,
+    deal: ItemPromotion,
+    accessToken: string,
+  ) {
+    if (!isString(deal.id)) {
+      throw new BadGatewayException(
+        'Mercado Libre no informó el id de la promoción DEAL',
+      );
+    }
+    if (input.topDealPrice !== undefined && deal.topPrice === undefined) {
+      throw new BadRequestException(
+        'topDealPrice solo puede modificarse si DEAL ya tiene top_deal_price',
+      );
+    }
+
+    await this.ensureStandardPrice(itemId, input.listPrice, accessToken);
+
+    const body: DealUpdateRequest = {
+      deal_price: input.salePrice,
+      promotion_id: deal.id,
+      promotion_type: 'DEAL',
+    };
+    if (input.topDealPrice !== undefined && deal.topPrice !== undefined) {
+      body.top_deal_price = input.topDealPrice;
+    }
+
+    const updateResult = await this.requestJson<unknown>(
+      `${API_URL}/seller-promotions/items/${encodeURIComponent(itemId)}?app_version=v2`,
+      {
+        method: 'PUT',
+        headers: {
+          ...this.auth(accessToken),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      },
+      'promotion',
+    );
+    if (
+      !isObject(updateResult) ||
+      typeof updateResult.price !== 'number' ||
+      !Number.isFinite(updateResult.price)
+    ) {
+      throw new BadGatewayException(
+        'Mercado Libre devolvió una respuesta inválida al modificar el DEAL',
+      );
+    }
+    if (updateResult.price !== input.salePrice) {
+      throw new BadGatewayException({
+        message: 'Mercado Libre no confirmó el nuevo precio del DEAL',
+        requestedSalePrice: input.salePrice,
+        confirmedSalePrice: updateResult.price,
+      });
+    }
+    const confirmedTopPrice =
+      typeof updateResult.top_price === 'number'
+        ? updateResult.top_price
+        : typeof updateResult.top_deal_price === 'number'
+          ? updateResult.top_deal_price
+          : undefined;
+    if (
+      input.topDealPrice !== undefined &&
+      confirmedTopPrice !== input.topDealPrice
+    ) {
+      throw new BadGatewayException({
+        message: 'Mercado Libre no confirmó el nuevo topDealPrice del DEAL',
+        requestedTopDealPrice: input.topDealPrice,
+        confirmedTopDealPrice: confirmedTopPrice ?? null,
+      });
+    }
+
+    const [pricing, finalPromotions] = await Promise.all([
+      this.getPricing(itemId, accessToken, true),
+      this.fetchItemPromotions(itemId, accessToken),
+    ]);
+    const finalDeal = finalPromotions.find(
+      (promotion) => promotion.id === deal.id && this.isEditableDeal(promotion),
+    );
+    if (!finalDeal) {
+      throw new BadGatewayException({
+        message: 'Mercado Libre no devolvió el DEAL después de modificarlo',
+        promotionId: deal.id,
+      });
+    }
+    if (pricing.listPrice !== input.listPrice) {
+      throw new BadGatewayException({
+        message: 'El precio standard no coincide con el precio solicitado',
+        requestedPrice: input.listPrice,
+        listPriceAfterUpdate: pricing.listPrice,
+      });
+    }
+
+    return {
+      ok: true,
+      itemId,
+      promotion: {
+        id: finalDeal.id,
+        type: finalDeal.type,
+        status: finalDeal.status,
+        ...(finalDeal.name !== undefined ? { name: finalDeal.name } : {}),
+      },
+      pricing,
+    };
+  }
+
+  /** Actualiza el precio standard solamente cuando todavía es distinto. */
+  private async ensureStandardPrice(
+    itemId: string,
+    listPrice: number,
+    accessToken: string,
+  ): Promise<void> {
+    const currentPrice = await this.getPrices(itemId, accessToken, true);
+    if (currentPrice.listPrice === listPrice) return;
+
+    await this.requestJson<unknown>(
+      `${API_URL}/items/${encodeURIComponent(itemId)}`,
+      {
+        method: 'PUT',
+        headers: {
+          ...this.auth(accessToken),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ price: listPrice }),
+      },
+      'promotion',
+    );
+
+    const updatedPrice = await this.getPrices(itemId, accessToken, true);
+    if (updatedPrice.listPrice !== listPrice) {
+      throw new BadGatewayException({
+        message: 'El precio standard no coincide con el precio solicitado',
+        requestedPrice: listPrice,
+        listPriceAfterUpdate: updatedPrice.listPrice,
+      });
+    }
+  }
+
   /** Valida los datos antes de modificar precios o promociones. */
   private validatePricingInput(input: UpdatePricingDto): void {
     if (
@@ -741,6 +919,41 @@ export class MercadolibreService {
     if (input.salePrice >= input.listPrice) {
       throw new BadRequestException('salePrice debe ser menor que listPrice');
     }
+    if (
+      input.topDealPrice !== undefined &&
+      (typeof input.topDealPrice !== 'number' ||
+        !Number.isFinite(input.topDealPrice) ||
+        input.topDealPrice <= 0)
+    ) {
+      throw new BadRequestException('topDealPrice debe ser mayor que cero');
+    }
+    if (
+      input.confirmPromotionReplace !== undefined &&
+      typeof input.confirmPromotionReplace !== 'boolean'
+    ) {
+      throw new BadRequestException(
+        'confirmPromotionReplace debe ser booleano',
+      );
+    }
+  }
+
+  /** Valida los datos exclusivos de un descuento PRICE_DISCOUNT. */
+  private validatePriceDiscountInput(input: UpdatePricingDto): {
+    startDate: string;
+    finishDate: string;
+    discountPercentage: number;
+  } {
+    if (input.topDealPrice !== undefined) {
+      throw new BadRequestException(
+        'topDealPrice solo aplica a promociones DEAL',
+      );
+    }
+    if (!isString(input.startDate) || !isString(input.finishDate)) {
+      throw new BadRequestException(
+        'startDate y finishDate son obligatorias para PRICE_DISCOUNT',
+      );
+    }
+
     const discountPercentage =
       ((input.listPrice - input.salePrice) / input.listPrice) * 100;
     if (discountPercentage < 5 || discountPercentage >= 80) {
@@ -749,14 +962,8 @@ export class MercadolibreService {
       );
     }
 
-    const startTime =
-      typeof input.startDate === 'string'
-        ? Date.parse(input.startDate)
-        : Number.NaN;
-    const finishTime =
-      typeof input.finishDate === 'string'
-        ? Date.parse(input.finishDate)
-        : Number.NaN;
+    const startTime = Date.parse(input.startDate);
+    const finishTime = Date.parse(input.finishDate);
     if (!Number.isFinite(startTime) || !Number.isFinite(finishTime)) {
       throw new BadRequestException('startDate y finishDate deben ser válidas');
     }
@@ -770,14 +977,11 @@ export class MercadolibreService {
         'PRICE_DISCOUNT no puede durar más de 14 días',
       );
     }
-    if (
-      input.confirmPromotionReplace !== undefined &&
-      typeof input.confirmPromotionReplace !== 'boolean'
-    ) {
-      throw new BadRequestException(
-        'confirmPromotionReplace debe ser booleano',
-      );
-    }
+    return {
+      startDate: input.startDate,
+      finishDate: input.finishDate,
+      discountPercentage,
+    };
   }
 
   /** Consulta y normaliza las promociones devueltas por Mercado Libre. */
@@ -802,6 +1006,9 @@ export class MercadolibreService {
         (value.id !== undefined && typeof value.id !== 'string') ||
         (value.price !== undefined &&
           (typeof value.price !== 'number' || !Number.isFinite(value.price))) ||
+        (value.top_deal_price !== undefined &&
+          (typeof value.top_deal_price !== 'number' ||
+            !Number.isFinite(value.top_deal_price))) ||
         (value.top_price !== undefined &&
           (typeof value.top_price !== 'number' ||
             !Number.isFinite(value.top_price))) ||
@@ -823,7 +1030,9 @@ export class MercadolibreService {
       };
       if (typeof value.id === 'string') promotion.id = value.id;
       if (typeof value.price === 'number') promotion.price = value.price;
-      if (typeof value.top_price === 'number') {
+      if (typeof value.top_deal_price === 'number') {
+        promotion.topPrice = value.top_deal_price;
+      } else if (typeof value.top_price === 'number') {
         promotion.topPrice = value.top_price;
       }
       if (typeof value.original_price === 'number') {
@@ -844,6 +1053,15 @@ export class MercadolibreService {
   /** Indica si una promoción debe tratarse como activa. */
   private isActivePromotion(promotion: ItemPromotion): boolean {
     return ACTIVE_PROMOTION_STATUSES.has(promotion.status.toLowerCase());
+  }
+
+  /** Indica si un DEAL puede modificarse con el PUT de promociones. */
+  private isEditableDeal(promotion: ItemPromotion): boolean {
+    const status = promotion.status.toLowerCase();
+    return (
+      promotion.type === 'DEAL' &&
+      (status === 'pending' || status === 'started')
+    );
   }
 
   /** Crea un descuento individual PRICE_DISCOUNT. */

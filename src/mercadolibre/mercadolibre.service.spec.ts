@@ -44,6 +44,13 @@ function formBody(init?: RequestInit): URLSearchParams {
   throw new Error('Expected a URL-encoded request body');
 }
 
+function jsonBody(init?: RequestInit): unknown {
+  if (typeof init?.body !== 'string') {
+    throw new Error('Expected a JSON request body');
+  }
+  return JSON.parse(init.body) as unknown;
+}
+
 function detailIds(input: string | URL | Request): string[] {
   return (
     new URL(requestUrl(input)).searchParams
@@ -163,6 +170,13 @@ function pricingInput(confirmPromotionReplace = true) {
   };
 }
 
+function dealPricingInput() {
+  return {
+    listPrice: 40_000,
+    salePrice: 30_000,
+  };
+}
+
 function promotionResponse(
   type = 'PRICE_DISCOUNT',
   overrides: Record<string, unknown> = {},
@@ -194,6 +208,17 @@ function expectedPromotion(
     finishDate: '2026-08-03T23:59:59Z',
     ...overrides,
   };
+}
+
+function dealPromotionResponse(overrides: Record<string, unknown> = {}) {
+  return promotionResponse('DEAL', {
+    id: 'P-MLA17845002',
+    status: 'pending',
+    price: 24_750,
+    original_price: 40_000,
+    name: 'DIA DEL NINO 2026',
+    ...overrides,
+  });
 }
 
 describe('MercadolibreService', () => {
@@ -750,8 +775,15 @@ describe('MercadolibreService', () => {
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
-    it('rejects unsupported discount ranges and durations before any request', async () => {
-      const getValidAccessToken = jest.spyOn(service, 'getValidAccessToken');
+    it('rejects unsupported PRICE_DISCOUNT data before any write', async () => {
+      const getValidAccessToken = jest
+        .spyOn(service, 'getValidAccessToken')
+        .mockResolvedValue('valid-access-token');
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse(pricedItem()))
+        .mockResolvedValueOnce(jsonResponse([]))
+        .mockResolvedValueOnce(jsonResponse(pricedItem()))
+        .mockResolvedValueOnce(jsonResponse([]));
 
       await expect(
         service.updatePublicationPricing(PRICED_ITEM_ID, {
@@ -766,8 +798,13 @@ describe('MercadolibreService', () => {
         }),
       ).rejects.toBeInstanceOf(HttpException);
 
-      expect(getValidAccessToken).not.toHaveBeenCalled();
-      expect(fetchMock).not.toHaveBeenCalled();
+      expect(getValidAccessToken).toHaveBeenCalledTimes(2);
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+      expect(
+        fetchMock.mock.calls.every(([, init]) =>
+          init?.method === undefined ? true : init.method === 'GET',
+        ),
+      ).toBe(true);
     });
 
     it('requires confirmation before replacing an active PRICE_DISCOUNT', async () => {
@@ -816,14 +853,14 @@ describe('MercadolibreService', () => {
       ]);
     });
 
-    it('does not modify or delete an active promotion of another type', async () => {
+    it('does not modify or delete an unsupported active promotion', async () => {
       jest
         .spyOn(service, 'getValidAccessToken')
         .mockResolvedValue('valid-access-token');
-      const dealPromotion = promotionResponse('DEAL');
+      const smartPromotion = promotionResponse('SMART');
       fetchMock
         .mockResolvedValueOnce(jsonResponse(pricedItem()))
-        .mockResolvedValueOnce(jsonResponse([dealPromotion]));
+        .mockResolvedValueOnce(jsonResponse([smartPromotion]));
 
       let error: unknown;
       try {
@@ -841,7 +878,7 @@ describe('MercadolibreService', () => {
         ok: false,
         message:
           'La promoción activa no es PRICE_DISCOUNT y requiere un flujo específico',
-        activePromotion: expectedPromotion('DEAL'),
+        activePromotion: expectedPromotion('SMART'),
       });
       expect(fetchMock).toHaveBeenCalledTimes(2);
       expect(
@@ -853,6 +890,371 @@ describe('MercadolibreService', () => {
         ),
       ).toBe(false);
     });
+
+    it('updates a pending DEAL without rewriting an unchanged list price', async () => {
+      jest
+        .spyOn(service, 'getValidAccessToken')
+        .mockResolvedValue('valid-access-token');
+      const pendingDeal = dealPromotionResponse();
+      const updatedDeal = dealPromotionResponse({ price: 0 });
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse(pricedItem()))
+        .mockResolvedValueOnce(jsonResponse([pendingDeal]))
+        .mockResolvedValueOnce(jsonResponse(pricesResponse()))
+        .mockResolvedValueOnce(
+          jsonResponse({ price: 30_000, original_price: 40_000 }),
+        )
+        .mockResolvedValueOnce(jsonResponse(pricesResponse()))
+        .mockResolvedValueOnce(jsonResponse([updatedDeal]))
+        .mockResolvedValueOnce(jsonResponse(finalSalePriceResponse()));
+
+      await expect(
+        service.updatePublicationPricing(PRICED_ITEM_ID, dealPricingInput()),
+      ).resolves.toMatchObject({
+        ok: true,
+        itemId: PRICED_ITEM_ID,
+        promotion: {
+          id: 'P-MLA17845002',
+          type: 'DEAL',
+          status: 'pending',
+          name: 'DIA DEL NINO 2026',
+        },
+        pricing: {
+          listPrice: 40_000,
+          salePrice: 30_000,
+          promotionRegularPrice: 40_000,
+          currencyId: 'ARS',
+          hasPromotion: true,
+        },
+      });
+
+      const calls = fetchMock.mock.calls.map(([input, init]) => ({
+        method: init?.method ?? 'GET',
+        url: requestUrl(input),
+      }));
+      expect(calls).toEqual([
+        {
+          method: 'GET',
+          url: `https://api.mercadolibre.com/items/${PRICED_ITEM_ID}`,
+        },
+        {
+          method: 'GET',
+          url: `https://api.mercadolibre.com/seller-promotions/items/${PRICED_ITEM_ID}?app_version=v2`,
+        },
+        {
+          method: 'GET',
+          url: `https://api.mercadolibre.com/items/${PRICED_ITEM_ID}/prices`,
+        },
+        {
+          method: 'PUT',
+          url: `https://api.mercadolibre.com/seller-promotions/items/${PRICED_ITEM_ID}?app_version=v2`,
+        },
+        {
+          method: 'GET',
+          url: `https://api.mercadolibre.com/items/${PRICED_ITEM_ID}/prices`,
+        },
+        {
+          method: 'GET',
+          url: `https://api.mercadolibre.com/seller-promotions/items/${PRICED_ITEM_ID}?app_version=v2`,
+        },
+        {
+          method: 'GET',
+          url: `https://api.mercadolibre.com/items/${PRICED_ITEM_ID}/sale_price?context=channel_marketplace`,
+        },
+      ]);
+      expect(
+        calls.filter(
+          (call) =>
+            call.method === 'PUT' &&
+            call.url === `https://api.mercadolibre.com/items/${PRICED_ITEM_ID}`,
+        ),
+      ).toHaveLength(0);
+      const [, dealPutInit] = fetchMock.mock.calls[3];
+      expect(jsonBody(dealPutInit)).toEqual({
+        deal_price: 30_000,
+        promotion_id: 'P-MLA17845002',
+        promotion_type: 'DEAL',
+      });
+      expect(jsonBody(dealPutInit)).not.toHaveProperty('top_deal_price');
+      expect(new Headers(dealPutInit?.headers).get('content-type')).toBe(
+        'application/json',
+      );
+      expect(new Headers(dealPutInit?.headers).get('authorization')).toBe(
+        'Bearer valid-access-token',
+      );
+    });
+
+    it('sends top_deal_price only when an editable DEAL already has it', async () => {
+      jest
+        .spyOn(service, 'getValidAccessToken')
+        .mockResolvedValue('valid-access-token');
+      const startedDeal = dealPromotionResponse({
+        status: 'started',
+        top_deal_price: 23_000,
+      });
+      const updatedDeal = dealPromotionResponse({
+        status: 'started',
+        price: 30_000,
+        top_deal_price: 25_000,
+      });
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse(pricedItem()))
+        .mockResolvedValueOnce(jsonResponse([startedDeal]))
+        .mockResolvedValueOnce(jsonResponse(pricesResponse()))
+        .mockResolvedValueOnce(
+          jsonResponse({
+            price: 30_000,
+            top_price: 25_000,
+            original_price: 40_000,
+          }),
+        )
+        .mockResolvedValueOnce(jsonResponse(pricesResponse()))
+        .mockResolvedValueOnce(jsonResponse([updatedDeal]))
+        .mockResolvedValueOnce(jsonResponse(finalSalePriceResponse()));
+
+      await expect(
+        service.updatePublicationPricing(PRICED_ITEM_ID, {
+          ...dealPricingInput(),
+          topDealPrice: 25_000,
+        }),
+      ).resolves.toMatchObject({
+        ok: true,
+        promotion: {
+          id: 'P-MLA17845002',
+          type: 'DEAL',
+          status: 'started',
+        },
+      });
+
+      expect(jsonBody(fetchMock.mock.calls[3][1])).toEqual({
+        deal_price: 30_000,
+        promotion_id: 'P-MLA17845002',
+        promotion_type: 'DEAL',
+        top_deal_price: 25_000,
+      });
+    });
+
+    it('rejects a DEAL response that does not confirm topDealPrice', async () => {
+      jest
+        .spyOn(service, 'getValidAccessToken')
+        .mockResolvedValue('valid-access-token');
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse(pricedItem()))
+        .mockResolvedValueOnce(
+          jsonResponse([
+            dealPromotionResponse({
+              status: 'started',
+              top_deal_price: 23_000,
+            }),
+          ]),
+        )
+        .mockResolvedValueOnce(jsonResponse(pricesResponse()))
+        .mockResolvedValueOnce(
+          jsonResponse({
+            price: 30_000,
+            top_price: 24_999,
+            original_price: 40_000,
+          }),
+        );
+
+      await expect(
+        service.updatePublicationPricing(PRICED_ITEM_ID, {
+          ...dealPricingInput(),
+          topDealPrice: 25_000,
+        }),
+      ).rejects.toMatchObject({ status: 502 });
+
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+    });
+
+    it('updates and verifies the list price before updating a pending DEAL', async () => {
+      jest
+        .spyOn(service, 'getValidAccessToken')
+        .mockResolvedValue('valid-access-token');
+      const pendingDeal = dealPromotionResponse();
+      const updatedDeal = dealPromotionResponse({ price: 30_000 });
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse(pricedItem()))
+        .mockResolvedValueOnce(jsonResponse([pendingDeal]))
+        .mockResolvedValueOnce(jsonResponse(pricesResponse(35_000)))
+        .mockResolvedValueOnce(jsonResponse({ id: PRICED_ITEM_ID }))
+        .mockResolvedValueOnce(jsonResponse(pricesResponse()))
+        .mockResolvedValueOnce(
+          jsonResponse({ price: 30_000, original_price: 40_000 }),
+        )
+        .mockResolvedValueOnce(jsonResponse(pricesResponse()))
+        .mockResolvedValueOnce(jsonResponse([updatedDeal]))
+        .mockResolvedValueOnce(jsonResponse(finalSalePriceResponse()));
+
+      await expect(
+        service.updatePublicationPricing(PRICED_ITEM_ID, dealPricingInput()),
+      ).resolves.toMatchObject({
+        ok: true,
+        promotion: {
+          id: 'P-MLA17845002',
+          type: 'DEAL',
+          status: 'pending',
+        },
+      });
+
+      const calls = fetchMock.mock.calls.map(([input, init]) => ({
+        method: init?.method ?? 'GET',
+        url: requestUrl(input),
+      }));
+      expect(calls.map(({ method }) => method)).toEqual([
+        'GET',
+        'GET',
+        'GET',
+        'PUT',
+        'GET',
+        'PUT',
+        'GET',
+        'GET',
+        'GET',
+      ]);
+      expect(calls[3].url).toBe(
+        `https://api.mercadolibre.com/items/${PRICED_ITEM_ID}`,
+      );
+      expect(fetchMock.mock.calls[3][1]?.body).toBe(
+        JSON.stringify({ price: 40_000 }),
+      );
+      expect(calls[4].url).toBe(
+        `https://api.mercadolibre.com/items/${PRICED_ITEM_ID}/prices`,
+      );
+      expect(calls[5].url).toBe(
+        `https://api.mercadolibre.com/seller-promotions/items/${PRICED_ITEM_ID}?app_version=v2`,
+      );
+      expect(jsonBody(fetchMock.mock.calls[5][1])).toEqual({
+        deal_price: 30_000,
+        promotion_id: 'P-MLA17845002',
+        promotion_type: 'DEAL',
+      });
+      expect(
+        calls.some(({ method }) => method === 'DELETE' || method === 'POST'),
+      ).toBe(false);
+    });
+
+    it('does not mutate a candidate DEAL', async () => {
+      jest
+        .spyOn(service, 'getValidAccessToken')
+        .mockResolvedValue('valid-access-token');
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse(pricedItem()))
+        .mockResolvedValueOnce(
+          jsonResponse([dealPromotionResponse({ status: 'candidate' })]),
+        );
+
+      let error: unknown;
+      try {
+        await service.updatePublicationPricing(
+          PRICED_ITEM_ID,
+          dealPricingInput(),
+        );
+      } catch (caught) {
+        error = caught;
+      }
+
+      expect(error).toBeInstanceOf(HttpException);
+      expect((error as HttpException).getStatus()).toBe(409);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(
+        fetchMock.mock.calls.some(
+          ([input, init]) =>
+            (init?.method !== undefined && init.method !== 'GET') ||
+            requestUrl(input).endsWith('/prices'),
+        ),
+      ).toBe(false);
+    });
+
+    it('rejects a pending DEAL without a promotion id', async () => {
+      jest
+        .spyOn(service, 'getValidAccessToken')
+        .mockResolvedValue('valid-access-token');
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse(pricedItem()))
+        .mockResolvedValueOnce(
+          jsonResponse([dealPromotionResponse({ id: undefined })]),
+        );
+
+      let error: unknown;
+      try {
+        await service.updatePublicationPricing(
+          PRICED_ITEM_ID,
+          dealPricingInput(),
+        );
+      } catch (caught) {
+        error = caught;
+      }
+
+      expect(error).toBeInstanceOf(HttpException);
+      expect((error as HttpException).getStatus()).toBe(502);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(
+        fetchMock.mock.calls.some(([, init]) =>
+          ['PUT', 'POST', 'DELETE'].includes(init?.method ?? ''),
+        ),
+      ).toBe(false);
+    });
+
+    it.each([400, 403, 409])(
+      'preserves a DEAL PUT error with upstream status %i',
+      async (status) => {
+        jest
+          .spyOn(service, 'getValidAccessToken')
+          .mockResolvedValue('valid-access-token');
+        const upstreamError = {
+          key: 'deal_price_not_allowed',
+          message: 'The discounted price is not credible',
+          cause: [
+            {
+              error_code: 'ERROR_CREDIBILITY_DISCOUNTED_PRICE',
+              error_message: 'The discounted price is not credible',
+            },
+          ],
+          error:
+            status === 400
+              ? 'bad_request'
+              : status === 403
+                ? 'forbidden'
+                : 'conflict',
+          status,
+          access_token: 'must-not-leak',
+          Authorization: 'Bearer must-not-leak',
+        };
+        fetchMock
+          .mockResolvedValueOnce(jsonResponse(pricedItem()))
+          .mockResolvedValueOnce(jsonResponse([dealPromotionResponse()]))
+          .mockResolvedValueOnce(jsonResponse(pricesResponse()))
+          .mockResolvedValueOnce(jsonResponse(upstreamError, status));
+
+        let error: unknown;
+        try {
+          await service.updatePublicationPricing(
+            PRICED_ITEM_ID,
+            dealPricingInput(),
+          );
+        } catch (caught) {
+          error = caught;
+        }
+
+        expect(error).toBeInstanceOf(HttpException);
+        expect((error as HttpException).getStatus()).toBe(status);
+        const response = (error as HttpException).getResponse();
+        expect(response).toMatchObject({
+          key: upstreamError.key,
+          message: upstreamError.message,
+          cause: upstreamError.cause,
+          error: upstreamError.error,
+          status,
+        });
+        expect(JSON.stringify(response)).not.toContain('must-not-leak');
+        expect(fetchMock).toHaveBeenCalledTimes(4);
+        expect(fetchMock.mock.calls[3][1]?.method).toBe('PUT');
+        expect(requestUrl(fetchMock.mock.calls[3][0])).toBe(
+          `https://api.mercadolibre.com/seller-promotions/items/${PRICED_ITEM_ID}?app_version=v2`,
+        );
+      },
+    );
 
     it('creates a PRICE_DISCOUNT when there is no active promotion', async () => {
       jest
