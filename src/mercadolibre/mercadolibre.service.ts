@@ -14,7 +14,11 @@ import {
   MercadoLibreConnection,
   SupabaseService,
 } from '../database/supabase.service';
-import type { ReplaceDealDto, UpdatePricingDto } from './update-price.dto';
+import type {
+  CreatePriceDiscountDto,
+  ReplaceDealDto,
+  UpdatePricingDto,
+} from './update-price.dto';
 
 const AUTHORIZATION_URL = 'https://auth.mercadolibre.com.ar/authorization';
 const API_URL = 'https://api.mercadolibre.com';
@@ -389,6 +393,80 @@ export class MercadolibreService {
       activePromotion:
         promotions.find((promotion) => this.isActivePromotion(promotion)) ??
         null,
+    };
+  }
+
+  /** Crea únicamente un PRICE_DISCOUNT sin modificar el precio de lista. */
+  async createPublicationPriceDiscount(
+    itemId: string,
+    input: CreatePriceDiscountDto,
+  ) {
+    const id = this.validateMlaItemId(itemId);
+    const priceDiscount = this.validateStandalonePriceDiscount(input);
+    const accessToken = await this.getValidAccessToken();
+
+    const item = await this.requestJson<unknown>(
+      `${API_URL}/items/${encodeURIComponent(id)}`,
+      { headers: this.auth(accessToken) },
+      'promotion',
+    );
+    if (!isObject(item) || item.id !== id || !isString(item.status)) {
+      throw new BadGatewayException('Respuesta de publicación inválida');
+    }
+    if (item.status !== 'active' && item.status !== 'paused') {
+      throw new BadRequestException(
+        'La publicación debe estar activa o pausada',
+      );
+    }
+
+    const standardPrice = await this.getPrices(id, accessToken, true);
+    if (standardPrice.listPrice === null) {
+      throw new BadGatewayException(
+        'Mercado Libre no informó el precio standard',
+      );
+    }
+
+    const promotions = await this.fetchItemPromotions(id, accessToken);
+    const appliedPromotion = promotions.find((promotion) =>
+      this.isActivePromotion(promotion),
+    );
+    if (appliedPromotion) {
+      throw new ConflictException({
+        ok: false,
+        message: 'La publicación ya tiene una promoción aplicada',
+        activePromotion: appliedPromotion,
+      });
+    }
+
+    await this.createPriceDiscount(id, accessToken, priceDiscount);
+
+    const pricing = await this.getPricing(id, accessToken, true);
+    if (pricing.listPrice === null) {
+      throw new BadGatewayException(
+        'Mercado Libre no informó el precio standard después de crear la promoción',
+      );
+    }
+
+    const finalPromotions = await this.fetchItemPromotions(id, accessToken);
+    const promotion = finalPromotions.find(
+      (currentPromotion) =>
+        currentPromotion.type === 'PRICE_DISCOUNT' &&
+        this.isActivePromotion(currentPromotion),
+    );
+    if (!promotion) {
+      throw new BadGatewayException(
+        'Mercado Libre no devolvió el PRICE_DISCOUNT creado',
+      );
+    }
+
+    return {
+      ok: true,
+      itemId: id,
+      pricing,
+      promotion: {
+        type: promotion.type,
+        status: promotion.status,
+      },
     };
   }
 
@@ -1162,6 +1240,46 @@ export class MercadolibreService {
         'confirmPromotionReplace debe ser booleano',
       );
     }
+  }
+
+  /** Valida el precio y las fechas del nuevo PRICE_DISCOUNT. */
+  private validateStandalonePriceDiscount(
+    input: CreatePriceDiscountDto,
+  ): PriceDiscountRequest {
+    if (
+      !input ||
+      typeof input.salePrice !== 'number' ||
+      !Number.isFinite(input.salePrice) ||
+      input.salePrice <= 0
+    ) {
+      throw new BadRequestException('salePrice debe ser mayor que cero');
+    }
+    if (!isString(input.startDate) || !isString(input.finishDate)) {
+      throw new BadRequestException('startDate y finishDate son obligatorias');
+    }
+
+    const startTime = Date.parse(input.startDate);
+    const finishTime = Date.parse(input.finishDate);
+    if (!Number.isFinite(startTime) || !Number.isFinite(finishTime)) {
+      throw new BadRequestException('startDate y finishDate deben ser válidas');
+    }
+    if (finishTime <= startTime) {
+      throw new BadRequestException(
+        'finishDate debe ser posterior a startDate',
+      );
+    }
+    if (finishTime - startTime > 14 * 24 * 60 * 60 * 1000) {
+      throw new BadRequestException(
+        'PRICE_DISCOUNT no puede durar más de 14 días',
+      );
+    }
+
+    return {
+      deal_price: input.salePrice,
+      start_date: input.startDate,
+      finish_date: input.finishDate,
+      promotion_type: 'PRICE_DISCOUNT',
+    };
   }
 
   /** Valida los datos exclusivos de un descuento PRICE_DISCOUNT. */

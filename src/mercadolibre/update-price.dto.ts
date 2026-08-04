@@ -17,6 +17,22 @@ export class UpdatePriceDto {
   price!: number;
 }
 
+/** Valida la creación de un PRICE_DISCOUNT sin cambiar el precio de lista. */
+export class CreatePriceDiscountDto {
+  @IsDefined()
+  @IsNumber({ allowInfinity: false, allowNaN: false })
+  @IsPositive()
+  salePrice!: number;
+
+  @IsDefined()
+  @IsISO8601({ strict: true })
+  startDate!: string;
+
+  @IsDefined()
+  @IsISO8601({ strict: true })
+  finishDate!: string;
+}
+
 /** Valida los precios de lista y promoción de una publicación. */
 export class UpdatePricingDto {
   @IsDefined()

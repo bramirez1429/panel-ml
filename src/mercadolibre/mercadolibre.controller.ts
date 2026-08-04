@@ -15,6 +15,7 @@ import {
 } from '@nestjs/common';
 import { MercadolibreService } from './mercadolibre.service';
 import {
+  CreatePriceDiscountDto,
   ReplaceDealDto,
   UpdatePriceDto,
   UpdatePricingDto,
@@ -119,6 +120,25 @@ export class MercadolibreController {
     @Body() body: UpdatePricingDto,
   ) {
     return this.mercadolibreService.updatePublicationPricing(itemId, body);
+  }
+
+  /** Crea un PRICE_DISCOUNT sin modificar el precio de lista. */
+  @Post('publicaciones/:itemId/price-discount')
+  @UsePipes(
+    new ValidationPipe({
+      transform: true,
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    }),
+  )
+  createPriceDiscount(
+    @Param('itemId') itemId: string,
+    @Body() body: CreatePriceDiscountDto,
+  ) {
+    return this.mercadolibreService.createPublicationPriceDiscount(
+      itemId,
+      body,
+    );
   }
 
   /** Retira un DEAL y crea un PRICE_DISCOUNT con confirmación explícita. */

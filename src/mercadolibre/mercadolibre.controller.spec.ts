@@ -8,6 +8,7 @@ import { validate } from 'class-validator';
 import { MercadolibreController } from './mercadolibre.controller';
 import { MercadolibreService } from './mercadolibre.service';
 import {
+  CreatePriceDiscountDto,
   ReplaceDealDto,
   UpdatePriceDto,
   UpdatePricingDto,
@@ -27,6 +28,7 @@ type ServiceMock = jest.Mocked<
     | 'getItemPromotions'
     | 'getUserProductPrices'
     | 'updatePublicationPricing'
+    | 'createPublicationPriceDiscount'
     | 'replaceDealWithPriceDiscount'
   >
 >;
@@ -48,6 +50,7 @@ describe('MercadolibreController', () => {
       getItemPromotions: jest.fn(),
       getUserProductPrices: jest.fn(),
       updatePublicationPricing: jest.fn(),
+      createPublicationPriceDiscount: jest.fn(),
       replaceDealWithPriceDiscount: jest.fn(),
     };
     controller = new MercadolibreController(
@@ -221,6 +224,39 @@ describe('MercadolibreController', () => {
     );
   });
 
+  it('delegates PRICE_DISCOUNT creation without a list price', async () => {
+    const body = {
+      salePrice: 30_000,
+      startDate: '2026-08-04T00:00:00',
+      finishDate: '2026-08-17T23:59:59',
+    };
+    const created = {
+      ok: true as const,
+      itemId: 'MLA3042295334',
+      pricing: {
+        listPrice: 100_000,
+        salePrice: 30_000,
+        promotionRegularPrice: 100_000,
+        currencyId: 'ARS',
+        hasPromotion: true,
+      },
+      promotion: {
+        type: 'PRICE_DISCOUNT',
+        status: 'started',
+      },
+    };
+    service.createPublicationPriceDiscount.mockResolvedValue(created);
+
+    await expect(
+      controller.createPriceDiscount('MLA3042295334', body),
+    ).resolves.toBe(created);
+    expect(service.createPublicationPriceDiscount).toHaveBeenCalledWith(
+      'MLA3042295334',
+      body,
+    );
+    expect(service.updatePublicationPricing).not.toHaveBeenCalled();
+  });
+
   it('delegates DEAL preview with confirmReplaceDeal false', async () => {
     const body = {
       listPrice: 40_000,
@@ -254,6 +290,31 @@ describe('MercadolibreController', () => {
     await expect(validate(valid)).resolves.toHaveLength(0);
     await expect(validate(zero)).resolves.not.toHaveLength(0);
     await expect(validate(missing)).resolves.not.toHaveLength(0);
+  });
+
+  it('validates the PRICE_DISCOUNT price and required ISO dates', async () => {
+    const valid = plainToInstance(CreatePriceDiscountDto, {
+      salePrice: 30_000,
+      startDate: '2026-08-04T00:00:00',
+      finishDate: '2026-08-17T23:59:59',
+    });
+    const invalidPrice = plainToInstance(CreatePriceDiscountDto, {
+      ...valid,
+      salePrice: 0,
+    });
+    const invalidDates = plainToInstance(CreatePriceDiscountDto, {
+      ...valid,
+      startDate: 'not-a-date',
+      finishDate: '2026-99-99',
+    });
+    const missingDates = plainToInstance(CreatePriceDiscountDto, {
+      salePrice: 30_000,
+    });
+
+    await expect(validate(valid)).resolves.toHaveLength(0);
+    await expect(validate(invalidPrice)).resolves.not.toHaveLength(0);
+    await expect(validate(invalidDates)).resolves.not.toHaveLength(0);
+    await expect(validate(missingDates)).resolves.not.toHaveLength(0);
   });
 
   it('validates pricing numbers and ISO dates', async () => {

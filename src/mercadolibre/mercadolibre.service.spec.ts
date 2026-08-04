@@ -187,6 +187,14 @@ function replaceDealInput(confirmReplaceDeal = true) {
   };
 }
 
+function priceDiscountInput() {
+  return {
+    salePrice: 30_000,
+    startDate: '2026-08-04T00:00:00',
+    finishDate: '2026-08-17T23:59:59',
+  };
+}
+
 function promotionResponse(
   type = 'PRICE_DISCOUNT',
   overrides: Record<string, unknown> = {},
@@ -2021,6 +2029,207 @@ describe('MercadolibreService', () => {
           message: 'Item has an active price automation',
         },
       });
+    });
+
+    it('ignores candidate promotions when creating PRICE_DISCOUNT', async () => {
+      jest
+        .spyOn(service, 'getValidAccessToken')
+        .mockResolvedValue('valid-access-token');
+      const candidates = [
+        dealPromotionResponse({ status: 'candidate' }),
+        promotionResponse('SELLER_CAMPAIGN', {
+          id: 'SELLER-CAMPAIGN-CANDIDATE',
+          status: 'candidate',
+        }),
+        promotionResponse('PRICE_DISCOUNT', {
+          id: 'PRICE-DISCOUNT-CANDIDATE',
+          status: 'candidate',
+        }),
+      ];
+      const newPromotion = promotionResponse('PRICE_DISCOUNT', {
+        id: 'PRICE-DISCOUNT-NEW',
+        status: 'started',
+        price: 30_000,
+        original_price: 50_000,
+        start_date: priceDiscountInput().startDate,
+        finish_date: priceDiscountInput().finishDate,
+      });
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse(pricedItem()))
+        .mockResolvedValueOnce(jsonResponse(pricesResponse(50_000)))
+        .mockResolvedValueOnce(jsonResponse(candidates))
+        .mockResolvedValueOnce(
+          jsonResponse({ price: 30_000, original_price: 50_000 }),
+        )
+        .mockResolvedValueOnce(jsonResponse(pricesResponse(50_000)))
+        .mockResolvedValueOnce(
+          jsonResponse({
+            amount: 30_000,
+            regular_amount: 50_000,
+            currency_id: 'ARS',
+          }),
+        )
+        .mockResolvedValueOnce(jsonResponse([...candidates, newPromotion]));
+
+      await expect(
+        service.createPublicationPriceDiscount(
+          PRICED_ITEM_ID,
+          priceDiscountInput(),
+        ),
+      ).resolves.toMatchObject({
+        ok: true,
+        itemId: PRICED_ITEM_ID,
+        promotion: { type: 'PRICE_DISCOUNT', status: 'started' },
+      });
+
+      expect(
+        fetchMock.mock.calls.map(([, init]) => init?.method ?? 'GET'),
+      ).toEqual(['GET', 'GET', 'GET', 'POST', 'GET', 'GET', 'GET']);
+      expect(
+        fetchMock.mock.calls.some(([, init]) =>
+          ['PUT', 'DELETE'].includes(init?.method ?? ''),
+        ),
+      ).toBe(false);
+    });
+
+    it.each(['started', 'pending', 'active', 'programmed'])(
+      'rejects PRICE_DISCOUNT creation when a promotion is %s',
+      async (status) => {
+        jest
+          .spyOn(service, 'getValidAccessToken')
+          .mockResolvedValue('valid-access-token');
+        fetchMock
+          .mockResolvedValueOnce(jsonResponse(pricedItem()))
+          .mockResolvedValueOnce(jsonResponse(pricesResponse(50_000)))
+          .mockResolvedValueOnce(
+            jsonResponse([promotionResponse('SELLER_CAMPAIGN', { status })]),
+          );
+
+        let error: unknown;
+        try {
+          await service.createPublicationPriceDiscount(
+            PRICED_ITEM_ID,
+            priceDiscountInput(),
+          );
+        } catch (caught) {
+          error = caught;
+        }
+
+        expect(error).toBeInstanceOf(HttpException);
+        expect((error as HttpException).getStatus()).toBe(409);
+        expect(fetchMock).toHaveBeenCalledTimes(3);
+        expect(
+          fetchMock.mock.calls.map(([, init]) => init?.method ?? 'GET'),
+        ).toEqual(['GET', 'GET', 'GET']);
+      },
+    );
+
+    it('creates PRICE_DISCOUNT without changing the list price', async () => {
+      jest
+        .spyOn(service, 'getValidAccessToken')
+        .mockResolvedValue('valid-access-token');
+      const input = priceDiscountInput();
+      const newPromotion = promotionResponse('PRICE_DISCOUNT', {
+        id: 'PRICE-DISCOUNT-NEW',
+        status: 'started',
+        price: input.salePrice,
+        original_price: 50_000,
+        start_date: input.startDate,
+        finish_date: input.finishDate,
+      });
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse(pricedItem()))
+        .mockResolvedValueOnce(jsonResponse(pricesResponse(50_000)))
+        .mockResolvedValueOnce(jsonResponse([]))
+        .mockResolvedValueOnce(
+          jsonResponse({ price: input.salePrice, original_price: 50_000 }),
+        )
+        .mockResolvedValueOnce(jsonResponse(pricesResponse(50_000)))
+        .mockResolvedValueOnce(
+          jsonResponse({
+            amount: input.salePrice,
+            regular_amount: 50_000,
+            currency_id: 'ARS',
+          }),
+        )
+        .mockResolvedValueOnce(jsonResponse([newPromotion]));
+
+      await expect(
+        service.createPublicationPriceDiscount(PRICED_ITEM_ID, input),
+      ).resolves.toMatchObject({
+        ok: true,
+        itemId: PRICED_ITEM_ID,
+        pricing: {
+          listPrice: 50_000,
+          salePrice: 30_000,
+          promotionRegularPrice: 50_000,
+          currencyId: 'ARS',
+          hasPromotion: true,
+        },
+        promotion: {
+          type: 'PRICE_DISCOUNT',
+          status: 'started',
+        },
+      });
+
+      expect(
+        fetchMock.mock.calls.map(([, init]) => init?.method ?? 'GET'),
+      ).toEqual(['GET', 'GET', 'GET', 'POST', 'GET', 'GET', 'GET']);
+      expect(jsonBody(fetchMock.mock.calls[3][1])).toEqual({
+        deal_price: 30_000,
+        start_date: input.startDate,
+        finish_date: input.finishDate,
+        promotion_type: 'PRICE_DISCOUNT',
+      });
+      expect(
+        fetchMock.mock.calls.some(([, init]) =>
+          ['PUT', 'DELETE'].includes(init?.method ?? ''),
+        ),
+      ).toBe(false);
+    });
+
+    it('preserves and sanitizes a PRICE_DISCOUNT creation error', async () => {
+      jest
+        .spyOn(service, 'getValidAccessToken')
+        .mockResolvedValue('valid-access-token');
+      const upstreamError = {
+        message: 'The PRICE_DISCOUNT cannot be created',
+        error: 'forbidden',
+        cause: [{ code: 'invalid_deal_price', message: 'Invalid deal price' }],
+        status: 403,
+        access_token: 'must-not-leak',
+        Authorization: 'Bearer must-not-leak',
+      };
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse(pricedItem()))
+        .mockResolvedValueOnce(jsonResponse(pricesResponse(50_000)))
+        .mockResolvedValueOnce(jsonResponse([]))
+        .mockResolvedValueOnce(jsonResponse(upstreamError, 403));
+
+      let error: unknown;
+      try {
+        await service.createPublicationPriceDiscount(
+          PRICED_ITEM_ID,
+          priceDiscountInput(),
+        );
+      } catch (caught) {
+        error = caught;
+      }
+
+      expect(error).toBeInstanceOf(HttpException);
+      expect((error as HttpException).getStatus()).toBe(403);
+      const response = (error as HttpException).getResponse();
+      expect(response).toMatchObject({
+        message: upstreamError.message,
+        error: upstreamError.error,
+        cause: upstreamError.cause,
+        status: upstreamError.status,
+      });
+      expect(JSON.stringify(response)).not.toContain('must-not-leak');
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+      expect(
+        fetchMock.mock.calls.map(([, init]) => init?.method ?? 'GET'),
+      ).toEqual(['GET', 'GET', 'GET', 'POST']);
     });
   });
 });
