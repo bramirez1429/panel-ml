@@ -289,65 +289,160 @@ export class MercadolibreService {
   }
 
   /** Devuelve una página de publicaciones y el scroll para continuar. */
-  async getPublicationsPage(limit = 50, scrollId?: string) {
-    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
-      throw new BadRequestException('limit debe ser un entero entre 1 y 100');
-    }
-
-    const connection = await this.getStoredConnection();
-    const accessToken = await this.getValidAccessToken();
-    const query = new URLSearchParams({
-      search_type: 'scan',
-      limit: String(limit),
-    });
-    if (scrollId) query.set('scroll_id', scrollId);
-
-    const data = await this.requestJson<unknown>(
-      `${API_URL}/users/${connection.seller_id}/items/search?${query}`,
-      { headers: this.auth(accessToken) },
-      scrollId ? 'scroll' : undefined,
+ async getPublicationsPage(limit = 50, scrollId?: string) {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+    throw new BadRequestException(
+      'limit debe ser un entero entre 1 y 100',
     );
-    const page = data === null ? { results: null } : data;
-    if (!isObject(page)) {
-      throw new BadGatewayException('Respuesta de publicaciones inválida');
-    }
-
-    const results = page.results === null ? [] : page.results;
-    if (!Array.isArray(results) || results.some((id) => !isString(id))) {
-      throw new BadGatewayException('IDs de publicaciones inválidos');
-    }
-
-    const reportedTotal = isObject(page.paging) ? page.paging.total : null;
-    const total = isNonNegativeInteger(reportedTotal) ? reportedTotal : null;
-
-    const ids = [...new Set(results as string[])];
-    const activeScrollId =
-      scrollId ?? (isString(page.scroll_id) ? page.scroll_id : undefined);
-    if (ids.length > 0 && !activeScrollId) {
-      throw new BadGatewayException('Mercado Libre no devolvió scroll_id');
-    }
-
-    const batches = chunk(ids, MULTIGET_SIZE);
-    const details: BatchResult[] = [];
-    for (let index = 0; index < batches.length; index += MAX_CONCURRENT) {
-      const group = batches.slice(index, index + MAX_CONCURRENT);
-      details.push(
-        ...(await Promise.all(
-          group.map((batch) => this.fetchBatch(batch, accessToken)),
-        )),
-      );
-    }
-
-    const finished = ids.length === 0;
-    return {
-      total,
-      count: ids.length,
-      nextScrollId: finished ? null : activeScrollId,
-      finished,
-      publications: details.flatMap((result) => result.publications),
-      errors: details.flatMap((result) => result.errors),
-    };
   }
+
+  const connection = await this.getStoredConnection();
+  const accessToken = await this.getValidAccessToken();
+
+  const query = new URLSearchParams({
+    search_type: 'scan',
+    limit: String(limit),
+  });
+
+  if (scrollId) {
+    query.set('scroll_id', scrollId);
+  }
+
+  const data = await this.requestJson<unknown>(
+    `${API_URL}/users/${connection.seller_id}/items/search?${query}`,
+    {
+      headers: this.auth(accessToken),
+    },
+    scrollId ? 'scroll' : undefined,
+  );
+
+  const page = data === null ? { results: null } : data;
+
+  if (!isObject(page)) {
+    throw new BadGatewayException(
+      'Respuesta de publicaciones inválida',
+    );
+  }
+
+  const results =
+    page.results === null
+      ? []
+      : page.results;
+
+  if (
+    !Array.isArray(results) ||
+    results.some((id) => !isString(id))
+  ) {
+    throw new BadGatewayException(
+      'IDs de publicaciones inválidos',
+    );
+  }
+
+  const reportedTotal = isObject(page.paging)
+    ? page.paging.total
+    : null;
+
+  const total = isNonNegativeInteger(reportedTotal)
+    ? reportedTotal
+    : null;
+
+  const ids = [
+    ...new Set(results as string[]),
+  ];
+
+  const activeScrollId =
+    scrollId ??
+    (isString(page.scroll_id)
+      ? page.scroll_id
+      : undefined);
+
+  if (ids.length > 0 && !activeScrollId) {
+    throw new BadGatewayException(
+      'Mercado Libre no devolvió scroll_id',
+    );
+  }
+
+  const batches = chunk(
+    ids,
+    MULTIGET_SIZE,
+  );
+
+  const details: BatchResult[] = [];
+
+  for (
+    let index = 0;
+    index < batches.length;
+    index += MAX_CONCURRENT
+  ) {
+    const group = batches.slice(
+      index,
+      index + MAX_CONCURRENT,
+    );
+
+    details.push(
+      ...(await Promise.all(
+        group.map((batch) =>
+          this.fetchBatch(
+            batch,
+            accessToken,
+          ),
+        ),
+      )),
+    );
+  }
+
+  /*
+   * Unimos las publicaciones de todos los batches.
+   */
+  const publications = details.flatMap(
+    (result) => result.publications,
+  );
+
+  /*
+   * Ordenamos por última actualización.
+   * Las más recientes aparecen primero.
+   */
+  const getLastUpdatedTime = (
+    publication: unknown,
+  ): number => {
+    if (!isObject(publication)) {
+      return 0;
+    }
+
+    if (!isString(publication.last_updated)) {
+      return 0;
+    }
+
+    const timestamp = Date.parse(
+      publication.last_updated,
+    );
+
+    return Number.isNaN(timestamp)
+      ? 0
+      : timestamp;
+  };
+
+  publications.sort(
+    (a, b) =>
+      getLastUpdatedTime(b) -
+      getLastUpdatedTime(a),
+  );
+
+  const finished = ids.length === 0;
+
+  return {
+    total,
+    count: ids.length,
+    nextScrollId: finished
+      ? null
+      : activeScrollId,
+    finished,
+    publications,
+    errors: details.flatMap(
+      (result) => result.errors,
+    ),
+  };
+}
 
   /** Consulta una publicación usando un access token vigente. */
   async getPublication(itemId: string) {
