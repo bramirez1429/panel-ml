@@ -45,12 +45,40 @@ type BatchResult = {
   errors: ItemError[];
 };
 
-type PublicationGroup = {
+type UserProductMetadata = {
   id: string;
-  userProductId: string | null;
-  familyName: string | null;
+  familyId: string | null;
+  name: string | null;
+  attributes: unknown[];
+  pictures: unknown[];
+};
+
+type UserProductGroup = {
+  id: string;
+  name: string | null;
+  attributes: unknown[];
+  pictures: unknown[];
   publications: JsonObject[];
 };
+
+type FamilyPublicationGroup = {
+  model: 'USER_PRODUCT';
+  id: string;
+  familyId: string | null;
+  familyName: string | null;
+  userProducts: UserProductGroup[];
+};
+
+type LegacyPublicationGroup = {
+  model: 'LEGACY';
+  id: string;
+  itemId: string;
+  title: string | null;
+  variations: unknown[];
+  publication: JsonObject;
+};
+
+type PublicationGroup = FamilyPublicationGroup | LegacyPublicationGroup;
 type MultigetEntry = { code?: unknown; body?: unknown };
 type MercadoLibreTokens = {
   access_token: string;
@@ -329,9 +357,13 @@ export class MercadolibreService {
     const publications = details.flatMap((result) => result.publications);
     const errors = details.flatMap((result) => result.errors);
 
-    // Agrupamos por user_product_id. Si un ítem viejo no tiene MLAU,
-    // queda como una cabeza independiente usando su propio MLA.
-    const groups = this.groupPublications(publications);
+    // Agrupamos soportando los dos modelos de Mercado Libre:
+    // FAMILY -> MLAU -> MLA y LEGACY -> variations[].
+    // También detectamos publicaciones migradas donde el MLAU vive en variations[].
+    const groups = await this.buildPublicationGroups(
+      publications,
+      accessToken,
+    );
 
     // Recién después de agrupar aplicamos la paginación de la tabla.
     const offset = (page - 1) * limit;
@@ -412,43 +444,224 @@ export class MercadolibreService {
     return [...ids];
   }
 
-  /** Agrupa los MLA bajo su User Product (MLAU). */
-  private groupPublications(publications: JsonObject[]): PublicationGroup[] {
-    const groups = new Map<string, PublicationGroup>();
+  /**
+   * Agrupa publicaciones para el frontend.
+   *
+   * Modelo nuevo directo:
+   * FAMILY -> MLAU -> MLA
+   *
+   * Modelo migrado/híbrido:
+   * MLA -> variations[] -> MLAU -> FAMILY
+   *
+   * Modelo legacy real:
+   * MLA -> variations[] sin MLAU
+   */
+  private async buildPublicationGroups(
+    publications: JsonObject[],
+    accessToken: string,
+  ): Promise<PublicationGroup[]> {
+    const userProductIds = new Set<string>();
+
+    // Los MLAU pueden venir en la raíz del MLA o dentro de variations[].
+    for (const publication of publications) {
+      if (isString(publication.user_product_id)) {
+        userProductIds.add(publication.user_product_id);
+      }
+
+      if (Array.isArray(publication.variations)) {
+        for (const variation of publication.variations) {
+          if (isObject(variation) && isString(variation.user_product_id)) {
+            userProductIds.add(variation.user_product_id);
+          }
+        }
+      }
+    }
+
+    // Consultamos cada MLAU para conocer su family_id.
+    const metadata = new Map<string, UserProductMetadata>();
+    const ids = [...userProductIds];
+
+    for (let index = 0; index < ids.length; index += MAX_CONCURRENT) {
+      const currentIds = ids.slice(index, index + MAX_CONCURRENT);
+
+      const currentMetadata = await Promise.all(
+        currentIds.map(async (userProductId) => {
+          try {
+            return await this.getUserProductMetadata(
+              userProductId,
+              accessToken,
+            );
+          } catch {
+            // Si un MLAU viejo no responde, no tiramos abajo toda la página.
+            return {
+              id: userProductId,
+              familyId: null,
+              name: null,
+              attributes: [],
+              pictures: [],
+            } satisfies UserProductMetadata;
+          }
+        }),
+      );
+
+      for (const userProduct of currentMetadata) {
+        metadata.set(userProduct.id, userProduct);
+      }
+    }
+
+    const families = new Map<string, FamilyPublicationGroup>();
+    const legacyGroups: LegacyPublicationGroup[] = [];
+
+    const addUserProductToFamily = (
+      userProductId: string,
+      publication: JsonObject,
+      variation?: JsonObject,
+    ): void => {
+      const userProduct = metadata.get(userProductId);
+      const familyId = userProduct?.familyId ?? null;
+
+      // family_id manda. Si no existe, usamos el MLAU como fallback.
+      const familyKey = familyId
+        ? `family:${familyId}`
+        : `user-product:${userProductId}`;
+
+      let family = families.get(familyKey);
+
+      if (!family) {
+        family = {
+          model: 'USER_PRODUCT',
+          id: familyKey,
+          familyId,
+          familyName: isString(publication.family_name)
+            ? publication.family_name
+            : userProduct?.name ??
+              (isString(publication.title) ? publication.title : null),
+          userProducts: [],
+        };
+
+        families.set(familyKey, family);
+      }
+
+      let child = family.userProducts.find(
+        (current) => current.id === userProductId,
+      );
+
+      if (!child) {
+        child = {
+          id: userProductId,
+          name: userProduct?.name ?? null,
+          attributes: userProduct?.attributes ?? [],
+          pictures: userProduct?.pictures ?? [],
+          publications: [],
+        };
+        family.userProducts.push(child);
+      }
+
+      // En el modelo migrado guardamos el MLA padre + la variación concreta.
+      if (variation) {
+        child.publications.push({
+          id: publication.id,
+          title: publication.title,
+          status: publication.status,
+          price: publication.price,
+          base_price: publication.base_price,
+          original_price: publication.original_price,
+          currency_id: publication.currency_id,
+          permalink: publication.permalink,
+          thumbnail: publication.thumbnail,
+          listing_type_id: publication.listing_type_id,
+          variation: sanitize(variation),
+        });
+        return;
+      }
+
+      // Modelo nuevo directo: conservamos el MLA completo.
+      child.publications.push(publication);
+    };
 
     for (const publication of publications) {
       const itemId = isString(publication.id) ? publication.id : null;
-      if (!itemId) {
+      if (!itemId) continue;
+
+      // CASO 1: MLA con user_product_id directo.
+      if (isString(publication.user_product_id)) {
+        addUserProductToFamily(
+          publication.user_product_id,
+          publication,
+        );
         continue;
       }
 
-      const userProductId = isString(publication.user_product_id)
-        ? publication.user_product_id
-        : null;
-      const familyName = isString(publication.family_name)
-        ? publication.family_name
-        : null;
+      // CASO 2: MLA migrado. El MLAU vive dentro de variations[].
+      const migratedVariations = Array.isArray(publication.variations)
+        ? publication.variations.filter(
+            (variation): variation is JsonObject =>
+              isObject(variation) && isString(variation.user_product_id),
+          )
+        : [];
 
-      const groupId = userProductId ?? itemId;
-      const existing = groups.get(groupId);
+      if (migratedVariations.length > 0) {
+        for (const variation of migratedVariations) {
+          const userProductId = variation.user_product_id;
+          if (!isString(userProductId)) continue;
 
-      if (existing) {
-        existing.publications.push(publication);
-        if (!existing.familyName && familyName) {
-          existing.familyName = familyName;
+          addUserProductToFamily(
+            userProductId,
+            publication,
+            variation,
+          );
         }
         continue;
       }
 
-      groups.set(groupId, {
-        id: groupId,
-        userProductId,
-        familyName,
-        publications: [publication],
+      // CASO 3: legacy verdadero. No tiene MLAU en ningún nivel.
+      legacyGroups.push({
+        model: 'LEGACY',
+        id: itemId,
+        itemId,
+        title: isString(publication.title) ? publication.title : null,
+        variations: Array.isArray(publication.variations)
+          ? sanitize(publication.variations)
+          : [],
+        publication,
       });
     }
 
-    return [...groups.values()];
+    return [...families.values(), ...legacyGroups];
+  }
+
+  /** Obtiene family_id y metadata básica de un MLAU. */
+  private async getUserProductMetadata(
+    userProductId: string,
+    accessToken: string,
+  ): Promise<UserProductMetadata> {
+    const data = await this.requestJson<unknown>(
+      `${API_URL}/user-products/${encodeURIComponent(userProductId)}`,
+      { headers: this.auth(accessToken) },
+    );
+
+    if (!isObject(data) || data.id !== userProductId) {
+      throw new BadGatewayException('Respuesta de User Product inválida');
+    }
+
+    const familyId =
+      typeof data.family_id === 'number' && Number.isFinite(data.family_id)
+        ? String(data.family_id)
+        : isString(data.family_id)
+          ? data.family_id
+          : null;
+
+    return {
+      id: userProductId,
+      familyId,
+      name: isString(data.name) ? data.name : null,
+      attributes: Array.isArray(data.attributes)
+        ? sanitize(data.attributes)
+        : [],
+      pictures: Array.isArray(data.pictures)
+        ? sanitize(data.pictures)
+        : [],
+    };
   }
 
   /** Consulta una publicación usando un access token vigente. */
@@ -1881,29 +2094,27 @@ export class MercadolibreService {
   const errors: ItemError[] = [];
 
   /*
-   * Creamos un mapa usando el ID REAL
-   * que viene dentro de body.id.
-   *
-   * No dependemos de la posición del array.
+   * Mapeamos por body.id cuando Mercado Libre lo informa.
+   * En errores (por ejemplo 404) body puede no traer id; en ese caso
+   * usamos la posición pedida como fallback para no convertirlo en 502.
    */
-  const entriesById = new Map<
-    string,
-    MultigetEntry
-  >();
+  const entriesById = new Map<string, MultigetEntry>();
 
-  for (const rawEntry of data) {
-    if (!isObject(rawEntry)) {
-      continue;
-    }
+  for (let index = 0; index < data.length; index += 1) {
+    const rawEntry = data[index];
+    if (!isObject(rawEntry)) continue;
 
     const entry = rawEntry as MultigetEntry;
     const body = entry.body;
 
-    if (
-      isObject(body) &&
-      isString(body.id)
-    ) {
+    if (isObject(body) && isString(body.id)) {
       entriesById.set(body.id, entry);
+      continue;
+    }
+
+    const requestedId = ids[index];
+    if (requestedId && !entriesById.has(requestedId)) {
+      entriesById.set(requestedId, entry);
     }
   }
 
