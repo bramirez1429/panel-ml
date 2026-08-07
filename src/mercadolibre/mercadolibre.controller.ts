@@ -68,18 +68,23 @@ export class MercadolibreController {
     };
   }
 
-  /** Devuelve una página de publicaciones. */
-  @Get('publicaciones')
-  getPublications(
-    @Query('limit') limit?: string,
-    @Query('scrollId') scrollId?: string,
-  ) {
-    const parsedLimit = limit === undefined ? 50 : Number(limit);
-    return this.mercadolibreService.getPublicationsPage(
-      parsedLimit,
-      scrollId?.trim() || undefined,
-    );
-  }
+  /** Devuelve una página de User Products agrupados con sus MLA asociados. */
+@Get('publicaciones')
+getPublications(
+  @Query('page') page?: string,
+  @Query('limit') limit?: string,
+) {
+  const parsedPage =
+    page === undefined ? 1 : Number(page);
+
+  const parsedLimit =
+    limit === undefined ? 20 : Number(limit);
+
+  return this.mercadolibreService.getPublicationsPage(
+    parsedPage,
+    parsedLimit,
+  );
+}
 
   /** Devuelve las promociones asociadas a una publicación. */
   @Get('publicaciones/:itemId/promociones')

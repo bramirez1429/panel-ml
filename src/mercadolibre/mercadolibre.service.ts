@@ -44,6 +44,13 @@ type BatchResult = {
   publications: JsonObject[];
   errors: ItemError[];
 };
+
+type PublicationGroup = {
+  id: string;
+  userProductId: string | null;
+  familyName: string | null;
+  publications: JsonObject[];
+};
 type MultigetEntry = { code?: unknown; body?: unknown };
 type MercadoLibreTokens = {
   access_token: string;
@@ -288,65 +295,160 @@ export class MercadolibreService {
     return this.refreshAccessToken(connection);
   }
 
-  /** Devuelve una página de publicaciones y el scroll para continuar. */
-  async getPublicationsPage(limit = 50, scrollId?: string) {
+  /** Devuelve una página de User Products agrupados con sus MLA asociados. */
+  async getPublicationsPage(page = 1, limit = 20) {
+    if (!Number.isInteger(page) || page < 1) {
+      throw new BadRequestException('page debe ser un entero mayor que cero');
+    }
     if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
       throw new BadRequestException('limit debe ser un entero entre 1 y 100');
     }
 
     const connection = await this.getStoredConnection();
     const accessToken = await this.getValidAccessToken();
-    const query = new URLSearchParams({
-      search_type: 'scan',
-      limit: String(limit),
-    });
-    if (scrollId) query.set('scroll_id', scrollId);
 
-    const data = await this.requestJson<unknown>(
-      `${API_URL}/users/${connection.seller_id}/items/search?${query}`,
-      { headers: this.auth(accessToken) },
-      scrollId ? 'scroll' : undefined,
+    // Primero obtenemos todos los MLA del vendedor usando scan + scroll_id.
+    const ids = await this.getAllPublicationIds(
+      connection.seller_id,
+      accessToken,
     );
-    const page = data === null ? { results: null } : data;
-    if (!isObject(page)) {
-      throw new BadGatewayException('Respuesta de publicaciones inválida');
-    }
 
-    const results = page.results === null ? [] : page.results;
-    if (!Array.isArray(results) || results.some((id) => !isString(id))) {
-      throw new BadGatewayException('IDs de publicaciones inválidos');
-    }
-
-    const reportedTotal = isObject(page.paging) ? page.paging.total : null;
-    const total = isNonNegativeInteger(reportedTotal) ? reportedTotal : null;
-
-    const ids = [...new Set(results as string[])];
-    const activeScrollId =
-      scrollId ?? (isString(page.scroll_id) ? page.scroll_id : undefined);
-    if (ids.length > 0 && !activeScrollId) {
-      throw new BadGatewayException('Mercado Libre no devolvió scroll_id');
-    }
-
+    // El multiget de Mercado Libre sigue trabajando internamente de 20 en 20.
     const batches = chunk(ids, MULTIGET_SIZE);
     const details: BatchResult[] = [];
+
     for (let index = 0; index < batches.length; index += MAX_CONCURRENT) {
-      const group = batches.slice(index, index + MAX_CONCURRENT);
+      const currentBatches = batches.slice(index, index + MAX_CONCURRENT);
       details.push(
         ...(await Promise.all(
-          group.map((batch) => this.fetchBatch(batch, accessToken)),
+          currentBatches.map((batch) => this.fetchBatch(batch, accessToken)),
         )),
       );
     }
 
-    const finished = ids.length === 0;
+    const publications = details.flatMap((result) => result.publications);
+    const errors = details.flatMap((result) => result.errors);
+
+    // Agrupamos por user_product_id. Si un ítem viejo no tiene MLAU,
+    // queda como una cabeza independiente usando su propio MLA.
+    const groups = this.groupPublications(publications);
+
+    // Recién después de agrupar aplicamos la paginación de la tabla.
+    const offset = (page - 1) * limit;
+    const pageGroups = groups.slice(offset, offset + limit);
+
     return {
-      total,
-      count: ids.length,
-      nextScrollId: finished ? null : activeScrollId,
-      finished,
-      publications: details.flatMap((result) => result.publications),
-      errors: details.flatMap((result) => result.errors),
+      paging: {
+        page,
+        limit,
+        total: groups.length,
+        totalPages: Math.ceil(groups.length / limit),
+      },
+      totalItems: ids.length,
+      count: pageGroups.length,
+      publications: pageGroups,
+      errors,
     };
+  }
+
+  /** Recorre el scan completo y devuelve todos los MLA del vendedor. */
+  private async getAllPublicationIds(
+    sellerId: number,
+    accessToken: string,
+  ): Promise<string[]> {
+    const ids = new Set<string>();
+    let scrollId: string | undefined;
+
+    while (true) {
+      const query = new URLSearchParams({
+        search_type: 'scan',
+        limit: '100',
+      });
+
+      if (scrollId) {
+        query.set('scroll_id', scrollId);
+      }
+
+      const data = await this.requestJson<unknown>(
+        `${API_URL}/users/${sellerId}/items/search?${query}`,
+        { headers: this.auth(accessToken) },
+        scrollId ? 'scroll' : undefined,
+      );
+
+      const scanPage = data === null ? { results: null } : data;
+      if (!isObject(scanPage)) {
+        throw new BadGatewayException('Respuesta de publicaciones inválida');
+      }
+
+      const results = scanPage.results === null ? [] : scanPage.results;
+      if (!Array.isArray(results) || results.some((id) => !isString(id))) {
+        throw new BadGatewayException('IDs de publicaciones inválidos');
+      }
+
+      if (results.length === 0) {
+        break;
+      }
+
+      const previousSize = ids.size;
+      for (const id of results as string[]) {
+        ids.add(id);
+      }
+
+      const nextScrollId = isString(scanPage.scroll_id)
+        ? scanPage.scroll_id
+        : undefined;
+
+      if (!nextScrollId) {
+        throw new BadGatewayException('Mercado Libre no devolvió scroll_id');
+      }
+
+      if (ids.size === previousSize && nextScrollId === scrollId) {
+        throw new BadGatewayException('El scan de Mercado Libre no avanzó');
+      }
+
+      scrollId = nextScrollId;
+    }
+
+    return [...ids];
+  }
+
+  /** Agrupa los MLA bajo su User Product (MLAU). */
+  private groupPublications(publications: JsonObject[]): PublicationGroup[] {
+    const groups = new Map<string, PublicationGroup>();
+
+    for (const publication of publications) {
+      const itemId = isString(publication.id) ? publication.id : null;
+      if (!itemId) {
+        continue;
+      }
+
+      const userProductId = isString(publication.user_product_id)
+        ? publication.user_product_id
+        : null;
+      const familyName = isString(publication.family_name)
+        ? publication.family_name
+        : null;
+
+      const groupId = userProductId ?? itemId;
+      const existing = groups.get(groupId);
+
+      if (existing) {
+        existing.publications.push(publication);
+        if (!existing.familyName && familyName) {
+          existing.familyName = familyName;
+        }
+        continue;
+      }
+
+      groups.set(groupId, {
+        id: groupId,
+        userProductId,
+        familyName,
+        publications: [publication],
+      });
+    }
+
+    return [...groups.values()];
   }
 
   /** Consulta una publicación usando un access token vigente. */
@@ -2054,10 +2156,6 @@ function isPositiveInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
 }
 
-/** Indica si un valor es un entero no negativo. */
-function isNonNegativeInteger(value: unknown): value is number {
-  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
-}
 
 /** Indica si un valor puede ser un estado HTTP. */
 function validStatus(value: unknown): value is number {
