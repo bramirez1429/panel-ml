@@ -1,36 +1,30 @@
 import {
   BadRequestException,
-  Body,
   Controller,
   Get,
   HttpCode,
   Param,
   Post,
-  Put,
   Query,
   Redirect,
   UnauthorizedException,
-  UsePipes,
-  ValidationPipe,
 } from '@nestjs/common';
-import { MercadolibreService } from './mercadolibre.service';
-import {
-  CreatePriceDiscountDto,
-  ReplaceDealDto,
-  UpdatePriceDto,
-  UpdatePricingDto,
-} from './update-price.dto';
+import { MercadolibreAuthService } from './auth/mercadolibre-auth.service';
+import { PublicationsService } from './publications/publications.service';
 
 @Controller('mercadolibre')
 export class MercadolibreController {
-  /** Recibe el servicio que contiene la integración. */
-  constructor(private readonly mercadolibreService: MercadolibreService) {}
+  /** Recibe los servicios de autenticación y publicaciones. */
+  constructor(
+    private readonly authService: MercadolibreAuthService,
+    private readonly publicationsService: PublicationsService,
+  ) {}
 
   /** Redirige al usuario para autorizar la cuenta. */
   @Get('connect')
   @Redirect()
   connect(): { url: string } {
-    return { url: this.mercadolibreService.createAuthorizationUrl() };
+    return { url: this.authService.createAuthorizationUrl() };
   }
 
   /** Valida OAuth y guarda la conexión en Supabase. */
@@ -41,7 +35,7 @@ export class MercadolibreController {
     @Query('error') error?: string,
     @Query('error_description') errorDescription?: string,
   ) {
-    if (!state || !this.mercadolibreService.verifyState(state)) {
+    if (!state || !this.authService.verifyState(state)) {
       throw new UnauthorizedException('El state es inválido o venció');
     }
 
@@ -55,11 +49,9 @@ export class MercadolibreController {
       throw new BadRequestException('Falta el código de autorización');
     }
 
-    const tokens = await this.mercadolibreService.exchangeCode(code);
-    const seller = await this.mercadolibreService.getCurrentUser(
-      tokens.access_token,
-    );
-    await this.mercadolibreService.saveTokens(seller, tokens);
+    const tokens = await this.authService.exchangeCode(code);
+    const seller = await this.authService.getCurrentUser(tokens.access_token);
+    await this.authService.saveTokens(seller, tokens);
 
     return {
       ok: true,
@@ -68,101 +60,25 @@ export class MercadolibreController {
     };
   }
 
-  /** Devuelve una página de User Products agrupados con sus MLA asociados. */
-@Get('publicaciones')
-getPublications(
-  @Query('page') page?: string,
-  @Query('limit') limit?: string,
-) {
-  const parsedPage =
-    page === undefined ? 1 : Number(page);
-
-  const parsedLimit =
-    limit === undefined ? 20 : Number(limit);
-
-  return this.mercadolibreService.getPublicationsPage(
-    parsedPage,
-    parsedLimit,
-  );
-}
-
-  /** Devuelve las promociones asociadas a una publicación. */
-  @Get('publicaciones/:itemId/promociones')
-  getItemPromotions(@Param('itemId') itemId: string) {
-    return this.mercadolibreService.getItemPromotions(itemId);
-  }
-
-  /** Devuelve una publicación completa. */
-  @Get('publicaciones/:itemId')
-  getPublication(@Param('itemId') itemId: string) {
-    return this.mercadolibreService.getPublication(itemId);
-  }
-
-  /** Actualiza el precio de una publicación. */
-  @Put('publicaciones/:itemId/precio')
-  @UsePipes(
-    new ValidationPipe({
-      transform: true,
-      whitelist: true,
-      forbidNonWhitelisted: true,
-    }),
-  )
-  updatePrice(@Param('itemId') itemId: string, @Body() body: UpdatePriceDto) {
-    return this.mercadolibreService.updatePublicationPrice(itemId, body.price);
-  }
-
-  /** Actualiza el precio standard y la promoción compatible. */
-  @Put('publicaciones/:itemId/pricing')
-  @UsePipes(
-    new ValidationPipe({
-      transform: true,
-      whitelist: true,
-      forbidNonWhitelisted: true,
-    }),
-  )
-  updatePricing(
-    @Param('itemId') itemId: string,
-    @Body() body: UpdatePricingDto,
+  /** Devuelve una página de productos agrupados para la tabla. */
+  @Get('publicaciones')
+  getPublications(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
-    return this.mercadolibreService.updatePublicationPricing(itemId, body);
-  }
+    const parsedPage = page === undefined ? 1 : Number(page);
+    const parsedLimit = limit === undefined ? 20 : Number(limit);
 
-  /** Crea un PRICE_DISCOUNT sin modificar el precio de lista. */
-  @Post('publicaciones/:itemId/price-discount')
-  @UsePipes(
-    new ValidationPipe({
-      transform: true,
-      whitelist: true,
-      forbidNonWhitelisted: true,
-    }),
-  )
-  createPriceDiscount(
-    @Param('itemId') itemId: string,
-    @Body() body: CreatePriceDiscountDto,
-  ) {
-    return this.mercadolibreService.createPublicationPriceDiscount(
-      itemId,
-      body,
+    return this.publicationsService.getPublicationsPage(
+      parsedPage,
+      parsedLimit,
     );
   }
 
-  /** Retira un DEAL y crea un PRICE_DISCOUNT con confirmación explícita. */
-  @Put('publicaciones/:itemId/reemplazar-deal')
-  @UsePipes(
-    new ValidationPipe({
-      transform: true,
-      whitelist: true,
-      forbidNonWhitelisted: true,
-    }),
-  )
-  replaceDeal(@Param('itemId') itemId: string, @Body() body: ReplaceDealDto) {
-    return this.mercadolibreService.replaceDealWithPriceDiscount(itemId, body);
-  }
-
-  /** Devuelve las condiciones de venta y precios de un User Product. */
-  @Get('user-products/:userProductId/precios')
-  getUserProductPrices(@Param('userProductId') userProductId: string) {
-    return this.mercadolibreService.getUserProductPrices(userProductId);
+  /** Devuelve el detalle completo y seguro de un MLA. */
+  @Get('publicaciones/:itemId')
+  getPublication(@Param('itemId') itemId: string) {
+    return this.publicationsService.getPublication(itemId);
   }
 
   /** Confirma rápidamente la recepción del webhook. */

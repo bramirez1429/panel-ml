@@ -1,39 +1,25 @@
 # Integración con Mercado Libre
 
-La integración está dividida entre el controller de Mercado Libre, su service y el service de Supabase. Los tokens se guardan en Supabase y nunca se incluyen en las respuestas de la API.
+La integración mantiene OAuth, almacenamiento y renovación de tokens, consulta de publicaciones y normalización para una tabla de Next.js. Los tokens y secretos se usan únicamente en el backend.
 
-## Configuración de Supabase
+## Arquitectura
 
-Antes de conectar una cuenta, creá esta tabla en Supabase:
-
-```sql
-create table if not exists mercadolibre_tokens (
-  seller_id bigint primary key,
-  nickname text,
-  access_token text not null,
-  refresh_token text not null,
-  expires_at timestamptz not null,
-  updated_at timestamptz default now()
-);
-```
-
-La conexión usa las variables `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY`. La lectura y escritura de la tabla se realiza desde `src/database/supabase.service.ts`.
+- `mercadolibre.controller.ts`: expone las rutas HTTP.
+- `auth/mercadolibre-auth.service.ts`: autorización, `state`, callback, usuario y guardado inicial de tokens.
+- `auth/mercadolibre-token.service.ts`: conexión guardada, vigencia y renovación del token.
+- `shared/mercadolibre-api.service.ts`: solicitudes HTTP, autorización, timeout, JSON y errores de Mercado Libre.
+- `publications/publications.service.ts`: scan, multiget, detalle y paginación.
+- `publications/publication-groups.service.ts`: detecta el modelo y arma filas para la tabla.
+- `user-products/user-products.service.ts`: resuelve MLAU y `family_id`.
+- `database/supabase.service.ts`: lee y guarda la conexión en Supabase.
 
 ## OAuth
 
-El flujo OAuth está en `src/mercadolibre/mercadolibre.controller.ts` y `src/mercadolibre/mercadolibre.service.ts`.
-
-### Conectar una cuenta
-
-Abrí:
+Para conectar una cuenta, abrir:
 
 ```text
 GET /mercadolibre/connect
 ```
-
-`connect()` llama a `createAuthorizationUrl()` y redirige al usuario a Mercado Libre para autorizar la aplicación.
-
-### Procesar el callback
 
 Mercado Libre vuelve a:
 
@@ -41,66 +27,86 @@ Mercado Libre vuelve a:
 GET /mercadolibre/callback?code=...&state=...
 ```
 
-`callback()` valida el `state`, intercambia el código con `exchangeCode()`, consulta el vendedor con `getCurrentUser()` y guarda los tokens mediante `saveTokens()`. La respuesta solo confirma la conexión y muestra los datos públicos del vendedor.
+El callback valida el `state`, intercambia el código, consulta `/users/me` y guarda los tokens. La respuesta solo contiene:
 
-## Guardado y renovación de tokens
-
-Las funciones están en `src/mercadolibre/mercadolibre.service.ts`:
-
-- `saveTokens()` calcula `expires_at` y crea o actualiza la conexión en Supabase.
-- `getStoredConnection()` recupera la cuenta conectada y avisa si primero es necesario usar `/mercadolibre/connect`.
-- `getValidAccessToken()` reutiliza el token cuando tiene más de cinco minutos de vigencia.
-- `refreshAccessToken()` renueva un token próximo a vencer y guarda inmediatamente los nuevos datos en Supabase.
-
-Las operaciones directas sobre `mercadolibre_tokens` están en `src/database/supabase.service.ts`.
-
-## Publicaciones paginadas
-
-Para consultar una página:
-
-```text
-GET /mercadolibre/publicaciones?limit=50
-```
-
-La respuesta incluye las publicaciones completas de esa página y `nextScrollId`. Para pedir la siguiente página, enviá ese valor sin modificar:
-
-```text
-GET /mercadolibre/publicaciones?limit=50&scrollId=VALOR_RECIBIDO
-```
-
-Repetí la consulta mientras `finished` sea `false`. Reutilizá el mismo `nextScrollId` dentro de los cinco minutos siguientes. El límite predeterminado es 50 y el máximo es 100. Los detalles se consultan en grupos de hasta 20 IDs.
-
-Mercado Libre no garantiza que repita `total` en cada página del scan. Si lo omite, la API devuelve `total: null`; conservá el total informado en la primera respuesta.
-
-El endpoint está en `mercadolibre.controller.ts`; la consulta paginada y el multiget están en `mercadolibre.service.ts`.
-
-## Consultar una publicación
-
-```text
-GET /mercadolibre/publicaciones/:itemId
-```
-
-El endpoint obtiene automáticamente un token vigente y devuelve la publicación indicada. El controller y la consulta a Mercado Libre están en los archivos `mercadolibre.controller.ts` y `mercadolibre.service.ts`, respectivamente.
-
-## Modificar el precio
-
-```text
-PUT /mercadolibre/publicaciones/:itemId/precio
-Content-Type: application/json
-
+```json
 {
-  "price": 38000
+  "ok": true,
+  "message": "Mercado Libre conectado correctamente",
+  "seller": {
+    "id": 123,
+    "nickname": "MI_USUARIO"
+  }
 }
 ```
 
-El precio es obligatorio, numérico y mayor que cero. La ruta está en `mercadolibre.controller.ts`, la llamada a Mercado Libre está en `mercadolibre.service.ts` y la validación del body está en `src/mercadolibre/update-price.dto.ts`.
+`MercadolibreTokenService` reutiliza el access token mientras le queden más de cinco minutos. Si está por vencer, usa el refresh token y guarda inmediatamente los tokens nuevos.
 
-Si la publicación tiene una automatización de precios activa, Mercado Libre puede rechazar el cambio. La API conserva su código y mensaje de error, pero elimina cualquier credencial sensible.
-
-## Webhook
+## Publicaciones para la tabla
 
 ```text
+GET /mercadolibre/publicaciones?page=1&limit=20
+```
+
+El backend:
+
+1. Recorre `/users/{sellerId}/items/search` con `search_type=scan`, páginas de 100 y el mismo `scroll_id`.
+2. Elimina MLA duplicados.
+3. Consulta detalles con multiget de hasta 20 IDs y máximo cuatro solicitudes simultáneas.
+4. Detecta relaciones MLA, MLAU y family.
+5. Agrupa y normaliza los productos.
+6. Pagina las filas ya agrupadas.
+
+Por eso, `limit=20` significa 20 productos padre para la tabla, no 20 MLA internos.
+
+### Condición compartida
+
+Las `variations[]` no se convierten en filas independientes:
+
+```json
+{
+  "type": "SHARED",
+  "parent": {
+    "id": "MLA1561943005",
+    "title": "Remeras Nenas Pack X4",
+    "status": "active",
+    "thumbnail": "https://...",
+    "price": 35000
+  },
+  "children": []
+}
+```
+
+### Condiciones por variante
+
+Cada familia ocupa una fila y cada MLA independiente aparece como hijo:
+
+```json
+{
+  "type": "VARIANT_PRICING",
+  "parent": {
+    "familyId": "8570150160678059",
+    "title": "Remera Nena K-pop"
+  },
+  "children": [
+    {
+      "id": "MLA111",
+      "userProductId": "MLAU111",
+      "title": "Remera Nena K-pop Azul",
+      "status": "active",
+      "price": 35000
+    }
+  ]
+}
+```
+
+La detección es conservadora: un MLAU presente solo dentro de `variations[]` no convierte una publicación compartida en condiciones independientes.
+
+## Detalle y webhook
+
+```text
+GET /mercadolibre/publicaciones/MLA123
 POST /mercadolibre/webhook
 ```
 
-El webhook permanece en `src/mercadolibre/mercadolibre.controller.ts` y responde rápidamente para confirmar la recepción.
+El detalle devuelve el body del ítem saneado. El webhook confirma inmediatamente con HTTP 200 y no procesa tareas pesadas.
