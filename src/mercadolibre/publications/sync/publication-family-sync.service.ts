@@ -138,13 +138,11 @@ export class PublicationFamilySyncService {
     const bundle = prepared.bundles.find(
       ({ parent }) => parent.family_id === family.familyId,
     );
-    if (
-      prepared.errors.length > 0 ||
-      !bundle ||
-      prepared.bundles.length !== 1
-    ) {
-      throw new BadGatewayException('La familia no pudo normalizarse completa');
-    }
+   if (!bundle) {
+  throw new BadGatewayException(
+    'La familia no pudo normalizarse completa',
+  );
+}
     await this.writer.save(bundle, fullSyncId);
     return {
       processedItems: bundle.children.length,
