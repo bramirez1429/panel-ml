@@ -23,6 +23,7 @@ import {
   MercadoLibrePublication,
   PublicationSourceResult,
 } from '../publication.types';
+import { PublicationScanPage } from './publication-sync.types';
 import {
   chunk,
   parseMultiget,
@@ -35,6 +36,30 @@ import {
 export class PublicationSourceService {
   /** Prepara el acceso compartido a Mercado Libre. */
   constructor(private readonly apiService: MercadolibreApiService) {}
+
+  /** Obtiene una sola página del scan de Mercado Libre. */
+  async fetchNextScanPage(
+    sellerId: number,
+    accessToken: string,
+    scrollId?: string,
+  ): Promise<PublicationScanPage> {
+    const query = new URLSearchParams({
+      search_type: 'scan',
+      limit: String(PUBLICATION_SCAN_SIZE),
+    });
+    if (scrollId) query.set('scroll_id', scrollId);
+
+    const data = await this.apiService.get<unknown>(
+      `/users/${sellerId}/items/search?${query.toString()}`,
+      accessToken,
+      scrollId ? 'scroll' : undefined,
+    );
+    const itemIds = [...new Set(parseSearchIds(data))];
+    return {
+      itemIds,
+      scrollId: itemIds.length > 0 ? parseScrollId(data) : null,
+    };
+  }
 
   /** Recorre el scan y devuelve todos los MLA sin duplicados. */
   async getAllItemIds(

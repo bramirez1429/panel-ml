@@ -3,26 +3,25 @@ import {
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
 import { MercadolibreTokenService } from '../../auth/mercadolibre-token.service';
 import { UserProductFamilyService } from '../../user-products/user-product-family.service';
 import { PublicationModelDetectorService } from '../normalization/publication-model-detector.service';
 import {
+  MercadoLibrePublication,
   NormalizationContext,
   NormalizedPublicationBundle,
 } from '../publication.types';
 import { PUBLICATION_REQUEST_CONCURRENCY } from '../publication.constants';
 import {
-  mapWithConcurrency,
   filterPublicationsBySeller,
-  requireItemId,
-  requireUserProductId,
+  mapWithConcurrency,
   sourceErrorToSyncError,
 } from './publication-sync.helpers';
+import { PublicationFamilySyncService } from './publication-family-sync.service';
 import { PublicationSourceService } from './publication-source.service';
 import { PublicationSyncPreparerService } from './publication-sync-preparer.service';
 import {
-  PublicationSyncSummary,
+  PublicationBatchResult,
   SavedPublications,
   SyncAccess,
 } from './publication-sync.types';
@@ -37,18 +36,16 @@ export class PublicationSyncService {
     private readonly familyService: UserProductFamilyService,
     private readonly detector: PublicationModelDetectorService,
     private readonly preparer: PublicationSyncPreparerService,
+    private readonly familySyncService: PublicationFamilySyncService,
     private readonly writer: PublicationSyncWriterService,
   ) {}
 
-  /** Sincroniza el snapshot completo del vendedor conectado. */
-  async syncAll(): Promise<PublicationSyncSummary> {
-    const syncStartedAt = new Date().toISOString();
-    const syncId = randomUUID();
-    const access = await this.getAccess();
-    const itemIds = await this.sourceService.getAllItemIds(
-      access.sellerId,
-      access.accessToken,
-    );
+  /** Procesa solamente los MLA recibidos y marca el full sync. */
+  async syncBatch(
+    itemIds: string[],
+    access: SyncAccess,
+    fullSyncId: string,
+  ): Promise<PublicationBatchResult> {
     const source = await this.sourceService.getPublicationDetails(
       itemIds,
       access.accessToken,
@@ -57,39 +54,35 @@ export class PublicationSyncService {
       source.publications,
       access.sellerId,
     );
-    const context = this.createContext(access.sellerId);
+    const shared = owned.publications.filter(
+      (item) => this.detector.detect(item) === 'SHARED',
+    );
     const prepared = await this.preparer.prepare(
-      owned.publications,
+      shared,
       access.accessToken,
-      context,
+      this.createContext(access.sellerId),
       this.familyService.createCache(),
     );
-    const errors = [
-      ...source.errors.map(sourceErrorToSyncError),
-      ...owned.errors,
-      ...prepared.errors,
-    ];
-    const safeBundles =
-      errors.length === 0
-        ? prepared.bundles
-        : prepared.bundles.filter(({ parent }) => parent.model === 'SHARED');
-    const saved = await this.saveBundles(safeBundles, syncId);
-    const cleanupPerformed = errors.length === 0;
-
-    if (cleanupPerformed) {
-      await this.writer.finalizeFullSync(
-        access.sellerId,
-        syncId,
-        syncStartedAt,
-      );
-    }
-    return this.buildSummary(
-      syncId,
-      itemIds.length,
-      saved,
-      errors,
-      cleanupPerformed,
+    const sharedSaved = await this.saveBundles(prepared.bundles, fullSyncId);
+    const variants = owned.publications.filter(
+      (item) => this.detector.detect(item) === 'VARIANT_PRICING',
     );
+    const variantResult = await this.familySyncService.syncBatch(
+      variants,
+      access,
+      fullSyncId,
+    );
+
+    return {
+      productsSaved: sharedSaved.productsSaved + variantResult.productsSaved,
+      childrenSaved: sharedSaved.childrenSaved + variantResult.childrenSaved,
+      errors: [
+        ...source.errors.map(sourceErrorToSyncError),
+        ...owned.errors,
+        ...prepared.errors,
+        ...variantResult.errors,
+      ],
+    };
   }
 
   /** Sincroniza solamente el MLA notificado o su familia. */
@@ -98,21 +91,27 @@ export class PublicationSyncService {
     if (notifiedSellerId && notifiedSellerId !== access.sellerId) {
       throw new ForbiddenException('La notificación pertenece a otro vendedor');
     }
-
     const publication = await this.sourceService.getItem(
       itemId,
       access.accessToken,
     );
     if (publication.seller_id !== access.sellerId) {
-      throw new ForbiddenException(
-        'La publicaci\u00f3n pertenece a otro vendedor',
-      );
+      throw new ForbiddenException('La publicación pertenece a otro vendedor');
     }
     if (this.detector.detect(publication) === 'SHARED') {
       await this.savePartial([publication], access);
       return;
     }
-    await this.syncFamily(publication, access);
+    await this.familySyncService.syncPublication(publication, access);
+  }
+
+  /** Elimina productos que no fueron vistos al terminar el scan. */
+  async finalizeFullSync(
+    sellerId: number,
+    fullSyncId: string,
+    syncStartedAt: string,
+  ): Promise<void> {
+    await this.writer.finalizeFullSync(sellerId, fullSyncId, syncStartedAt);
   }
 
   /** Obtiene seller y token sin exponerlos en respuestas. */
@@ -124,58 +123,9 @@ export class PublicationSyncService {
     };
   }
 
-  /** Sincroniza todos los MLA asociados a una familia. */
-  private async syncFamily(
-    publication: Parameters<PublicationModelDetectorService['detect']>[0],
-    access: SyncAccess,
-  ): Promise<void> {
-    const cache = this.familyService.createCache();
-    const family = await this.familyService.resolveFamily(
-      requireUserProductId(publication),
-      access.accessToken,
-      cache,
-    );
-    if (family.userId !== access.sellerId) {
-      throw new ForbiddenException('La familia pertenece a otro vendedor');
-    }
-    const itemIds = await this.sourceService.getItemIdsForUserProducts(
-      access.sellerId,
-      family.userProductIds,
-      access.accessToken,
-    );
-    const changedItemId = requireItemId(publication);
-    const source = await this.sourceService.getPublicationDetails(
-      [...new Set([...itemIds, changedItemId])],
-      access.accessToken,
-    );
-    if (source.errors.length > 0) {
-      throw new BadGatewayException(
-        'No se pudo reconstruir la familia completa',
-      );
-    }
-
-    const prepared = await this.preparer.prepare(
-      source.publications,
-      access.accessToken,
-      this.createContext(access.sellerId),
-      cache,
-    );
-    const bundle = prepared.bundles.find(
-      ({ parent }) => parent.family_id === family.familyId,
-    );
-    if (
-      prepared.errors.length > 0 ||
-      !bundle ||
-      prepared.bundles.length !== 1
-    ) {
-      throw new BadGatewayException('La familia no pudo normalizarse completa');
-    }
-    await this.writer.save(bundle);
-  }
-
   /** Normaliza y guarda una publicación SHARED puntual. */
   private async savePartial(
-    publications: Parameters<PublicationSyncPreparerService['prepare']>[0],
+    publications: MercadoLibrePublication[],
     access: SyncAccess,
   ): Promise<void> {
     const prepared = await this.preparer.prepare(
@@ -193,12 +143,12 @@ export class PublicationSyncService {
   /** Guarda bundles con una concurrencia controlada. */
   private async saveBundles(
     bundles: NormalizedPublicationBundle[],
-    syncId: string,
+    fullSyncId?: string,
   ): Promise<SavedPublications> {
     await mapWithConcurrency(
       bundles,
       PUBLICATION_REQUEST_CONCURRENCY,
-      (bundle) => this.writer.save(bundle, syncId),
+      (bundle) => this.writer.save(bundle, fullSyncId),
     );
     return {
       processedItems: bundles.reduce(
@@ -216,23 +166,5 @@ export class PublicationSyncService {
   /** Crea timestamps comunes para una corrida. */
   private createContext(sellerId: number): NormalizationContext {
     return { sellerId, syncedAt: new Date().toISOString() };
-  }
-
-  /** Construye la respuesta segura del endpoint manual. */
-  private buildSummary(
-    syncId: string,
-    totalItemIds: number,
-    saved: SavedPublications,
-    errors: PublicationSyncSummary['errors'],
-    cleanupPerformed: boolean,
-  ): PublicationSyncSummary {
-    return {
-      ok: true,
-      syncId,
-      totalItemIds,
-      ...saved,
-      cleanupPerformed,
-      errors,
-    };
   }
 }

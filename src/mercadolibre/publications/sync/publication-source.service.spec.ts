@@ -43,6 +43,52 @@ function parsePath(path: string): URL {
 }
 
 describe('PublicationSourceService', () => {
+  it('obtiene la primera página del scan sin scroll_id', async () => {
+    const { api, source } = createSource(() => ({
+      results: ['MLA1', 'MLA1', 'MLA2'],
+      scroll_id: 'first-scroll',
+    }));
+
+    await expect(
+      source.fetchNextScanPage(123, 'private-token'),
+    ).resolves.toEqual({
+      itemIds: ['MLA1', 'MLA2'],
+      scrollId: 'first-scroll',
+    });
+
+    const call = api.calls[0];
+    const url = parsePath(call.path);
+    expect(url.searchParams.get('search_type')).toBe('scan');
+    expect(url.searchParams.get('limit')).toBe('100');
+    expect(url.searchParams.has('scroll_id')).toBe(false);
+    expect(call.kind).toBeUndefined();
+  });
+
+  it('continúa el scan con el scroll_id recibido', async () => {
+    const { api, source } = createSource(() => ({
+      results: ['MLA3'],
+      scroll_id: 'next-scroll',
+    }));
+
+    await expect(
+      source.fetchNextScanPage(123, 'private-token', 'current-scroll'),
+    ).resolves.toEqual({ itemIds: ['MLA3'], scrollId: 'next-scroll' });
+
+    const call = api.calls[0];
+    expect(parsePath(call.path).searchParams.get('scroll_id')).toBe(
+      'current-scroll',
+    );
+    expect(call.kind).toBe('scroll');
+  });
+
+  it('devuelve un estado terminal cuando ya no hay resultados', async () => {
+    const { source } = createSource(() => ({ results: null }));
+
+    await expect(
+      source.fetchNextScanPage(123, 'private-token', 'current-scroll'),
+    ).resolves.toEqual({ itemIds: [], scrollId: null });
+  });
+
   it('recorre scan con el primer scroll_id y elimina IDs duplicados', async () => {
     const responses = [
       { results: ['MLA1', 'MLA2'], scroll_id: 'first-scroll' },

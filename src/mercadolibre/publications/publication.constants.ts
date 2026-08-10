@@ -1,6 +1,9 @@
 /** Tamaño máximo permitido por el scan de publicaciones. */
 export const PUBLICATION_SCAN_SIZE = 100;
 
+/** Cantidad de MLA procesados por cada llamada al job. */
+export const PUBLICATION_SYNC_BATCH_SIZE = 10;
+
 /** Cantidad máxima de publicaciones aceptada por multiget. */
 export const PUBLICATION_MULTIGET_SIZE = 20;
 

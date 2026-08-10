@@ -2,29 +2,44 @@ import { ForbiddenException } from '@nestjs/common';
 import { MercadolibreTokenService } from '../../auth/mercadolibre-token.service';
 import { UserProductFamilyService } from '../../user-products/user-product-family.service';
 import { PublicationModelDetectorService } from '../normalization/publication-model-detector.service';
-import { NormalizedPublicationBundle } from '../publication.types';
+import {
+  MercadoLibrePublication,
+  NormalizedPublicationBundle,
+} from '../publication.types';
+import { PublicationFamilySyncService } from './publication-family-sync.service';
 import { PublicationSourceService } from './publication-source.service';
 import { PublicationSyncPreparerService } from './publication-sync-preparer.service';
 import { PublicationSyncService } from './publication-sync.service';
 import { PublicationSyncWriterService } from './publication-sync-writer.service';
 
-/** Crea un bundle persistible para cada modelo. */
-function bundle(
-  model: 'SHARED' | 'VARIANT_PRICING',
-): NormalizedPublicationBundle {
-  const shared = model === 'SHARED';
+const FULL_SYNC_ID = '11111111-1111-4111-8111-111111111111';
+const ACCESS = { sellerId: 123, accessToken: 'private-token' };
+const SHARED: MercadoLibrePublication = {
+  id: 'MLA1',
+  family_name: null,
+  seller_id: 123,
+};
+const VARIANT: MercadoLibrePublication = {
+  id: 'MLA2',
+  family_name: 'Familia',
+  seller_id: 123,
+  user_product_id: 'MLAU2',
+};
+
+/** Crea un bundle SHARED persistible. */
+function sharedBundle(): NormalizedPublicationBundle {
   return {
     parent: {
       seller_id: 123,
-      external_key: shared ? 'item:MLA1' : 'family:9',
-      model,
-      family_id: shared ? null : '9',
-      parent_item_id: shared ? 'MLA1' : null,
-      family_name: shared ? null : 'Familia',
-      title: shared ? 'Producto' : 'Familia',
+      external_key: 'item:MLA1',
+      model: 'SHARED',
+      family_id: null,
+      parent_item_id: 'MLA1',
+      family_name: null,
+      title: 'Producto',
       shared_variations: [],
     },
-    children: shared ? [] : [{ item_id: 'MLA2', user_product_id: 'MLAU2' }],
+    children: [],
   };
 }
 
@@ -35,16 +50,11 @@ function setup() {
     getValidAccessToken: jest.fn().mockResolvedValue('private-token'),
   };
   const source = {
-    getAllItemIds: jest.fn().mockResolvedValue(['MLA1', 'MLA2']),
     getPublicationDetails: jest.fn().mockResolvedValue({
-      publications: [
-        { id: 'MLA1', family_name: null, seller_id: 123 },
-        { id: 'MLA2', family_name: 'Familia', seller_id: 123 },
-      ],
+      publications: [SHARED, VARIANT],
       errors: [],
     }),
-    getItem: jest.fn(),
-    getItemIdsForUserProducts: jest.fn(),
+    getItem: jest.fn().mockResolvedValue(SHARED),
   };
   const family = {
     createCache: jest.fn().mockReturnValue({
@@ -52,13 +62,20 @@ function setup() {
       families: new Map(),
       familyByUserProduct: new Map(),
     }),
-    resolveFamily: jest.fn(),
   };
   const preparer = {
     prepare: jest.fn().mockResolvedValue({
-      bundles: [bundle('SHARED'), bundle('VARIANT_PRICING')],
+      bundles: [sharedBundle()],
       errors: [],
     }),
+  };
+  const familySync = {
+    syncBatch: jest.fn().mockResolvedValue({
+      productsSaved: 1,
+      childrenSaved: 2,
+      errors: [],
+    }),
+    syncPublication: jest.fn().mockResolvedValue(undefined),
   };
   const writer = {
     save: jest.fn().mockResolvedValue(undefined),
@@ -70,64 +87,105 @@ function setup() {
     family as unknown as UserProductFamilyService,
     new PublicationModelDetectorService(),
     preparer as unknown as PublicationSyncPreparerService,
+    familySync as unknown as PublicationFamilySyncService,
     writer as unknown as PublicationSyncWriterService,
   );
-  return { preparer, service, source, writer };
+  return { familySync, preparer, service, source, writer };
 }
 
 describe('PublicationSyncService', () => {
-  it('guarda todo y limpia solamente al completar sin errores', async () => {
-    const { service, writer } = setup();
+  it('procesa SHARED y delega familias dentro del batch', async () => {
+    const { familySync, preparer, service, source, writer } = setup();
 
-    const result = await service.syncAll();
-
-    expect(result).toMatchObject({
-      ok: true,
-      totalItemIds: 2,
-      processedItems: 2,
+    await expect(
+      service.syncBatch(['MLA1', 'MLA2'], ACCESS, FULL_SYNC_ID),
+    ).resolves.toEqual({
       productsSaved: 2,
-      childrenSaved: 1,
-      cleanupPerformed: true,
+      childrenSaved: 2,
       errors: [],
     });
-    expect(writer.save).toHaveBeenCalledTimes(2);
-    expect(writer.finalizeFullSync).toHaveBeenCalledWith(
-      123,
-      result.syncId,
-      expect.any(String),
+
+    expect(source.getPublicationDetails).toHaveBeenCalledWith(
+      ['MLA1', 'MLA2'],
+      'private-token',
+    );
+    expect(preparer.prepare).toHaveBeenCalledTimes(1);
+    expect(writer.save).toHaveBeenCalledWith(sharedBundle(), FULL_SYNC_ID);
+    expect(familySync.syncBatch).toHaveBeenCalledWith(
+      [VARIANT],
+      ACCESS,
+      FULL_SYNC_ID,
     );
   });
 
-  it('conserva datos anteriores y solo guarda SHARED ante errores parciales', async () => {
-    const { service, source, writer } = setup();
+  it('acumula errores individuales y conserva resultados válidos', async () => {
+    const { familySync, preparer, service, source } = setup();
     source.getPublicationDetails.mockResolvedValue({
       publications: [
-        { id: 'MLA1', family_name: null, seller_id: 123 },
-        { id: 'MLA2', family_name: 'Familia', seller_id: 123 },
+        SHARED,
+        VARIANT,
+        { ...SHARED, id: 'MLA9', seller_id: 999 },
       ],
       errors: [{ itemId: 'MLA3', status: 404, body: { message: 'Not found' } }],
     });
-
-    const result = await service.syncAll();
-
-    expect(result.cleanupPerformed).toBe(false);
-    expect(result.errors).toHaveLength(1);
-    expect(writer.save).toHaveBeenCalledTimes(1);
-    expect(writer.save).toHaveBeenCalledWith(bundle('SHARED'), result.syncId);
-    expect(writer.finalizeFullSync).not.toHaveBeenCalled();
-  });
-
-  it('rechaza un MLA puntual que no pertenece al vendedor conectado', async () => {
-    const { service, source, writer } = setup();
-    source.getItem.mockResolvedValue({
-      id: 'MLA999',
-      family_name: null,
-      seller_id: 999,
+    preparer.prepare.mockResolvedValue({
+      bundles: [sharedBundle()],
+      errors: [{ itemId: 'MLA4', message: 'No se pudo normalizar' }],
+    });
+    familySync.syncBatch.mockResolvedValue({
+      productsSaved: 0,
+      childrenSaved: 0,
+      errors: [{ itemId: 'MLA2', message: 'Familia incompleta' }],
     });
 
-    await expect(service.syncItem('MLA999', 123)).rejects.toBeInstanceOf(
+    const result = await service.syncBatch(
+      ['MLA1', 'MLA2', 'MLA3'],
+      ACCESS,
+      FULL_SYNC_ID,
+    );
+
+    expect(result.productsSaved).toBe(1);
+    expect(result.errors).toHaveLength(4);
+  });
+
+  it('sincroniza un webhook SHARED sin marca de full sync', async () => {
+    const { familySync, service, writer } = setup();
+
+    await service.syncItem('MLA1', 123);
+
+    expect(writer.save).toHaveBeenCalledWith(sharedBundle());
+    expect(familySync.syncPublication).not.toHaveBeenCalled();
+  });
+
+  it('delega un webhook VARIANT a la reconstrucción de familia', async () => {
+    const { familySync, service, source, writer } = setup();
+    source.getItem.mockResolvedValue(VARIANT);
+
+    await service.syncItem('MLA2', 123);
+
+    expect(familySync.syncPublication).toHaveBeenCalledWith(VARIANT, ACCESS);
+    expect(writer.save).not.toHaveBeenCalled();
+  });
+
+  it('rechaza un webhook informado para otro vendedor', async () => {
+    const { service, source } = setup();
+
+    await expect(service.syncItem('MLA1', 999)).rejects.toBeInstanceOf(
       ForbiddenException,
     );
-    expect(writer.save).not.toHaveBeenCalled();
+    expect(source.getItem).not.toHaveBeenCalled();
+  });
+
+  it('delega la limpieza final al writer', async () => {
+    const { service, writer } = setup();
+    const startedAt = '2026-08-10T12:00:00.000Z';
+
+    await service.finalizeFullSync(123, FULL_SYNC_ID, startedAt);
+
+    expect(writer.finalizeFullSync).toHaveBeenCalledWith(
+      123,
+      FULL_SYNC_ID,
+      startedAt,
+    );
   });
 });

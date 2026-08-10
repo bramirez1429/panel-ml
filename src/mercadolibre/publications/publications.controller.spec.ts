@@ -1,18 +1,22 @@
 import { PublicationsController } from './publications.controller';
 import { PublicationsService } from './publications.service';
-import { PublicationSyncService } from './sync/publication-sync.service';
+import { PublicationSyncJobService } from './sync/publication-sync-job.service';
+
+const SYNC_ID = '11111111-1111-4111-8111-111111111111';
 
 describe('PublicationsController', () => {
   const list = jest.fn();
   const findOne = jest.fn();
-  const syncAll = jest.fn();
+  const start = jest.fn();
+  const processNext = jest.fn();
+  const getStatus = jest.fn();
   let controller: PublicationsController;
 
   beforeEach(() => {
     jest.clearAllMocks();
     controller = new PublicationsController(
       { list, findOne } as unknown as PublicationsService,
-      { syncAll } as unknown as PublicationSyncService,
+      { start, processNext, getStatus } as unknown as PublicationSyncJobService,
     );
   });
 
@@ -24,17 +28,30 @@ describe('PublicationsController', () => {
     expect(list).toHaveBeenCalledWith(1, 20);
   });
 
-  it('delega paginación, detalle y sync', async () => {
+  it('delega paginación y detalle', async () => {
     list.mockResolvedValue({});
     findOne.mockResolvedValue({});
-    syncAll.mockResolvedValue({ ok: true });
 
     await controller.list('2', '50');
-    await controller.findOne('product-uuid');
-    await controller.sync();
+    await controller.findOne(SYNC_ID);
 
     expect(list).toHaveBeenCalledWith(2, 50);
-    expect(findOne).toHaveBeenCalledWith('product-uuid');
-    expect(syncAll).toHaveBeenCalledTimes(1);
+    expect(findOne).toHaveBeenCalledWith(SYNC_ID);
+  });
+
+  it('delega inicio, siguiente batch y estado del sync job', async () => {
+    const started = { ok: true, syncId: SYNC_ID, status: 'PENDING' };
+    const pending = { ...started, hasMore: true };
+    start.mockResolvedValue(started);
+    processNext.mockResolvedValue(pending);
+    getStatus.mockResolvedValue(pending);
+
+    await expect(controller.startSync()).resolves.toBe(started);
+    await expect(controller.processNext(SYNC_ID)).resolves.toBe(pending);
+    await expect(controller.getSyncStatus(SYNC_ID)).resolves.toBe(pending);
+
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(processNext).toHaveBeenCalledWith(SYNC_ID);
+    expect(getStatus).toHaveBeenCalledWith(SYNC_ID);
   });
 });

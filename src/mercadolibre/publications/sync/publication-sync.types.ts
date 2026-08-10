@@ -19,6 +19,17 @@ export type PublicationSyncSummary = {
   errors: PublicationSyncError[];
 };
 
+export type PublicationBatchResult = {
+  productsSaved: number;
+  childrenSaved: number;
+  errors: PublicationSyncError[];
+};
+
+export type PublicationScanPage = {
+  itemIds: string[];
+  scrollId: string | null;
+};
+
 export type ClassifiedPublications = {
   shared: MercadoLibrePublication[];
   variants: MercadoLibrePublication[];

@@ -118,6 +118,46 @@ type ChildInsert = {
   updated_at?: string;
 };
 
+type SyncJobStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
+
+type SyncJobRow = {
+  id: string;
+  seller_id: number;
+  full_sync_id: string;
+  status: SyncJobStatus;
+  scan_started: boolean;
+  scroll_id: string | null;
+  buffer_item_ids: Json;
+  processed_items: number;
+  products_saved: number;
+  children_saved: number;
+  errors_count: number;
+  last_error: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type SyncJobInsert = {
+  id?: string;
+  seller_id: number;
+  full_sync_id: string;
+  status?: SyncJobStatus;
+  scan_started?: boolean;
+  scroll_id?: string | null;
+  buffer_item_ids?: Json;
+  processed_items?: number;
+  products_saved?: number;
+  children_saved?: number;
+  errors_count?: number;
+  last_error?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -136,6 +176,7 @@ export type Database = {
           },
         ]
       >;
+      mercadolibre_sync_jobs: Table<SyncJobRow, SyncJobInsert>;
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
