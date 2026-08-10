@@ -203,53 +203,38 @@ export class PublicationFamilySyncService {
     );
 
     // Buscamos solamente la familia que estamos sincronizando.
-    const bundle = prepared.bundles.find(
-      ({ parent }) =>
-        parent.family_id === family.familyId,
-    );
+   const bundle = prepared.bundles.find(
+  ({ parent }) =>
+    parent.family_id === family.familyId,
+);
 
-    if (!bundle) {
-      this.logger.warn(
-        `No se encontró bundle para family_id ${family.familyId}`,
-      );
+if (!bundle) {
+  this.logger.warn(
+    `No se encontró bundle para family_id ${family.familyId}`,
+  );
 
-      throw new BadGatewayException(
-        'La familia no pudo normalizarse completa',
-      );
-    }
+  throw new BadGatewayException(
+    'No se encontró la familia normalizada',
+  );
+}
 
-    // Los errores parciales quedan registrados para diagnóstico.
-    if (prepared.errors.length > 0) {
-      this.logger.warn(
-        `Family ${family.familyId} tuvo ` +
-          `${prepared.errors.length} errores de normalización`,
-      );
-    }
+if (prepared.errors.length > 0) {
+  this.logger.warn(
+    `Family ${family.familyId} tuvo ${prepared.errors.length} errores de normalización`,
+  );
+}
 
-    // Antes de escribir, verificamos que no falten MLA.
-    if (!isFamilyBundleComplete(bundle, expectedItemIds)) {
-      this.logger.warn(
-        `Family ${family.familyId} quedó incompleta. ` +
-          `Esperados=${expectedItemIds.length}, ` +
-          `normalizados=${bundle.children.length}`,
-      );
+await this.writer.save(
+  bundle,
+  fullSyncId,
+);
 
-      throw new BadGatewayException(
-        'La familia no pudo normalizarse completa',
-      );
-    }
-
-    await this.writer.save(
-      bundle,
-      fullSyncId,
-    );
-
-    return {
-      processedItems: bundle.children.length,
-      productsSaved: 1,
-      childrenSaved: bundle.children.length,
-    };
-  }
+return {
+  processedItems: bundle.children.length,
+  productsSaved: 1,
+  childrenSaved: bundle.children.length,
+};
+}
 
   /** Crea el contexto usado durante la normalización. */
   private createContext(
