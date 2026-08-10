@@ -1,33 +1,44 @@
-import { Controller, Get, Param, Post, Query } from '@nestjs/common';
-import { PublicationSyncService } from './sync/publication-sync.service';
+import {
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { PublicationsService } from './publications.service';
+import { PublicationSyncService } from './sync/publication-sync.service';
 
 @Controller('mercadolibre/publicaciones')
 export class PublicationsController {
-  /** Recibe los servicios de lectura y sincronización. */
   constructor(
     private readonly publicationsService: PublicationsService,
-    private readonly syncService: PublicationSyncService,
+    private readonly publicationSyncService: PublicationSyncService,
   ) {}
+
+  /** Sincroniza todas las publicaciones desde Mercado Libre. */
+  @Post('sync')
+  syncAll() {
+    return this.publicationSyncService.syncAll();
+  }
 
   /** Lista productos guardados en Supabase. */
   @Get()
-  list(@Query('page') page?: string, @Query('limit') limit?: string) {
+  list(
+    @Query('page') page = '1',
+    @Query('limit') limit = '20',
+  ) {
     return this.publicationsService.list(
-      page === undefined ? 1 : Number(page),
-      limit === undefined ? 20 : Number(limit),
+      Number(page),
+      Number(limit),
     );
   }
 
-  /** Ejecuta manualmente una sincronización completa. */
-  @Post('sync')
-  sync() {
-    return this.syncService.syncAll();
-  }
-
-  /** Devuelve un producto y su detalle guardado. */
-  @Get(':productId')
-  findOne(@Param('productId') productId: string) {
+  /** Obtiene el detalle por UUID interno. */
+  @Get('detalle/:productId')
+  findOne(
+    @Param('productId', ParseUUIDPipe) productId: string,
+  ) {
     return this.publicationsService.findOne(productId);
   }
 }
