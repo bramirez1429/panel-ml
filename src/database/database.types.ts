@@ -1,0 +1,143 @@
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[];
+
+type Table<Row, Insert, Relationships extends readonly unknown[] = []> = {
+  Row: Row;
+  Insert: Insert;
+  Update: Partial<Insert>;
+  Relationships: Relationships;
+};
+
+type TokenRow = {
+  seller_id: number;
+  nickname: string;
+  access_token: string;
+  refresh_token: string;
+  expires_at: string;
+  updated_at: string;
+};
+
+type ProductRow = {
+  id: string;
+  seller_id: number;
+  external_key: string;
+  model: 'SHARED' | 'VARIANT_PRICING';
+  family_id: string | null;
+  parent_item_id: string | null;
+  family_name: string | null;
+  title: string;
+  thumbnail: string | null;
+  status: string | null;
+  category_id: string | null;
+  currency_id: string | null;
+  price_from: number | null;
+  price_to: number | null;
+  stock_total: number;
+  children_count: number;
+  permalink: string | null;
+  shared_variations: Json;
+  source_updated_at: string | null;
+  last_synced_at: string;
+  last_full_sync_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type ProductInsert = {
+  id?: string;
+  seller_id: number;
+  external_key: string;
+  model: ProductRow['model'];
+  family_id?: string | null;
+  parent_item_id?: string | null;
+  family_name?: string | null;
+  title: string;
+  thumbnail?: string | null;
+  status?: string | null;
+  category_id?: string | null;
+  currency_id?: string | null;
+  price_from?: number | null;
+  price_to?: number | null;
+  stock_total?: number;
+  children_count?: number;
+  permalink?: string | null;
+  shared_variations?: Json;
+  source_updated_at?: string | null;
+  last_synced_at?: string;
+  last_full_sync_id?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+type ChildRow = {
+  id: string;
+  product_id: string;
+  item_id: string;
+  user_product_id: string;
+  variant_label: string | null;
+  title: string | null;
+  thumbnail: string | null;
+  status: string | null;
+  currency_id: string | null;
+  listing_type_id: string | null;
+  price: number | null;
+  available_quantity: number;
+  sold_quantity: number;
+  attributes: Json;
+  permalink: string | null;
+  source_updated_at: string | null;
+  last_synced_at: string;
+  created_at: string;
+  updated_at: string;
+};
+
+type ChildInsert = {
+  id?: string;
+  product_id: string;
+  item_id: string;
+  user_product_id: string;
+  variant_label?: string | null;
+  title?: string | null;
+  thumbnail?: string | null;
+  status?: string | null;
+  currency_id?: string | null;
+  listing_type_id?: string | null;
+  price?: number | null;
+  available_quantity?: number;
+  sold_quantity?: number;
+  attributes?: Json;
+  permalink?: string | null;
+  source_updated_at?: string | null;
+  last_synced_at?: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type Database = {
+  public: {
+    Tables: {
+      mercadolibre_tokens: Table<TokenRow, TokenRow>;
+      mercadolibre_products: Table<ProductRow, ProductInsert>;
+      mercadolibre_product_children: Table<
+        ChildRow,
+        ChildInsert,
+        [
+          {
+            foreignKeyName: 'mercadolibre_product_children_product_id_fkey';
+            columns: ['product_id'];
+            isOneToOne: false;
+            referencedRelation: 'mercadolibre_products';
+            referencedColumns: ['id'];
+          },
+        ]
+      >;
+    };
+    Views: Record<string, never>;
+    Functions: Record<string, never>;
+  };
+};

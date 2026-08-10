@@ -1,75 +1,71 @@
+import type {
+  MercadolibreChildUpsert,
+  MercadolibreProductUpsert,
+} from '../../database/repositories/mercadolibre-publications.types';
+
 export type JsonObject = Record<string, unknown>;
 
 export type MercadoLibrePublication = JsonObject & {
   id?: unknown;
   title?: unknown;
-  status?: unknown;
-  thumbnail?: unknown;
-  price?: unknown;
   family_name?: unknown;
   user_product_id?: unknown;
-  tags?: unknown;
   variations?: unknown;
+  tags?: unknown;
+  status?: unknown;
+  price?: unknown;
+  currency_id?: unknown;
+  available_quantity?: unknown;
+  sold_quantity?: unknown;
+  thumbnail?: unknown;
+  category_id?: unknown;
+  permalink?: unknown;
+  listing_type_id?: unknown;
+  last_updated?: unknown;
+  attributes?: unknown;
+  site_id?: unknown;
+  seller_id?: unknown;
 };
 
-export type PublicationError = {
-  id: string;
-  code: number;
+export type PublicationSourceError = {
+  itemId: string;
+  status: number;
   body: unknown;
 };
 
-export type PublicationDetails = {
+export type PublicationSourceResult = {
   publications: MercadoLibrePublication[];
-  errors: PublicationError[];
+  errors: PublicationSourceError[];
 };
 
-export type PublicationParent = {
+export type ReducedAttribute = {
   id: string;
-  title: string | null;
-  status: string | null;
-  thumbnail: string | null;
-  price: number | null;
+  valueName: string | null;
 };
 
-export type FamilyParent = {
+export type SharedVariation = {
+  id: string;
+  label: string;
+  availableQuantity: number;
+  soldQuantity: number;
+  attributes: ReducedAttribute[];
+};
+
+export type NormalizationContext = {
+  sellerId: number;
+  syncedAt: string;
+};
+
+export type ResolvedVariantPublication = {
+  publication: MercadoLibrePublication;
   familyId: string;
-  title: string | null;
-};
-
-export type PublicationChild = {
-  id: string;
   userProductId: string;
-  title: string | null;
-  status: string | null;
-  price: number | null;
+  userProductName: string | null;
 };
 
-export type SharedPublicationRow = {
-  type: 'SHARED';
-  parent: PublicationParent;
-  children: [];
+export type NormalizedPublicationBundle = {
+  parent: MercadolibreProductUpsert;
+  children: Array<Omit<MercadolibreChildUpsert, 'product_id'>>;
 };
 
-export type VariantPricingPublicationRow = {
-  type: 'VARIANT_PRICING';
-  parent: FamilyParent;
-  children: PublicationChild[];
-};
-
-export type PublicationRow =
-  SharedPublicationRow | VariantPricingPublicationRow;
-
-export type PublicationModel = PublicationRow['type'];
-
-export type PublicationPage = {
-  paging: {
-    page: number;
-    limit: number;
-    total: number;
-    totalPages: number;
-  };
-  totalItems: number;
-  count: number;
-  publications: PublicationRow[];
-  errors: PublicationError[];
-};
+export type PublicationModel = 'SHARED' | 'VARIANT_PRICING';

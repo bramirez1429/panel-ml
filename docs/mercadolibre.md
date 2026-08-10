@@ -1,112 +1,102 @@
-# Integración con Mercado Libre
+# Integraci\u00f3n con Mercado Libre
 
-La integración mantiene OAuth, almacenamiento y renovación de tokens, consulta de publicaciones y normalización para una tabla de Next.js. Los tokens y secretos se usan únicamente en el backend.
+Mercado Libre es la fuente oficial y Supabase guarda una copia reducida para
+el dashboard. Los endpoints de lectura nunca recorren la API de Mercado Libre.
 
-## Arquitectura
+## Preparaci\u00f3n
 
-- `mercadolibre.controller.ts`: expone las rutas HTTP.
-- `auth/mercadolibre-auth.service.ts`: autorización, `state`, callback, usuario y guardado inicial de tokens.
-- `auth/mercadolibre-token.service.ts`: conexión guardada, vigencia y renovación del token.
-- `shared/mercadolibre-api.service.ts`: solicitudes HTTP, autorización, timeout, JSON y errores de Mercado Libre.
-- `publications/publications.service.ts`: scan, multiget, detalle y paginación.
-- `publications/publication-groups.service.ts`: detecta el modelo y arma filas para la tabla.
-- `user-products/user-products.service.ts`: resuelve MLAU y `family_id`.
-- `database/supabase.service.ts`: lee y guarda la conexión en Supabase.
+Ejecutar en Supabase SQL Editor:
+
+```text
+supabase/migrations/20260809000000_create_mercadolibre_publications.sql
+```
+
+La migraci\u00f3n crea `mercadolibre_products` y
+`mercadolibre_product_children`, sus \u00edndices, la FK con borrado en cascada y
+activa RLS sin policies p\u00fablicas. Tambi\u00e9n activa RLS en la tabla existente de
+tokens. El backend sigue accediendo con `SUPABASE_SERVICE_ROLE_KEY`.
+
+## Responsabilidades
+
+- `auth/`: OAuth, state firmado, almacenamiento y refresh de tokens.
+- `shared/mercadolibre-api.service.ts`: HTTP, Authorization, timeout, JSON y
+  errores seguros.
+- `publications/publications.service.ts`: listado y detalle desde Supabase.
+- `publications/sync/publication-source.service.ts`: scan y multiget.
+- `publications/sync/publication-sync.service.ts`: orquesta full sync y sync
+  puntual.
+- `publications/sync/publication-sync-preparer.service.ts`: resuelve familias y
+  prepara bundles.
+- `publications/sync/publication-sync-writer.service.ts`: persiste parents e
+  hijos y finaliza el snapshot.
+- `publications/normalization/`: detecta SHARED/VARIANT_PRICING y normaliza.
+- `user-products/`: obtiene MLAU y resuelve `family_id` con cache por corrida.
+- `database/repositories/`: solo lectura y escritura de Supabase.
+- `webhook/`: recibe eventos y delega una sincronizaci\u00f3n puntual.
 
 ## OAuth
 
-Para conectar una cuenta, abrir:
-
 ```text
 GET /mercadolibre/connect
-```
-
-Mercado Libre vuelve a:
-
-```text
 GET /mercadolibre/callback?code=...&state=...
 ```
 
-El callback valida el `state`, intercambia el código, consulta `/users/me` y guarda los tokens. La respuesta solo contiene:
+El callback valida el state, intercambia el c\u00f3digo, consulta `/users/me` y
+guarda los tokens. Nunca devuelve access token, refresh token ni Client Secret.
 
-```json
-{
-  "ok": true,
-  "message": "Mercado Libre conectado correctamente",
-  "seller": {
-    "id": 123,
-    "nickname": "MI_USUARIO"
-  }
-}
+## Sincronizaci\u00f3n completa
+
+```text
+POST /mercadolibre/publicaciones/sync
 ```
 
-`MercadolibreTokenService` reutiliza el access token mientras le queden más de cinco minutos. Si está por vencer, usa el refresh token y guarda inmediatamente los tokens nuevos.
+El proceso:
 
-## Publicaciones para la tabla
+1. Lee seller y obtiene un token vigente.
+2. Recorre el scan con p\u00e1ginas de 100 y el mismo `scroll_id`.
+3. Consulta detalles con multiget de 20 y hasta 4 lotes simult\u00e1neos.
+4. Detecta el modelo usando solo `family_name`.
+5. Resuelve MLAU/familias, normaliza y hace upsert.
+6. Elimina hijos ausentes de familias reconstruidas.
+7. Limpia parents no vistos solo si no hubo errores.
+
+El `syncId` hace idempotente la reconciliaci\u00f3n. La limpieza tambi\u00e9n exige
+que el registro sea anterior al inicio de la corrida para no borrar una
+escritura concurrente m\u00e1s nueva.
+
+## Lectura para Next.js
 
 ```text
 GET /mercadolibre/publicaciones?page=1&limit=20
+GET /mercadolibre/publicaciones/:productId
 ```
 
-El backend:
+`productId` es el UUID interno de `mercadolibre_products`. El listado devuelve
+solo res\u00famenes paginados. El detalle agrega `shared_variations` para SHARED o
+`children` para VARIANT_PRICING.
 
-1. Recorre `/users/{sellerId}/items/search` con `search_type=scan`, páginas de 100 y el mismo `scroll_id`.
-2. Elimina MLA duplicados.
-3. Consulta detalles con multiget de hasta 20 IDs y máximo cuatro solicitudes simultáneas.
-4. Detecta relaciones MLA, MLAU y family.
-5. Agrupa y normaliza los productos.
-6. Pagina las filas ya agrupadas.
+### SHARED
 
-Por eso, `limit=20` significa 20 productos padre para la tabla, no 20 MLA internos.
+Una fila parent con `external_key=item:MLA...`, sin hijos relacionales. Las
+variaciones reducidas quedan en `shared_variations`.
 
-### Condición compartida
+### VARIANT_PRICING
 
-Las `variations[]` no se convierten en filas independientes:
+Una fila parent con `external_key=family:...` y una fila child por MLA. El
+`user_product_id` no es \u00fanico porque un MLAU puede tener varias condiciones de
+venta.
 
-```json
-{
-  "type": "SHARED",
-  "parent": {
-    "id": "MLA1561943005",
-    "title": "Remeras Nenas Pack X4",
-    "status": "active",
-    "thumbnail": "https://...",
-    "price": 35000
-  },
-  "children": []
-}
-```
-
-### Condiciones por variante
-
-Cada familia ocupa una fila y cada MLA independiente aparece como hijo:
-
-```json
-{
-  "type": "VARIANT_PRICING",
-  "parent": {
-    "familyId": "8570150160678059",
-    "title": "Remera Nena K-pop"
-  },
-  "children": [
-    {
-      "id": "MLA111",
-      "userProductId": "MLAU111",
-      "title": "Remera Nena K-pop Azul",
-      "status": "active",
-      "price": 35000
-    }
-  ]
-}
-```
-
-La detección es conservadora: un MLAU presente solo dentro de `variations[]` no convierte una publicación compartida en condiciones independientes.
-
-## Detalle y webhook
+## Webhook
 
 ```text
-GET /mercadolibre/publicaciones/MLA123
 POST /mercadolibre/webhook
 ```
 
-El detalle devuelve el body del ítem saneado. El webhook confirma inmediatamente con HTTP 200 y no procesa tareas pesadas.
+Para topics de \u00edtems sincroniza solo el MLA SHARED o reconstruye su familia.
+Eventos repetidos durante el procesamiento se agrupan y provocan una segunda
+lectura al terminar. El endpoint responde HTTP 200 sin esperar el trabajo.
+
+En Vercel, el trabajo iniciado despu\u00e9s de responder no es una cola durable. Si
+se requiere garant\u00eda de entrega, el pr\u00f3ximo paso es persistir un inbox y
+procesarlo con un worker. Tambi\u00e9n se recomienda proteger el endpoint manual de
+full sync con la autenticaci\u00f3n administrativa de la aplicaci\u00f3n.

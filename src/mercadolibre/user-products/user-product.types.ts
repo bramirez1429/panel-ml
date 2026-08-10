@@ -1,14 +1,26 @@
-export type UserProductReferenceSource = {
-  user_product_id?: unknown;
-  variations?: unknown;
-};
-
 export type MercadoLibreUserProduct = Record<string, unknown> & {
   id: string;
+  family_id?: unknown;
+  name?: unknown;
 };
 
-export type UserProductMetadata = {
-  id: string;
+export type UserProductFamily = {
   familyId: string;
-  name: string | null;
+  siteId: string;
+  userId: number;
+  userProductIds: string[];
+};
+
+export type ResolvedUserProductFamily = {
+  userProductId: string;
+  userProductName: string | null;
+  familyId: string;
+  userId: number;
+  userProductIds: string[];
+};
+
+export type UserProductFamilyCache = {
+  userProducts: Map<string, Promise<MercadoLibreUserProduct>>;
+  families: Map<string, Promise<UserProductFamily>>;
+  familyByUserProduct: Map<string, Promise<UserProductFamily>>;
 };

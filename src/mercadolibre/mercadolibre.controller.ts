@@ -2,23 +2,16 @@ import {
   BadRequestException,
   Controller,
   Get,
-  HttpCode,
-  Param,
-  Post,
   Query,
   Redirect,
   UnauthorizedException,
 } from '@nestjs/common';
 import { MercadolibreAuthService } from './auth/mercadolibre-auth.service';
-import { PublicationsService } from './publications/publications.service';
 
 @Controller('mercadolibre')
 export class MercadolibreController {
-  /** Recibe los servicios de autenticación y publicaciones. */
-  constructor(
-    private readonly authService: MercadolibreAuthService,
-    private readonly publicationsService: PublicationsService,
-  ) {}
+  /** Recibe el servicio de autenticación. */
+  constructor(private readonly authService: MercadolibreAuthService) {}
 
   /** Redirige al usuario para autorizar la cuenta. */
   @Get('connect')
@@ -58,33 +51,5 @@ export class MercadolibreController {
       message: 'Mercado Libre conectado correctamente',
       seller,
     };
-  }
-
-  /** Devuelve una página de productos agrupados para la tabla. */
-  @Get('publicaciones')
-  getPublications(
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
-  ) {
-    const parsedPage = page === undefined ? 1 : Number(page);
-    const parsedLimit = limit === undefined ? 20 : Number(limit);
-
-    return this.publicationsService.getPublicationsPage(
-      parsedPage,
-      parsedLimit,
-    );
-  }
-
-  /** Devuelve el detalle completo y seguro de un MLA. */
-  @Get('publicaciones/:itemId')
-  getPublication(@Param('itemId') itemId: string) {
-    return this.publicationsService.getPublication(itemId);
-  }
-
-  /** Confirma rápidamente la recepción del webhook. */
-  @Post('webhook')
-  @HttpCode(200)
-  webhook(): { ok: true } {
-    return { ok: true };
   }
 }

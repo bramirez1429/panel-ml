@@ -1,6 +1,7 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { Database } from './database.types';
 
 export type MercadoLibreConnection = {
   seller_id: number;
@@ -13,7 +14,7 @@ export type MercadoLibreConnection = {
 
 @Injectable()
 export class SupabaseService {
-  private client?: SupabaseClient;
+  private client?: SupabaseClient<Database>;
 
   /** Recibe la configuración privada del servidor. */
   constructor(private readonly configService: ConfigService) {}
@@ -52,9 +53,9 @@ export class SupabaseService {
   }
 
   /** Crea el cliente de Supabase solamente cuando se necesita. */
-  private getClient(): SupabaseClient {
+  getClient(): SupabaseClient<Database> {
     if (!this.client) {
-      this.client = createClient(
+      this.client = createClient<Database>(
         this.requiredConfig('SUPABASE_URL'),
         this.requiredConfig('SUPABASE_SERVICE_ROLE_KEY'),
         { auth: { persistSession: false, autoRefreshToken: false } },
