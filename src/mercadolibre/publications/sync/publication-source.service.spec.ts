@@ -142,7 +142,7 @@ describe('PublicationSourceService', () => {
     expect(api.calls[0].accessToken).toBe('private-token');
   });
 
-  it('limita los multiget a cuatro solicitudes simultáneas', async () => {
+  it('ejecuta una sola solicitud multiget a la vez', async () => {
     let active = 0;
     let maximum = 0;
     const { source } = createSource(async ({ path }) => {
@@ -159,7 +159,7 @@ describe('PublicationSourceService', () => {
 
     expect(result.publications).toHaveLength(100);
     expect(result.errors).toEqual([]);
-    expect(maximum).toBe(4);
+    expect(maximum).toBe(1);
   });
 
   it('pagina la búsqueda por varios User Products y deduplica MLA', async () => {

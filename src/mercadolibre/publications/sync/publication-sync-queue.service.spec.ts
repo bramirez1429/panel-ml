@@ -44,7 +44,11 @@ describe('PublicationSyncQueueService', () => {
     await service.consume({ syncId: SYNC_ID });
 
     expect(processNext).toHaveBeenCalledWith(SYNC_ID);
-    expect(sendMock).toHaveBeenCalledTimes(1);
+    expect(sendMock).toHaveBeenCalledWith(
+      PUBLICATION_SYNC_QUEUE_TOPIC,
+      { syncId: SYNC_ID },
+      { delaySeconds: 15 },
+    );
   });
 
   it('termina sin publicar cuando el job está completo', async () => {
@@ -70,8 +74,7 @@ describe('PublicationSyncQueueService', () => {
     expect(sendMock).not.toHaveBeenCalled();
   });
 
-  it('aplica 10, 20 y 40 segundos con jitter al rate limit', () => {
-    const random = jest.spyOn(Math, 'random').mockReturnValue(0.99);
+  it('aplica 60, 120 y 240 segundos al rate limit', () => {
     const error = new ServiceUnavailableException('Demasiadas solicitudes');
 
     expect(
@@ -79,23 +82,19 @@ describe('PublicationSyncQueueService', () => {
         publicationSyncQueueRetry(error, { deliveryCount }),
       ),
     ).toEqual([
-      { afterSeconds: 12 },
-      { afterSeconds: 22 },
-      { afterSeconds: 42 },
-      { afterSeconds: 42 },
+      { afterSeconds: 60 },
+      { afterSeconds: 120 },
+      { afterSeconds: 240 },
+      { afterSeconds: 240 },
     ]);
-
-    random.mockRestore();
   });
 
   it('detecta 429 y deja otros errores al retry predeterminado', () => {
-    jest.spyOn(Math, 'random').mockReturnValue(0);
-
     expect(
       publicationSyncQueueRetry(new HttpException('rate limit', 429), {
         deliveryCount: 1,
       }),
-    ).toEqual({ afterSeconds: 10 });
+    ).toEqual({ afterSeconds: 60 });
     expect(
       publicationSyncQueueRetry(
         new ServiceUnavailableException('Servicio temporalmente caído'),

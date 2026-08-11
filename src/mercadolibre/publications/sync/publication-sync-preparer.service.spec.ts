@@ -33,7 +33,7 @@ const cache = () => ({
 });
 
 describe('PublicationSyncPreparerService concurrency', () => {
-  it('limita a dos las resoluciones concurrentes', async () => {
+  it('resuelve una publicación de Mercado Libre a la vez', async () => {
     let active = 0;
     let maximum = 0;
     const resolveFamily = jest.fn(async (userProductId: string) => {
@@ -57,7 +57,7 @@ describe('PublicationSyncPreparerService concurrency', () => {
       cache(),
     );
 
-    expect(maximum).toBe(2);
+    expect(maximum).toBe(1);
   });
 
   it('propaga el rate limit para que el job vuelva a PENDING', async () => {

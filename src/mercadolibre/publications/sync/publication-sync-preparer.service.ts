@@ -22,7 +22,7 @@ import {
 } from './publication-sync.types';
 import { isMercadoLibreRateLimitError } from './publication-sync-job-error.helpers';
 
-const RESOLUTION_CONCURRENCY = 2;
+const RESOLUTION_CONCURRENCY = 1;
 
 type ResolutionAttempt = {
   resolved?: ResolvedVariantPublication;

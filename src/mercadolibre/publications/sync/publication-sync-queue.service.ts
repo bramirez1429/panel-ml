@@ -4,8 +4,8 @@ import { isMercadoLibreRateLimitError } from './publication-sync-job-error.helpe
 import { PublicationSyncJobService } from './publication-sync-job.service';
 
 export const PUBLICATION_SYNC_QUEUE_TOPIC = 'mercadolibre-publication-sync';
-const RATE_LIMIT_BACKOFF_SECONDS = [10, 20, 40] as const;
-const RATE_LIMIT_JITTER_SECONDS = 3;
+const NEXT_BATCH_DELAY_SECONDS = 15;
+const RATE_LIMIT_BACKOFF_SECONDS = [60, 120, 240] as const;
 
 export interface PublicationSyncQueueMessage {
   syncId: string;
@@ -22,9 +22,7 @@ export function publicationSyncQueueRetry(
     Math.max(metadata.deliveryCount - 1, 0),
     RATE_LIMIT_BACKOFF_SECONDS.length - 1,
   );
-  const jitter = Math.floor(Math.random() * RATE_LIMIT_JITTER_SECONDS);
-
-  return { afterSeconds: RATE_LIMIT_BACKOFF_SECONDS[index] + jitter };
+  return { afterSeconds: RATE_LIMIT_BACKOFF_SECONDS[index] };
 }
 
 @Injectable()
@@ -33,9 +31,13 @@ export class PublicationSyncQueueService {
   constructor(private readonly syncJobService: PublicationSyncJobService) {}
 
   /** Publica una invocación durable del siguiente batch. */
-  async enqueue(syncId: string): Promise<void> {
+  async enqueue(syncId: string, delaySeconds?: number): Promise<void> {
     const message: PublicationSyncQueueMessage = { syncId };
-    await send(PUBLICATION_SYNC_QUEUE_TOPIC, message);
+    if (delaySeconds === undefined) {
+      await send(PUBLICATION_SYNC_QUEUE_TOPIC, message);
+      return;
+    }
+    await send(PUBLICATION_SYNC_QUEUE_TOPIC, message, { delaySeconds });
   }
 
   /** Procesa un mensaje y publica el siguiente cuando corresponde. */
@@ -44,7 +46,7 @@ export class PublicationSyncQueueService {
       const result = await this.syncJobService.processNext(message.syncId);
 
       if (result.hasMore) {
-        await this.enqueue(message.syncId);
+        await this.enqueue(message.syncId, NEXT_BATCH_DELAY_SECONDS);
       }
     } catch (error) {
       if (error instanceof ConflictException) return;

@@ -10,6 +10,9 @@ export const PUBLICATION_MULTIGET_SIZE = 20;
 /** Cantidad máxima de lotes consultados al mismo tiempo. */
 export const PUBLICATION_REQUEST_CONCURRENCY = 4;
 
+/** Cantidad máxima de solicitudes simultáneas a Mercado Libre. */
+export const MERCADOLIBRE_REQUEST_CONCURRENCY = 1;
+
 /** Tamaño de página para buscar ítems asociados a User Products. */
 export const USER_PRODUCT_ITEM_SEARCH_SIZE = 50;
 

@@ -12,8 +12,8 @@ import {
   isNonEmptyString,
 } from '../../shared/mercadolibre.types';
 import {
+  MERCADOLIBRE_REQUEST_CONCURRENCY,
   PUBLICATION_MULTIGET_SIZE,
-  PUBLICATION_REQUEST_CONCURRENCY,
   PUBLICATION_SCAN_SIZE,
   PUBLICATION_SYNC_ATTRIBUTES,
   USER_PRODUCT_FILTER_BATCH_SIZE,
@@ -100,11 +100,11 @@ export class PublicationSourceService {
     for (
       let index = 0;
       index < batches.length;
-      index += PUBLICATION_REQUEST_CONCURRENCY
+      index += MERCADOLIBRE_REQUEST_CONCURRENCY
     ) {
       const current = batches.slice(
         index,
-        index + PUBLICATION_REQUEST_CONCURRENCY,
+        index + MERCADOLIBRE_REQUEST_CONCURRENCY,
       );
       results.push(
         ...(await Promise.all(
@@ -171,11 +171,11 @@ export class PublicationSourceService {
     for (
       let index = 0;
       index < batches.length;
-      index += PUBLICATION_REQUEST_CONCURRENCY
+      index += MERCADOLIBRE_REQUEST_CONCURRENCY
     ) {
       const current = batches.slice(
         index,
-        index + PUBLICATION_REQUEST_CONCURRENCY,
+        index + MERCADOLIBRE_REQUEST_CONCURRENCY,
       );
       const results = await Promise.all(
         current.map((batch) =>
