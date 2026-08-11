@@ -11,6 +11,7 @@ import { PublicationNormalizerService } from './publications/normalization/publi
 import { PublicationsController } from './publications/publications.controller';
 import { PublicationsService } from './publications/publications.service';
 import { PublicationSourceService } from './publications/sync/publication-source.service';
+import { PublicationSyncDispatcherService } from './publications/sync/publication-sync-dispatcher.service';
 import { PublicationFamilySyncService } from './publications/sync/publication-family-sync.service';
 import { PublicationSyncPreparerService } from './publications/sync/publication-sync-preparer.service';
 import { PublicationSyncJobService } from './publications/sync/publication-sync-job.service';
@@ -41,6 +42,7 @@ import { WebhookService } from './webhook/webhook.service';
     PublicationModelDetectorService,
     PublicationNormalizerService,
     PublicationSourceService,
+    PublicationSyncDispatcherService,
     PublicationFamilySyncService,
     PublicationSyncPreparerService,
     PublicationSyncWriterService,

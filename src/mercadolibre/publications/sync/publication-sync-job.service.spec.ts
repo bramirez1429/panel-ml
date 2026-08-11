@@ -1,4 +1,8 @@
-import { BadGatewayException, ForbiddenException } from '@nestjs/common';
+import {
+  BadGatewayException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { MercadolibreSyncJobsRepository } from '../../../database/repositories/mercadolibre-sync-jobs.repository';
 import { MercadolibreSyncJob } from '../../../database/repositories/mercadolibre-sync-jobs.types';
 import { MercadolibreTokenService } from '../../auth/mercadolibre-token.service';
@@ -10,7 +14,6 @@ const JOB_ID = '11111111-1111-4111-8111-111111111111';
 const FULL_SYNC_ID = '22222222-2222-4222-8222-222222222222';
 const STARTED_AT = '2026-08-10T12:00:00.000Z';
 const SELLER_ID = 123;
-
 /** Crea un trabajo completo con valores predeterminados. */
 function job(
   overrides: Partial<MercadolibreSyncJob> = {},
@@ -27,6 +30,7 @@ function job(
     products_saved: 0,
     children_saved: 0,
     errors_count: 0,
+    retry_count: 0,
     last_error: null,
     started_at: null,
     finished_at: null,
@@ -35,7 +39,6 @@ function job(
     ...overrides,
   };
 }
-
 /** Genera MLA consecutivos para simular una página. */
 function itemIds(amount: number): string[] {
   return Array.from({ length: amount }, (_, index) => `MLA${index + 1}`);
@@ -50,6 +53,7 @@ function setup() {
       .fn()
       .mockResolvedValue(job({ status: 'RUNNING', started_at: STARTED_AT })),
     updateProgress: jest.fn().mockResolvedValue(job()),
+    releaseAfterError: jest.fn().mockResolvedValue(job()),
     complete: jest.fn().mockResolvedValue(job({ status: 'COMPLETED' })),
     fail: jest.fn().mockResolvedValue(job({ status: 'FAILED' })),
   };
@@ -72,7 +76,6 @@ function setup() {
   );
   return { jobs, service, source, sync, token };
 }
-
 describe('PublicationSyncJobService', () => {
   it('crea el job sin consultar Mercado Libre ni pedir un token válido', async () => {
     const { jobs, service, source, sync, token } = setup();
@@ -177,14 +180,14 @@ describe('PublicationSyncJobService', () => {
       }),
     );
     sync.syncBatch.mockRejectedValue(
-      new BadGatewayException('access_token=private-token'),
+      new BadRequestException('access_token=private-token'),
     );
     await expect(service.processNext(JOB_ID)).rejects.toBeInstanceOf(
-      BadGatewayException,
+      BadRequestException,
     );
     expect(jobs.fail).toHaveBeenCalledWith(
       JOB_ID,
-      'Un servicio externo impidió continuar',
+      'La sincronización no pudo continuar',
     );
     expect(JSON.stringify(jobs.fail.mock.calls)).not.toContain('private-token');
     expect(sync.finalizeFullSync).not.toHaveBeenCalled();

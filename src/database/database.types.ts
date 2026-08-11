@@ -132,6 +132,7 @@ type SyncJobRow = {
   products_saved: number;
   children_saved: number;
   errors_count: number;
+  retry_count: number;
   last_error: string | null;
   started_at: string | null;
   finished_at: string | null;
@@ -151,6 +152,7 @@ type SyncJobInsert = {
   products_saved?: number;
   children_saved?: number;
   errors_count?: number;
+  retry_count?: number;
   last_error?: string | null;
   started_at?: string | null;
   finished_at?: string | null;

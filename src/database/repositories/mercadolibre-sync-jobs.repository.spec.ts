@@ -23,6 +23,7 @@ function jobRow(status: SyncJobRow['status'] = 'PENDING'): SyncJobRow {
     products_saved: 0,
     children_saved: 0,
     errors_count: 0,
+    retry_count: 0,
     last_error: null,
     started_at: null,
     finished_at: null,
@@ -149,6 +150,29 @@ describe('MercadolibreSyncJobsRepository', () => {
         products_saved: 4,
         children_saved: 6,
         errors_count: 1,
+        retry_count: 0,
+      }),
+    );
+    expect(statusEq).toHaveBeenCalledWith('status', 'RUNNING');
+  });
+
+  it('guarda el reintento temporal y libera RUNNING como PENDING', async () => {
+    const pending = {
+      ...jobRow(),
+      retry_count: 2,
+      last_error: 'Error temporal',
+    };
+    const { repository, update, statusEq } = transitionSetup(pending);
+
+    await expect(
+      repository.releaseAfterError(JOB_ID, 'Error temporal', 2),
+    ).resolves.toEqual(pending);
+
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'PENDING',
+        retry_count: 2,
+        last_error: 'Error temporal',
       }),
     );
     expect(statusEq).toHaveBeenCalledWith('status', 'RUNNING');
@@ -166,6 +190,7 @@ describe('MercadolibreSyncJobsRepository', () => {
     expect(completeMock.update).toHaveBeenCalledWith(
       expect.objectContaining({
         status: 'COMPLETED',
+        retry_count: 0,
         finished_at: NOW,
       }),
     );
