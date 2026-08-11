@@ -68,8 +68,7 @@ describe('PublicationsController', () => {
     expect(defer).toHaveBeenCalledWith(SYNC_ID, expect.any(Promise));
   });
 
-  it('autentica y reprograma un error temporal interno', async () => {
-    const temporaryError = new Error('falla temporal');
+  it('procesa y encadena otro request interno cuando quedan publicaciones', async () => {
     const pending = {
       ok: true,
       syncId: SYNC_ID,
@@ -78,49 +77,41 @@ describe('PublicationsController', () => {
       productsSaved: 5,
       childrenSaved: 5,
       errorsCount: 0,
-      lastError: 'Error temporal',
       hasMore: true,
     };
-    processNext.mockRejectedValue(temporaryError);
-    getStatus.mockResolvedValue(pending);
+    processNext.mockResolvedValue(pending);
 
-    expect(controller.processInternalNext(SYNC_ID, 'internal-secret')).toEqual({
-      ok: true,
-      syncId: SYNC_ID,
-      status: 'ACCEPTED',
-    });
-    await defer.mock.calls[0][1];
+    await expect(
+      controller.processInternalNext(SYNC_ID, 'internal-secret'),
+    ).resolves.toBe(pending);
 
     expect(assertInternalSecret).toHaveBeenCalledWith('internal-secret');
+    expect(processNext).toHaveBeenCalledWith(SYNC_ID);
     expect(dispatchNext).toHaveBeenCalledWith(SYNC_ID);
+    expect(defer).toHaveBeenCalledWith(SYNC_ID, expect.any(Promise));
   });
 
-  it('no reprograma un job interno fallido', async () => {
-    const fatalError = new Error('falla fatal');
-    processNext.mockRejectedValue(fatalError);
-    getStatus.mockResolvedValue({ status: 'FAILED' });
+  it('propaga el error del batch interno al dispatcher HTTP', async () => {
+    const error = new Error('falla temporal');
+    processNext.mockRejectedValue(error);
 
-    controller.processInternalNext(SYNC_ID, 'internal-secret');
-    await expect(defer.mock.calls[0][1]).rejects.toBe(fatalError);
+    await expect(
+      controller.processInternalNext(SYNC_ID, 'internal-secret'),
+    ).rejects.toBe(error);
 
+    expect(defer).not.toHaveBeenCalled();
     expect(dispatchNext).not.toHaveBeenCalled();
   });
 
-  it('encadena otro request interno cuando quedan publicaciones', async () => {
-    processNext.mockResolvedValue({ status: 'PENDING', hasMore: true });
-
-    controller.processInternalNext(SYNC_ID, 'internal-secret');
-    await defer.mock.calls[0][1];
-
-    expect(dispatchNext).toHaveBeenCalledWith(SYNC_ID);
-  });
-
   it('no despacha otra invocación cuando el job completó', async () => {
-    processNext.mockResolvedValue({ status: 'COMPLETED', hasMore: false });
+    const completed = { status: 'COMPLETED', hasMore: false };
+    processNext.mockResolvedValue(completed);
 
-    controller.processInternalNext(SYNC_ID, 'internal-secret');
-    await defer.mock.calls[0][1];
+    await expect(
+      controller.processInternalNext(SYNC_ID, 'internal-secret'),
+    ).resolves.toBe(completed);
 
+    expect(defer).not.toHaveBeenCalled();
     expect(dispatchNext).not.toHaveBeenCalled();
   });
 });
