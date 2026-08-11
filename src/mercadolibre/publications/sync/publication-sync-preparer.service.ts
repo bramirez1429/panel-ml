@@ -20,8 +20,9 @@ import {
   PreparedPublications,
   PublicationSyncError,
 } from './publication-sync.types';
+import { isMercadoLibreRateLimitError } from './publication-sync-job-error.helpers';
 
-const RESOLUTION_CONCURRENCY = 4;
+const RESOLUTION_CONCURRENCY = 2;
 
 type ResolutionAttempt = {
   resolved?: ResolvedVariantPublication;
@@ -125,6 +126,7 @@ export class PublicationSyncPreparerService {
             },
           };
         } catch (error) {
+          if (isMercadoLibreRateLimitError(error)) throw error;
           return { error: exceptionToSyncError(itemId, error) };
         }
       },

@@ -33,7 +33,7 @@ function job(retryCount: number, status: MercadolibreSyncJob['status']) {
 }
 
 /** Crea el servicio para provocar un error HTTP durante syncBatch. */
-function setup(retryCount: number, httpStatus: number) {
+function setup(retryCount: number, failure: number | Error) {
   const pending = job(retryCount, 'PENDING');
   const running = job(retryCount, 'RUNNING');
   const jobs = {
@@ -51,7 +51,9 @@ function setup(retryCount: number, httpStatus: number) {
     syncBatch: jest
       .fn()
       .mockRejectedValue(
-        new HttpException('access_token=private-token', httpStatus),
+        typeof failure === 'number'
+          ? new HttpException('access_token=private-token', failure)
+          : failure,
       ),
   };
   const service = new PublicationSyncJobService(
@@ -101,6 +103,21 @@ describe('PublicationSyncJobService retries', () => {
       JOB_ID,
       expect.any(String),
       3,
+    );
+    expect(jobs.fail).not.toHaveBeenCalled();
+  });
+
+  it('libera un rate limit identificado por su mensaje', async () => {
+    const failure = new Error('Demasiadas solicitudes');
+    const { jobs, service } = setup(0, failure);
+    jest.spyOn(Logger.prototype, 'error').mockImplementation();
+
+    await expect(service.processNext(JOB_ID)).rejects.toBe(failure);
+
+    expect(jobs.releaseAfterError).toHaveBeenCalledWith(
+      JOB_ID,
+      'Mercado Libre limitó temporalmente las solicitudes',
+      1,
     );
     expect(jobs.fail).not.toHaveBeenCalled();
   });

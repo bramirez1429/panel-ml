@@ -5,6 +5,7 @@ import { AppModule } from '../../src/app.module';
 import {
   PublicationSyncQueueMessage,
   PublicationSyncQueueService,
+  publicationSyncQueueRetry,
 } from '../../src/mercadolibre/publications/sync/publication-sync-queue.service';
 
 const queueClient = new QueueClient();
@@ -15,6 +16,7 @@ export default queueClient.handleNodeCallback(
     const app = await getApplicationContext();
     await app.get(PublicationSyncQueueService).consume(message);
   },
+  { retry: publicationSyncQueueRetry },
 );
 
 /** Reutiliza el contexto Nest entre invocaciones calientes. */
