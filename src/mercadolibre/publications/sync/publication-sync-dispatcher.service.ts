@@ -91,9 +91,12 @@ export class PublicationSyncDispatcherService {
   }
 
   /** Obtiene el host confiable asignado por Vercel. */
-  private vercelHost(): string | undefined {
-    return this.configService.get<string>('VERCEL_URL');
-  }
+private vercelHost(): string | undefined {
+  return (
+    this.configService.get<string>('VERCEL_PROJECT_PRODUCTION_URL') ??
+    this.configService.get<string>('VERCEL_URL')
+  );
+}
 
   /** Indica si la solicitud corre dentro de una Function de Vercel. */
   private isVercelRuntime(): boolean {
