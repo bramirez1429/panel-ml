@@ -1,19 +1,14 @@
 import {
   Controller,
   Get,
-  Headers,
-  HttpCode,
   Param,
   ParseUUIDPipe,
   Post,
   Query,
 } from '@nestjs/common';
 import { PublicationsService } from './publications.service';
-import {
-  PUBLICATION_SYNC_INTERNAL_SECRET_HEADER,
-  PublicationSyncDispatcherService,
-} from './sync/publication-sync-dispatcher.service';
 import { PublicationSyncJobService } from './sync/publication-sync-job.service';
+import { PublicationSyncQueueService } from './sync/publication-sync-queue.service';
 
 @Controller('mercadolibre/publicaciones')
 export class PublicationsController {
@@ -21,7 +16,7 @@ export class PublicationsController {
   constructor(
     private readonly publicationsService: PublicationsService,
     private readonly syncJobService: PublicationSyncJobService,
-    private readonly syncDispatcher: PublicationSyncDispatcherService,
+    private readonly syncQueue: PublicationSyncQueueService,
   ) {}
 
   /** Crea una sincronización y agenda su primer bloque. */
@@ -29,10 +24,7 @@ export class PublicationsController {
   async startSync() {
     const result = await this.syncJobService.start();
 
-    this.syncDispatcher.defer(
-      result.syncId,
-      this.syncDispatcher.dispatchNext(result.syncId),
-    );
+    await this.syncQueue.enqueue(result.syncId);
     return result;
   }
 
@@ -40,27 +32,6 @@ export class PublicationsController {
   @Post('sync/:syncId/next')
   processNext(@Param('syncId', ParseUUIDPipe) syncId: string) {
     return this.syncJobService.processNext(syncId);
-  }
-
-  /** Recibe una invocación interna autenticada. */
-  @Post('sync/:syncId/internal-next')
-  @HttpCode(200)
-  async processInternalNext(
-    @Param('syncId', ParseUUIDPipe) syncId: string,
-    @Headers(PUBLICATION_SYNC_INTERNAL_SECRET_HEADER)
-    internalSecret?: string,
-  ) {
-    this.syncDispatcher.assertInternalSecret(internalSecret);
-    const result = await this.syncJobService.processNext(syncId);
-
-    if (result.hasMore) {
-      this.syncDispatcher.defer(
-        syncId,
-        this.syncDispatcher.dispatchNext(syncId),
-      );
-    }
-
-    return result;
   }
 
   /** Consulta el estado acumulado de una sincronización. */

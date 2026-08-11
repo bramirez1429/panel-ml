@@ -1,7 +1,7 @@
 import { PublicationsController } from './publications.controller';
 import { PublicationsService } from './publications.service';
-import { PublicationSyncDispatcherService } from './sync/publication-sync-dispatcher.service';
 import { PublicationSyncJobService } from './sync/publication-sync-job.service';
+import { PublicationSyncQueueService } from './sync/publication-sync-queue.service';
 
 const SYNC_ID = '11111111-1111-4111-8111-111111111111';
 
@@ -11,22 +11,16 @@ describe('PublicationsController', () => {
   const start = jest.fn();
   const processNext = jest.fn();
   const getStatus = jest.fn();
-  const dispatchNext = jest.fn();
-  const defer = jest.fn<void, [string, Promise<unknown>]>();
-  const assertInternalSecret = jest.fn();
+  const enqueue = jest.fn();
   let controller: PublicationsController;
 
   beforeEach(() => {
     jest.resetAllMocks();
-    dispatchNext.mockResolvedValue(undefined);
+    enqueue.mockResolvedValue(undefined);
     controller = new PublicationsController(
       { list, findOne } as unknown as PublicationsService,
       { start, processNext, getStatus } as unknown as PublicationSyncJobService,
-      {
-        dispatchNext,
-        defer,
-        assertInternalSecret,
-      } as unknown as PublicationSyncDispatcherService,
+      { enqueue } as unknown as PublicationSyncQueueService,
     );
   });
 
@@ -49,7 +43,7 @@ describe('PublicationsController', () => {
     expect(findOne).toHaveBeenCalledWith(SYNC_ID);
   });
 
-  it('delega inicio, siguiente batch y estado del sync job', async () => {
+  it('inicia, encola y mantiene batch manual y estado', async () => {
     const started = { ok: true, syncId: SYNC_ID, status: 'PENDING' };
     const pending = { ...started, hasMore: true };
     start.mockResolvedValue(started);
@@ -61,57 +55,8 @@ describe('PublicationsController', () => {
     await expect(controller.getSyncStatus(SYNC_ID)).resolves.toBe(pending);
 
     expect(start).toHaveBeenCalledTimes(1);
+    expect(enqueue).toHaveBeenCalledWith(SYNC_ID);
     expect(processNext).toHaveBeenCalledWith(SYNC_ID);
     expect(getStatus).toHaveBeenCalledWith(SYNC_ID);
-    expect(dispatchNext).toHaveBeenCalledTimes(1);
-    expect(dispatchNext).toHaveBeenCalledWith(SYNC_ID);
-    expect(defer).toHaveBeenCalledWith(SYNC_ID, expect.any(Promise));
-  });
-
-  it('procesa y encadena otro request interno cuando quedan publicaciones', async () => {
-    const pending = {
-      ok: true,
-      syncId: SYNC_ID,
-      status: 'PENDING',
-      processedItems: 10,
-      productsSaved: 5,
-      childrenSaved: 5,
-      errorsCount: 0,
-      hasMore: true,
-    };
-    processNext.mockResolvedValue(pending);
-
-    await expect(
-      controller.processInternalNext(SYNC_ID, 'internal-secret'),
-    ).resolves.toBe(pending);
-
-    expect(assertInternalSecret).toHaveBeenCalledWith('internal-secret');
-    expect(processNext).toHaveBeenCalledWith(SYNC_ID);
-    expect(dispatchNext).toHaveBeenCalledWith(SYNC_ID);
-    expect(defer).toHaveBeenCalledWith(SYNC_ID, expect.any(Promise));
-  });
-
-  it('propaga el error del batch interno al dispatcher HTTP', async () => {
-    const error = new Error('falla temporal');
-    processNext.mockRejectedValue(error);
-
-    await expect(
-      controller.processInternalNext(SYNC_ID, 'internal-secret'),
-    ).rejects.toBe(error);
-
-    expect(defer).not.toHaveBeenCalled();
-    expect(dispatchNext).not.toHaveBeenCalled();
-  });
-
-  it('no despacha otra invocación cuando el job completó', async () => {
-    const completed = { status: 'COMPLETED', hasMore: false };
-    processNext.mockResolvedValue(completed);
-
-    await expect(
-      controller.processInternalNext(SYNC_ID, 'internal-secret'),
-    ).resolves.toBe(completed);
-
-    expect(defer).not.toHaveBeenCalled();
-    expect(dispatchNext).not.toHaveBeenCalled();
   });
 });
