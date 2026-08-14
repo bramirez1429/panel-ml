@@ -79,44 +79,54 @@ export class PublicationsService {
   }
 
   /** Devuelve el detalle base y agrega información extra si está disponible. */
-  async findOne(productId: string) {
-    this.validateProductId(productId);
+ async findOne(productId: string) {
+  this.validateProductId(productId);
 
-    const connection = await this.tokenService.getStoredConnection();
+  this.logger.log(`[DETAIL] Inicio ${productId}`);
 
-    const product = await this.productsRepository.findById(
-      connection.seller_id,
-      productId,
-    );
+  this.logger.log('[DETAIL] Buscando conexión');
+  const connection = await this.tokenService.getStoredConnection();
+  this.logger.log('[DETAIL] Conexión OK');
 
-    if (!product) {
-      throw new NotFoundException('Publicación no encontrada');
-    }
+  this.logger.log('[DETAIL] Buscando producto');
+  const product = await this.productsRepository.findById(
+    connection.seller_id,
+    productId,
+  );
+  this.logger.log('[DETAIL] Producto OK');
 
-    const children =
-      product.model === 'VARIANT_PRICING'
-        ? await this.childrenRepository.findByProductId(product.id)
-        : [];
-
-    const itemIds =
-      product.model === 'SHARED'
-        ? product.parent_item_id
-          ? [product.parent_item_id]
-          : []
-        : children.map(({ item_id }) => item_id);
-
-    const management = await this.safeManagement(product, itemIds);
-    const content = await this.safeContent(product.id, itemIds);
-
-    return {
-      product: {
-        ...product,
-        ...(isObject(content) ? content : {}),
-      },
-      children,
-      management,
-    };
+  if (!product) {
+    throw new NotFoundException('Publicación no encontrada');
   }
+
+  this.logger.log('[DETAIL] Buscando hijos');
+
+  const children =
+    product.model === 'VARIANT_PRICING'
+      ? await this.childrenRepository.findByProductId(product.id)
+      : [];
+
+  this.logger.log(`[DETAIL] Hijos OK: ${children.length}`);
+
+  const itemIds =
+    product.model === 'SHARED'
+      ? product.parent_item_id
+        ? [product.parent_item_id]
+        : []
+      : children.map(({ item_id }) => item_id);
+
+  const management = await this.safeManagement(product, itemIds);
+  const content = await this.safeContent(product.id, itemIds);
+
+  return {
+    product: {
+      ...product,
+      ...(isObject(content) ? content : {}),
+    },
+    children,
+    management,
+  };
+}
 
   /** Obtiene información administrativa sin romper el detalle si falla. */
   private async safeManagement(
