@@ -27,9 +27,6 @@ function productRow(): MercadolibreProductRow {
     children_count: 0,
     permalink: null,
     shared_variations: [],
-    pictures: [],
-    shared_skus: {},
-    management_synced_at: null,
     source_updated_at: null,
     last_synced_at: '2026-08-09T00:00:00.000Z',
     last_full_sync_id: SYNC_ID,
@@ -75,7 +72,7 @@ describe('MercadolibreProductsRepository', () => {
       expect.anything(),
     );
     expect(select).toHaveBeenCalledWith(
-      expect.stringContaining('shared_variations'),
+      expect.not.stringContaining('shared_variations'),
       expect.anything(),
     );
   });

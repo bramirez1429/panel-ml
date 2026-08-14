@@ -1,7 +1,6 @@
 import {
   BadGatewayException,
   BadRequestException,
-  HttpException,
   Injectable,
 } from '@nestjs/common';
 import {
@@ -15,7 +14,6 @@ import {
 import {
   MERCADOLIBRE_REQUEST_CONCURRENCY,
   PUBLICATION_MULTIGET_SIZE,
-  PUBLICATION_REQUEST_CONCURRENCY,
   PUBLICATION_SCAN_SIZE,
   PUBLICATION_SYNC_ATTRIBUTES,
   USER_PRODUCT_FILTER_BATCH_SIZE,
@@ -25,7 +23,6 @@ import {
   MercadoLibrePublication,
   PublicationSourceResult,
 } from '../publication.types';
-import { PublicationOfficialPriceService } from '../prices/publication-official-price.service';
 import { PublicationScanPage } from './publication-sync.types';
 import {
   chunk,
@@ -34,15 +31,11 @@ import {
   parseSearchIds,
   parseSearchTotal,
 } from './publication-source.helpers';
-import { mapWithConcurrency } from './publication-sync.helpers';
 
 @Injectable()
 export class PublicationSourceService {
   /** Prepara el acceso compartido a Mercado Libre. */
-  constructor(
-    private readonly apiService: MercadolibreApiService,
-    private readonly officialPrices: PublicationOfficialPriceService,
-  ) {}
+  constructor(private readonly apiService: MercadolibreApiService) {}
 
   /** Obtiene una sola página del scan de Mercado Libre. */
   async fetchNextScanPage(
@@ -119,11 +112,10 @@ export class PublicationSourceService {
         )),
       );
     }
-    const source = {
+    return {
       publications: results.flatMap((result) => result.publications),
       errors: results.flatMap((result) => result.errors),
     };
-    return this.withOfficialPrices(source, accessToken);
   }
 
   /** Consulta un multiget oficial de hasta veinte publicaciones. */
@@ -222,37 +214,6 @@ export class PublicationSourceService {
     }
     return [...itemIds];
   }
-
-  private async withOfficialPrices(
-    source: PublicationSourceResult,
-    accessToken: string,
-  ): Promise<PublicationSourceResult> {
-    const settled = await mapWithConcurrency(
-      source.publications,
-      PUBLICATION_REQUEST_CONCURRENCY,
-      async (publication) => {
-        try {
-          return {
-            publication: await this.officialPrices.hydrate(
-              publication,
-              accessToken,
-            ),
-            error: null,
-          };
-        } catch (error) {
-          return { publication, error };
-        }
-      },
-    );
-    const publications: MercadoLibrePublication[] = [];
-    const errors = [...source.errors];
-    settled.forEach((result, index) => {
-      const itemId = String(result.publication.id ?? 'unknown-item');
-      if (result.error === null) publications.push(result.publication);
-      else errors.push(priceSourceError(itemId, result.error));
-    });
-    return { publications, errors };
-  }
 }
 
 /** Valida y elimina MLAU repetidos. */
@@ -265,13 +226,4 @@ function normalizeUserProductIds(values: string[]): string[] {
       }),
     ),
   ];
-}
-
-function priceSourceError(itemId: string, error: unknown) {
-  if (error instanceof HttpException) {
-    const status = error.getStatus();
-    if (status === 401 || status === 429 || status >= 500) throw error;
-    return { itemId, status, body: error.getResponse() };
-  }
-  throw error;
 }

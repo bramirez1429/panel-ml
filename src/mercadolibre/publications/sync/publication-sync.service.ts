@@ -12,11 +12,9 @@ import {
   NormalizedPublicationBundle,
 } from '../publication.types';
 import { PUBLICATION_REQUEST_CONCURRENCY } from '../publication.constants';
-import { PublicationOfficialPriceService } from '../prices/publication-official-price.service';
 import {
   filterPublicationsBySeller,
   mapWithConcurrency,
-  requireItemId,
   sourceErrorToSyncError,
 } from './publication-sync.helpers';
 import { PublicationFamilySyncService } from './publication-family-sync.service';
@@ -40,7 +38,6 @@ export class PublicationSyncService {
     private readonly preparer: PublicationSyncPreparerService,
     private readonly familySyncService: PublicationFamilySyncService,
     private readonly writer: PublicationSyncWriterService,
-    private readonly officialPrices: PublicationOfficialPriceService,
   ) {}
 
   /** Procesa solamente los MLA recibidos y marca el full sync. */
@@ -98,53 +95,14 @@ export class PublicationSyncService {
       itemId,
       access.accessToken,
     );
-    await this.syncKnownItem(publication, access);
-  }
-
-  /** Sincroniza una respuesta de item ya disponible sin volver a consultarla. */
-  async syncKnownItem(
-    publication: MercadoLibrePublication,
-    access: SyncAccess,
-    hasOfficialPrice = false,
-  ): Promise<void> {
-    await this.syncKnownItems([publication], access, hasOfficialPrice);
-  }
-
-  /** Sincroniza respuestas ya disponibles y devuelve su clave externa interna. */
-  async syncKnownItems(
-    publications: MercadoLibrePublication[],
-    access: SyncAccess,
-    hasOfficialPrice = false,
-  ): Promise<string> {
-    if (publications.length === 0) {
-      throw new BadGatewayException('No hay publicaciones para sincronizar');
-    }
-    const priced = hasOfficialPrice
-      ? publications
-      : await this.officialPrices.hydrateMany(
-          publications,
-          access.accessToken,
-        );
-    const itemIds = priced.map(requireItemId);
-    if (priced.some(({ seller_id }) => seller_id !== access.sellerId)) {
+    if (publication.seller_id !== access.sellerId) {
       throw new ForbiddenException('La publicación pertenece a otro vendedor');
     }
-    const models = new Set(priced.map((item) => this.detector.detect(item)));
-    if (models.size !== 1) {
-      throw new BadGatewayException('Los items creados usan modelos distintos');
+    if (this.detector.detect(publication) === 'SHARED') {
+      await this.savePartial([publication], access);
+      return;
     }
-    if (models.has('SHARED')) {
-      if (priced.length !== 1) {
-        throw new BadGatewayException('Se recibieron varios items SHARED');
-      }
-      await this.savePartial(priced, access);
-      return `item:${itemIds[0]}`;
-    }
-    const familyId = await this.familySyncService.syncPublications(
-      priced,
-      access,
-    );
-    return `family:${familyId}`;
+    await this.familySyncService.syncPublication(publication, access);
   }
 
   /** Elimina productos que no fueron vistos al terminar el scan. */

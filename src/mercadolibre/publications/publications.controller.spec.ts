@@ -33,6 +33,9 @@ describe('PublicationsController', () => {
   });
 
   it('delega paginación y detalle', async () => {
+    list.mockResolvedValue({});
+    findOne.mockResolvedValue({});
+
     await controller.list('2', '50');
     await controller.findOne(SYNC_ID);
 
@@ -51,6 +54,7 @@ describe('PublicationsController', () => {
     await expect(controller.processNext(SYNC_ID)).resolves.toBe(pending);
     await expect(controller.getSyncStatus(SYNC_ID)).resolves.toBe(pending);
 
+    expect(start).toHaveBeenCalledTimes(1);
     expect(enqueue).toHaveBeenCalledWith(SYNC_ID);
     expect(processNext).toHaveBeenCalledWith(SYNC_ID);
     expect(getStatus).toHaveBeenCalledWith(SYNC_ID);

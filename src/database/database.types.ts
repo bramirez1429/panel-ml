@@ -41,9 +41,6 @@ type ProductRow = {
   children_count: number;
   permalink: string | null;
   shared_variations: Json;
-  pictures: Json;
-  shared_skus: Json;
-  management_synced_at: string | null;
   source_updated_at: string | null;
   last_synced_at: string;
   last_full_sync_id: string | null;
@@ -70,9 +67,6 @@ type ProductInsert = {
   children_count?: number;
   permalink?: string | null;
   shared_variations?: Json;
-  pictures?: Json;
-  shared_skus?: Json;
-  management_synced_at?: string | null;
   source_updated_at?: string | null;
   last_synced_at?: string;
   last_full_sync_id?: string | null;
@@ -95,8 +89,6 @@ type ChildRow = {
   available_quantity: number;
   sold_quantity: number;
   attributes: Json;
-  pictures: Json;
-  management_synced_at: string | null;
   permalink: string | null;
   source_updated_at: string | null;
   last_synced_at: string;
@@ -119,8 +111,6 @@ type ChildInsert = {
   available_quantity?: number;
   sold_quantity?: number;
   attributes?: Json;
-  pictures?: Json;
-  management_synced_at?: string | null;
   permalink?: string | null;
   source_updated_at?: string | null;
   last_synced_at?: string;
@@ -170,46 +160,6 @@ type SyncJobInsert = {
   updated_at?: string;
 };
 
-type PublicationActionStatus = 'SUCCESS' | 'FAILED';
-
-type PublicationActionRow = {
-  id: string;
-  seller_id: number;
-  product_id: string;
-  item_id: string | null;
-  action:
-    | 'PRICE_UPDATED'
-    | 'STOCK_UPDATED'
-    | 'SKU_UPDATED'
-    | 'PICTURES_UPDATED'
-    | 'PAUSED'
-    | 'ACTIVATED'
-    | 'TITLE_UPDATED'
-    | 'DESCRIPTION_UPDATED'
-    | 'ATTRIBUTES_UPDATED'
-    | 'PROMOTION_APPLIED'
-    | 'PROMOTION_REMOVED'
-    | 'PUBLISHED';
-  status: PublicationActionStatus;
-  old_value: Json | null;
-  new_value: Json | null;
-  error_message: string | null;
-  created_at: string;
-};
-
-type PublicationActionInsert = {
-  id?: string;
-  seller_id: number;
-  product_id: string;
-  item_id?: string | null;
-  action: PublicationActionRow['action'];
-  status: PublicationActionStatus;
-  old_value?: Json | null;
-  new_value?: Json | null;
-  error_message?: string | null;
-  created_at?: string;
-};
-
 export type Database = {
   public: {
     Tables: {
@@ -229,19 +179,6 @@ export type Database = {
         ]
       >;
       mercadolibre_sync_jobs: Table<SyncJobRow, SyncJobInsert>;
-      mercadolibre_publication_actions: Table<
-        PublicationActionRow,
-        PublicationActionInsert,
-        [
-          {
-            foreignKeyName: 'mercadolibre_publication_actions_product_id_fkey';
-            columns: ['product_id'];
-            isOneToOne: false;
-            referencedRelation: 'mercadolibre_products';
-            referencedColumns: ['id'];
-          },
-        ]
-      >;
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;

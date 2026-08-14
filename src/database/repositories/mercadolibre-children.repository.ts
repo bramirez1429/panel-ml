@@ -1,8 +1,6 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { SupabaseService } from '../supabase.service';
-import type { Json } from '../database.types';
 import {
-  MercadolibreChildAttributesRow,
   MercadolibreChildRow,
   MercadolibreChildUpsert,
 } from './mercadolibre-publications.types';
@@ -32,47 +30,6 @@ export class MercadolibreChildrenRepository {
       children.push(...data);
       if (data.length < READ_PAGE_SIZE) return children;
     }
-  }
-
-  /** Devuelve solo los atributos necesarios para resumir varios productos. */
-  async findAttributesByProductIds(
-    productIds: string[],
-  ): Promise<MercadolibreChildAttributesRow[]> {
-    if (productIds.length === 0) return [];
-    const children: MercadolibreChildAttributesRow[] = [];
-
-    for (let from = 0; ; from += READ_PAGE_SIZE) {
-      const { data, error } = await this.supabaseService
-        .getClient()
-        .from('mercadolibre_product_children')
-        .select('product_id,attributes')
-        .in('product_id', productIds)
-        .order('product_id', { ascending: true })
-        .order('id', { ascending: true })
-        .range(from, from + READ_PAGE_SIZE - 1);
-
-      if (error || !data) this.readError();
-      children.push(...data);
-      if (data.length < READ_PAGE_SIZE) return children;
-    }
-  }
-
-  /** Guarda el snapshot administrable de un unico MLA hijo. */
-  async updateManagementSnapshot(
-    itemId: string,
-    snapshot: {
-      status: string | null;
-      pictures: Json;
-      attributes: Json;
-      management_synced_at: string;
-    },
-  ): Promise<void> {
-    const { error } = await this.supabaseService
-      .getClient()
-      .from('mercadolibre_product_children')
-      .update(snapshot)
-      .eq('item_id', itemId);
-    if (error) this.writeError();
   }
 
   /** Guarda hijos en lotes sin convertir campos omitidos en null. */

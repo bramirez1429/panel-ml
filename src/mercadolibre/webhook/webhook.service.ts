@@ -56,12 +56,7 @@ export class WebhookService {
 
 /** Extrae solamente notificaciones v\u00e1lidas de \u00edtems. */
 function parseItemNotification(payload: unknown): ItemNotification | null {
-  if (
-    !isJsonObject(payload) ||
-    !['items', 'items_prices'].includes(String(payload.topic))
-  ) {
-    return null;
-  }
+  if (!isJsonObject(payload) || payload.topic !== 'items') return null;
   if (
     typeof payload.user_id !== 'number' ||
     !Number.isSafeInteger(payload.user_id) ||

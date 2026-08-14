@@ -25,20 +25,6 @@ const PRIVATE_FIELDS = new Set([
   'authorization',
 ]);
 
-const MUTATION_MESSAGES: Partial<Record<MercadoLibreRequestKind, string>> = {
-  priceMutation: 'Mercado Libre no permitió modificar el precio',
-  stockMutation: 'Mercado Libre no permitió modificar el stock',
-  skuMutation: 'Mercado Libre no permitió modificar el SKU',
-  statusMutation: 'Mercado Libre no permitió cambiar el estado',
-  activationMutation: 'La publicación no puede activarse por su estado actual',
-  picturesMutation: 'Mercado Libre no permitió modificar las fotos',
-  titleMutation: 'Mercado Libre no permitió modificar el título',
-  descriptionMutation: 'Mercado Libre no permitió modificar la descripción',
-  attributesMutation: 'Mercado Libre no permitió modificar los atributos',
-  promotionMutation: 'Mercado Libre no permitió modificar la promoción',
-  publishingMutation: 'Mercado Libre no permitió crear la publicación',
-};
-
 @Injectable()
 export class MercadolibreApiService {
   /** Ejecuta un GET autenticado cuando recibe un token. */
@@ -51,34 +37,6 @@ export class MercadolibreApiService {
       path,
       { method: 'GET', headers: this.headers(accessToken) },
       kind,
-    );
-  }
-
-  /** Ejecuta un GET y representa 404 como ausencia, sin ocultar otros errores. */
-  getOptional<T>(
-    path: string,
-    accessToken?: string,
-    kind?: MercadoLibreRequestKind,
-  ): Promise<T | null> {
-    return this.requestJson<T | null>(
-      path,
-      { method: 'GET', headers: this.headers(accessToken) },
-      kind,
-      true,
-    );
-  }
-
-  /** Ejecuta un GET y devuelve los headers requeridos por recursos versionados. */
-  getWithHeaders<T>(
-    path: string,
-    accessToken: string,
-    notFoundAsNull = false,
-  ): Promise<{ data: T | null; headers: Headers }> {
-    return this.requestJsonWithHeaders<T>(
-      path,
-      { method: 'GET', headers: this.headers(accessToken) },
-      undefined,
-      notFoundAsNull,
     );
   }
 
@@ -100,24 +58,6 @@ export class MercadolibreApiService {
     );
   }
 
-  /** Ejecuta un POST multipart sin fijar Content-Type manualmente. */
-  postMultipart<T>(
-    path: string,
-    form: FormData,
-    accessToken: string,
-    kind?: MercadoLibreRequestKind,
-  ): Promise<T> {
-    return this.requestJson<T>(
-      path,
-      {
-        method: 'POST',
-        headers: this.headers(accessToken),
-        body: form,
-      },
-      kind,
-    );
-  }
-
   /** Ejecuta un PUT con un body JSON. */
   put<T>(
     path: string,
@@ -132,25 +72,6 @@ export class MercadolibreApiService {
         headers: this.headers(accessToken, true),
         body: JSON.stringify(body),
       },
-      kind,
-    );
-  }
-
-  /** Ejecuta un PUT JSON con headers adicionales validados. */
-  putWithHeaders<T>(
-    path: string,
-    body: unknown,
-    accessToken: string,
-    extraHeaders: Readonly<Record<string, string>>,
-    kind?: MercadoLibreRequestKind,
-  ): Promise<T> {
-    const headers = this.headers(accessToken, true);
-    for (const [name, value] of Object.entries(extraHeaders)) {
-      headers.set(name, value);
-    }
-    return this.requestJson<T>(
-      path,
-      { method: 'PUT', headers, body: JSON.stringify(body) },
       kind,
     );
   }
@@ -190,24 +111,7 @@ export class MercadolibreApiService {
     path: string,
     init: RequestInit,
     kind?: MercadoLibreRequestKind,
-    notFoundAsNull = false,
   ): Promise<T> {
-    const response = await this.requestJsonWithHeaders<T>(
-      path,
-      init,
-      kind,
-      notFoundAsNull,
-    );
-    return response.data as T;
-  }
-
-  /** Ejecuta la solicitud conservando los headers seguros de la respuesta. */
-  private async requestJsonWithHeaders<T>(
-    path: string,
-    init: RequestInit,
-    kind?: MercadoLibreRequestKind,
-    notFoundAsNull = false,
-  ): Promise<{ data: T | null; headers: Headers }> {
     let response: Response;
     try {
       response = await fetch(this.buildUrl(path), {
@@ -223,12 +127,7 @@ export class MercadolibreApiService {
       throw new BadGatewayException('No se pudo conectar con Mercado Libre');
     }
 
-    if (response.status === 204) {
-      return { data: undefined as T, headers: response.headers };
-    }
-    if (response.status === 404 && notFoundAsNull) {
-      return { data: null, headers: response.headers };
-    }
+    if (response.status === 204) return undefined as T;
 
     const data = await readJson(response);
     if (data === INVALID_JSON) {
@@ -236,7 +135,7 @@ export class MercadolibreApiService {
       throw new BadGatewayException('Mercado Libre devolvió JSON inválido');
     }
     if (!response.ok) this.throwApiError(response.status, kind, data);
-    return { data: data as T, headers: response.headers };
+    return data as T;
   }
 
   /** Construye una URL limitada al dominio de la API. */
@@ -285,21 +184,12 @@ export class MercadolibreApiService {
     if (kind === 'scroll' && (status === 400 || status === 404)) {
       throw new BadGatewayException('El scroll_id está ausente o venció');
     }
-    if (kind === 'validation' && status === 400) {
-      throw new BadRequestException(validationError(safeData));
-    }
-    const mutationMessage = kind ? MUTATION_MESSAGES[kind] : undefined;
-    if (mutationMessage) {
-      if (status === 400) throw new BadRequestException(mutationMessage);
-      if (status === 401) throw new UnauthorizedException(mutationMessage);
-      if (status === 403) throw new ForbiddenException(mutationMessage);
-      if (status === 429) {
-        throw new ServiceUnavailableException(mutationMessage);
-      }
-      throw new BadGatewayException(mutationMessage);
-    }
     if (status === 400) {
-      throw new BadRequestException('Mercado Libre rechazó la solicitud');
+      throw new BadRequestException(
+        isJsonObject(safeData)
+          ? safeData
+          : 'Mercado Libre rechazó la solicitud',
+      );
     }
     if (status === 401) {
       throw new UnauthorizedException('Acceso inválido o vencido');
@@ -312,38 +202,6 @@ export class MercadolibreApiService {
     }
     throw new BadGatewayException('Mercado Libre no completó la solicitud');
   }
-}
-
-/** Conserva únicamente los campos de ML necesarios para mostrar validaciones. */
-function validationError(value: unknown): Record<string, unknown> {
-  if (!isJsonObject(value)) {
-    return { message: 'Mercado Libre rechazó la validación' };
-  }
-  const causes = Array.isArray(value.cause)
-    ? value.cause.flatMap((cause) => {
-        if (!isJsonObject(cause)) return [];
-        return [
-          {
-            code: text(cause.code),
-            message: text(cause.message),
-            references: Array.isArray(cause.references)
-              ? cause.references.filter(
-                  (reference): reference is string =>
-                    typeof reference === 'string',
-                )
-              : [],
-          },
-        ];
-      })
-    : [];
-  return {
-    message: text(value.message) ?? 'Mercado Libre rechazó la validación',
-    ...(causes.length ? { cause: causes } : {}),
-  };
-}
-
-function text(value: unknown): string | null {
-  return isNonEmptyString(value) ? value.trim().slice(0, 500) : null;
 }
 
 /** Lee JSON sin ocultar errores de parseo. */

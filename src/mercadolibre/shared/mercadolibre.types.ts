@@ -1,21 +1,7 @@
 import { BadGatewayException } from '@nestjs/common';
 
 export type JsonObject = Record<string, unknown>;
-export type MercadoLibreRequestKind =
-  | 'tokenExchange'
-  | 'scroll'
-  | 'validation'
-  | 'priceMutation'
-  | 'stockMutation'
-  | 'skuMutation'
-  | 'statusMutation'
-  | 'activationMutation'
-  | 'picturesMutation'
-  | 'titleMutation'
-  | 'descriptionMutation'
-  | 'attributesMutation'
-  | 'promotionMutation'
-  | 'publishingMutation';
+export type MercadoLibreRequestKind = 'tokenExchange' | 'scroll';
 
 export type MercadoLibreTokens = {
   access_token: string;

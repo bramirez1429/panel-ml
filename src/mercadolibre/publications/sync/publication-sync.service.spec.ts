@@ -2,7 +2,6 @@ import { ForbiddenException } from '@nestjs/common';
 import { MercadolibreTokenService } from '../../auth/mercadolibre-token.service';
 import { UserProductFamilyService } from '../../user-products/user-product-family.service';
 import { PublicationModelDetectorService } from '../normalization/publication-model-detector.service';
-import { PublicationOfficialPriceService } from '../prices/publication-official-price.service';
 import {
   MercadoLibrePublication,
   NormalizedPublicationBundle,
@@ -77,16 +76,10 @@ function setup() {
       errors: [],
     }),
     syncPublication: jest.fn().mockResolvedValue(undefined),
-    syncPublications: jest.fn().mockResolvedValue('9'),
   };
   const writer = {
     save: jest.fn().mockResolvedValue(undefined),
     finalizeFullSync: jest.fn().mockResolvedValue(undefined),
-  };
-  const officialPrices = {
-    hydrateMany: jest.fn((publications: MercadoLibrePublication[]) =>
-      Promise.resolve(publications),
-    ),
   };
   const service = new PublicationSyncService(
     token as unknown as MercadolibreTokenService,
@@ -96,7 +89,6 @@ function setup() {
     preparer as unknown as PublicationSyncPreparerService,
     familySync as unknown as PublicationFamilySyncService,
     writer as unknown as PublicationSyncWriterService,
-    officialPrices as unknown as PublicationOfficialPriceService,
   );
   return { familySync, preparer, service, source, writer };
 }
@@ -171,28 +163,7 @@ describe('PublicationSyncService', () => {
 
     await service.syncItem('MLA2', 123);
 
-    expect(familySync.syncPublications).toHaveBeenCalledWith(
-      [VARIANT],
-      ACCESS,
-    );
-    expect(writer.save).not.toHaveBeenCalled();
-  });
-
-  it('sincroniza un item ya disponible sin volver a pedirlo', async () => {
-    const { service, source, writer } = setup();
-
-    await service.syncKnownItem(SHARED, ACCESS);
-
-    expect(source.getItem).not.toHaveBeenCalled();
-    expect(writer.save).toHaveBeenCalledWith(sharedBundle());
-  });
-
-  it('rechaza un item conocido que pertenece a otro seller', async () => {
-    const { service, writer } = setup();
-
-    await expect(
-      service.syncKnownItem({ ...SHARED, seller_id: 999 }, ACCESS),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(familySync.syncPublication).toHaveBeenCalledWith(VARIANT, ACCESS);
     expect(writer.save).not.toHaveBeenCalled();
   });
 
