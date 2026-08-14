@@ -6,6 +6,8 @@ import {
 import { MercadolibreChildrenRepository } from '../../database/repositories/mercadolibre-children.repository';
 import { MercadolibreProductsRepository } from '../../database/repositories/mercadolibre-products.repository';
 import { MercadolibreTokenService } from '../auth/mercadolibre-token.service';
+import { PublicationManagementReaderService } from './mutations/publication-management-reader.service';
+import { PublicationLiveContentService } from './mutations/publication-live-content.service';
 
 @Injectable()
 export class PublicationsService {
@@ -14,6 +16,8 @@ export class PublicationsService {
     private readonly tokenService: MercadolibreTokenService,
     private readonly productsRepository: MercadolibreProductsRepository,
     private readonly childrenRepository: MercadolibreChildrenRepository,
+    private readonly managementReader: PublicationManagementReaderService,
+    private readonly liveContent: PublicationLiveContentService,
   ) {}
 
   /** Lista resúmenes paginados desde Supabase. */
@@ -26,6 +30,33 @@ export class PublicationsService {
       limit,
     );
 
+    const variantProductIds = result.products
+      .filter(({ model }) => model === 'VARIANT_PRICING')
+      .map(({ id }) => id);
+    const childAttributes = variantProductIds.length
+      ? await this.childrenRepository.findAttributesByProductIds(
+          variantProductIds,
+        )
+      : [];
+    const variantSizes = groupSizesByProduct(childAttributes);
+    const publications = result.products.map((product) => {
+      const { shared_variations: storedVariations, ...summary } = product;
+      const sharedVariations = asArray(storedVariations);
+      const sizes =
+        product.model === 'SHARED'
+          ? sizesFromSharedVariations(sharedVariations)
+          : (variantSizes.get(product.id) ?? []);
+
+      return {
+        ...summary,
+        sizes,
+        variants_count:
+          product.model === 'SHARED'
+            ? sharedVariations.length
+            : product.children_count,
+      };
+    });
+
     return {
       paging: {
         page,
@@ -33,8 +64,8 @@ export class PublicationsService {
         total: result.total,
         totalPages: Math.ceil(result.total / limit),
       },
-      count: result.products.length,
-      publications: result.products,
+      count: publications.length,
+      publications,
     };
   }
 
@@ -50,10 +81,48 @@ export class PublicationsService {
     if (!product) {
       throw new NotFoundException('Publicación no encontrada');
     }
-    if (product.model === 'SHARED') return { product };
+    if (product.model === 'SHARED') {
+      const management = await this.managementReader.hydrate(
+        product,
+        product.parent_item_id ? [product.parent_item_id] : [],
+      );
+      const refreshedProduct =
+        (await this.productsRepository.findById(
+          connection.seller_id,
+          productId,
+        )) ?? product;
+      const content = await this.liveContent.read(
+        product.id,
+        product.parent_item_id ? [product.parent_item_id] : [],
+      );
+      return {
+        product: { ...refreshedProduct, ...(content ?? {}) },
+        management,
+      };
+    }
 
     const children = await this.childrenRepository.findByProductId(product.id);
-    return { product, children };
+    const management = await this.managementReader.hydrate(
+      product,
+      children.map(({ item_id }) => item_id),
+    );
+    const refreshedProduct =
+      (await this.productsRepository.findById(
+        connection.seller_id,
+        productId,
+      )) ?? product;
+    const refreshedChildren = await this.childrenRepository.findByProductId(
+      product.id,
+    );
+    const content = await this.liveContent.read(
+      product.id,
+      refreshedChildren.map(({ item_id }) => item_id),
+    );
+    return {
+      product: { ...refreshedProduct, ...(content ?? {}) },
+      children: refreshedChildren,
+      management,
+    };
   }
 
   /** Valida la paginación solicitada. */
@@ -76,3 +145,86 @@ export class PublicationsService {
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+type AttributesByProduct = Readonly<{
+  product_id: string;
+  attributes: unknown;
+}>;
+
+/** Agrupa talles únicos de hijos sin consultar Mercado Libre. */
+function groupSizesByProduct(
+  children: readonly AttributesByProduct[],
+): Map<string, string[]> {
+  const grouped = new Map<string, Set<string>>();
+
+  for (const child of children) {
+    const size = preferredSize(child.attributes);
+    if (!size) continue;
+    const sizes = grouped.get(child.product_id) ?? new Set<string>();
+    sizes.add(size);
+    grouped.set(child.product_id, sizes);
+  }
+
+  return new Map(
+    [...grouped].map(([productId, sizes]) => [
+      productId,
+      sortSizes([...sizes]),
+    ]),
+  );
+}
+
+/** Extrae talles de variaciones SHARED ya persistidas. */
+function sizesFromSharedVariations(variations: readonly unknown[]): string[] {
+  const sizes = new Set<string>();
+
+  for (const variation of variations) {
+    if (!isObject(variation)) continue;
+    const size = preferredSize(variation.attributes);
+    if (size) sizes.add(size);
+  }
+
+  return sortSizes([...sizes]);
+}
+
+/** Prioriza SIZE numérico y conserva fallbacks reales si no existe. */
+function preferredSize(value: unknown): string | null {
+  if (!Array.isArray(value)) return null;
+  const attributes = value.flatMap((attribute) => {
+    if (!isObject(attribute)) return [];
+    const id = text(attribute.id)?.toUpperCase();
+    const valueName = text(attribute.valueName) ?? text(attribute.value_name);
+    return id && valueName ? [{ id, valueName }] : [];
+  });
+
+  return (
+    attributes.find(
+      ({ id, valueName }) => id === 'SIZE' && isNumericSize(valueName),
+    )?.valueName ??
+    attributes.find(({ id }) => id === 'SIZE')?.valueName ??
+    attributes.find(({ id }) => id === 'TALLE')?.valueName ??
+    attributes.find(({ id }) => id === 'FILTRABLE_SIZE')?.valueName ??
+    null
+  );
+}
+
+function sortSizes(values: string[]): string[] {
+  return values.sort((left, right) =>
+    left.localeCompare(right, 'es', { numeric: true }),
+  );
+}
+
+function asArray(value: unknown): readonly unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function text(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function isNumericSize(value: string): boolean {
+  return /^\d+(?:[.,]\d+)?$/.test(value);
+}

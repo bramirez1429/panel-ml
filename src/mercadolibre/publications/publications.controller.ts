@@ -12,7 +12,7 @@ import { PublicationSyncQueueService } from './sync/publication-sync-queue.servi
 
 @Controller('mercadolibre/publicaciones')
 export class PublicationsController {
-  /** Recibe consultas de publicaciones y administración de jobs. */
+  /** Recibe consultas de publicaciones y administra los jobs de sincronización. */
   constructor(
     private readonly publicationsService: PublicationsService,
     private readonly syncJobService: PublicationSyncJobService,

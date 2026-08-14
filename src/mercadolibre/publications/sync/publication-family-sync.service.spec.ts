@@ -56,7 +56,7 @@ function setup() {
     preparer as unknown as PublicationSyncPreparerService,
     writer as unknown as PublicationSyncWriterService,
   );
-  return { bundle, family, service, source, writer };
+  return { bundle, family, preparer, service, source, writer };
 }
 
 describe('PublicationFamilySyncService', () => {
@@ -142,5 +142,55 @@ describe('PublicationFamilySyncService', () => {
       ),
     ).rejects.toBeInstanceOf(BadGatewayException);
     expect(writer.save).not.toHaveBeenCalled();
+  });
+
+  it('no persiste una familia normalizada de forma parcial', async () => {
+    const { preparer, service, writer } = setup();
+    preparer.prepare.mockResolvedValueOnce({
+      bundles: [
+        {
+          parent: { family_id: '9' },
+          children: [{ item_id: 'MLA1', user_product_id: 'MLAU1' }],
+        },
+      ],
+      errors: [],
+    });
+
+    await expect(
+      service.syncPublication(
+        { id: 'MLA1', seller_id: 123, user_product_id: 'MLAU1' },
+        { sellerId: 123, accessToken: 'private-token' },
+      ),
+    ).rejects.toBeInstanceOf(BadGatewayException);
+    expect(writer.save).not.toHaveBeenCalled();
+  });
+
+  it('reutiliza el MLA conocido al reconstruir una familia dirigida', async () => {
+    const { preparer, service, source } = setup();
+    const known = {
+      id: 'MLA1',
+      seller_id: 123,
+      user_product_id: 'MLAU1',
+    };
+    source.getPublicationDetails.mockResolvedValueOnce({
+      publications: [{ id: 'MLA2', user_product_id: 'MLAU2' }],
+      errors: [],
+    });
+
+    await service.syncPublication(known, {
+      sellerId: 123,
+      accessToken: 'private-token',
+    });
+
+    expect(source.getPublicationDetails).toHaveBeenCalledWith(
+      ['MLA2'],
+      'private-token',
+    );
+    expect(preparer.prepare).toHaveBeenCalledWith(
+      [known, { id: 'MLA2', user_product_id: 'MLAU2' }],
+      'private-token',
+      expect.objectContaining({ sellerId: 123 }),
+      expect.any(Object),
+    );
   });
 });

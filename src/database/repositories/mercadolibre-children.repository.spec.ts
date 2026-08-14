@@ -21,6 +21,8 @@ function childRow(index: number): MercadolibreChildRow {
     available_quantity: 1,
     sold_quantity: 0,
     attributes: [],
+    pictures: [],
+    management_synced_at: null,
     permalink: null,
     source_updated_at: null,
     last_synced_at: '2026-08-09T00:00:00.000Z',
@@ -58,6 +60,30 @@ describe('MercadolibreChildrenRepository', () => {
     expect(result).toHaveLength(1001);
     expect(range).toHaveBeenNthCalledWith(1, 0, 999);
     expect(range).toHaveBeenNthCalledWith(2, 1000, 1999);
+  });
+
+  it('lee atributos de varios productos sin traer hijos completos', async () => {
+    const rows = [
+      {
+        product_id: childRow(1).product_id,
+        attributes: [{ id: 'SIZE', valueName: '40' }],
+      },
+    ];
+    const range = jest.fn().mockResolvedValue({ data: rows, error: null });
+    const secondOrder = jest.fn().mockReturnValue({ range });
+    const firstOrder = jest.fn().mockReturnValue({ order: secondOrder });
+    const inFilter = jest.fn().mockReturnValue({ order: firstOrder });
+    const select = jest.fn().mockReturnValue({ in: inFilter });
+    const { repository } = setup({ select });
+
+    await expect(
+      repository.findAttributesByProductIds([childRow(1).product_id]),
+    ).resolves.toEqual(rows);
+    expect(select).toHaveBeenCalledWith('product_id,attributes');
+    expect(inFilter).toHaveBeenCalledWith('product_id', [
+      childRow(1).product_id,
+    ]);
+    expect(range).toHaveBeenCalledWith(0, 999);
   });
 
   it('hace upsert en chunks y usa defaultToNull false', async () => {

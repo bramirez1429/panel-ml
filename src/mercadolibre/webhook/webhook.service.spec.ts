@@ -51,4 +51,20 @@ describe('WebhookService', () => {
 
     expect(syncItem).not.toHaveBeenCalled();
   });
+
+  it('sincroniza items_prices para releer el precio oficial', async () => {
+    const syncItem = jest.fn().mockResolvedValue(undefined);
+    const service = new WebhookService({
+      syncItem,
+    } as unknown as PublicationSyncService);
+
+    service.receive({
+      topic: 'items_prices',
+      resource: '/items/MLA123',
+      user_id: 456,
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(syncItem).toHaveBeenCalledWith('MLA123', 456);
+  });
 });

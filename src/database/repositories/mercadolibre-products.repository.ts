@@ -1,5 +1,6 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { SupabaseService } from '../supabase.service';
+import type { Json } from '../database.types';
 import {
   MercadolibreProductDetail,
   MercadolibreProductRow,
@@ -11,9 +12,9 @@ const WRITE_CHUNK_SIZE = 200;
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const LIST_COLUMNS =
-  'id,seller_id,external_key,model,family_id,parent_item_id,family_name,title,thumbnail,status,category_id,currency_id,price_from,price_to,stock_total,children_count,permalink,source_updated_at,last_synced_at,updated_at';
+  'id,seller_id,external_key,model,family_id,parent_item_id,family_name,title,thumbnail,status,category_id,currency_id,price_from,price_to,stock_total,children_count,shared_variations,permalink,source_updated_at,last_synced_at,updated_at';
 const DETAIL_COLUMNS =
-  'id,seller_id,external_key,model,family_id,parent_item_id,family_name,title,thumbnail,status,category_id,currency_id,price_from,price_to,stock_total,children_count,permalink,source_updated_at,last_synced_at,updated_at,shared_variations,created_at';
+  'id,seller_id,external_key,model,family_id,parent_item_id,family_name,title,thumbnail,status,category_id,currency_id,price_from,price_to,stock_total,children_count,permalink,source_updated_at,last_synced_at,updated_at,shared_variations,pictures,shared_skus,management_synced_at,created_at';
 
 @Injectable()
 export class MercadolibreProductsRepository {
@@ -76,6 +77,34 @@ export class MercadolibreProductsRepository {
 
     if (error) this.readError();
     return data;
+  }
+
+  /** Guarda solo el snapshot usado por la administracion de publicaciones. */
+  async updateManagementSnapshot(
+    id: string,
+    snapshot: {
+      status: string | null;
+      pictures: Json;
+      shared_skus: Json;
+      management_synced_at: string;
+    },
+  ): Promise<void> {
+    const { error } = await this.supabaseService
+      .getClient()
+      .from('mercadolibre_products')
+      .update(snapshot)
+      .eq('id', id);
+    if (error) this.writeError();
+  }
+
+  /** Marca el refresh puntual de un hijo sin reconstruir la familia. */
+  async touchManagementSnapshot(id: string, timestamp: string): Promise<void> {
+    const { error } = await this.supabaseService
+      .getClient()
+      .from('mercadolibre_products')
+      .update({ management_synced_at: timestamp })
+      .eq('id', id);
+    if (error) this.writeError();
   }
 
   /** Inserta o actualiza un producto por vendedor y clave externa. */

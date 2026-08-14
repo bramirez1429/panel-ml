@@ -2,7 +2,9 @@ import { BadGatewayException, BadRequestException } from '@nestjs/common';
 import { MercadolibreApiService } from '../../shared/mercadolibre-api.service';
 import { MercadoLibreRequestKind } from '../../shared/mercadolibre.types';
 import { PUBLICATION_SYNC_ATTRIBUTES } from '../publication.constants';
+import type { MercadoLibrePublication } from '../publication.types';
 import { PublicationSourceService } from './publication-source.service';
+import { PublicationOfficialPriceService } from '../prices/publication-official-price.service';
 
 type ApiCall = {
   path: string;
@@ -33,6 +35,11 @@ function createSource(responseFactory: ResponseFactory) {
   const api = new ApiStub(responseFactory);
   const source = new PublicationSourceService(
     api as unknown as MercadolibreApiService,
+    {
+      hydrate: jest.fn((publication: MercadoLibrePublication) =>
+        Promise.resolve(publication),
+      ),
+    } as unknown as PublicationOfficialPriceService,
   );
   return { api, source };
 }

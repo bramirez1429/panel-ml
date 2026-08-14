@@ -28,10 +28,16 @@ export type MercadolibreProductListRow = Pick<
   | 'price_to'
   | 'stock_total'
   | 'children_count'
+  | 'shared_variations'
   | 'permalink'
   | 'source_updated_at'
   | 'last_synced_at'
   | 'updated_at'
+>;
+
+export type MercadolibreChildAttributesRow = Pick<
+  MercadolibreChildRow,
+  'product_id' | 'attributes'
 >;
 
 export type MercadolibreProductDetail = Omit<

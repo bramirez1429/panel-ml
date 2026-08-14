@@ -41,6 +41,16 @@ describe('MercadolibreApiService', () => {
     expect(init?.signal).toBeDefined();
   });
 
+  it('representa un 404 opcional como ausencia', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ message: 'not found' }, 404),
+    );
+
+    await expect(
+      service.getOptional('/items/MLA1/description', 'private-token'),
+    ).resolves.toBeNull();
+  });
+
   it('envía JSON y formularios con su Content-Type correcto', async () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ ok: true }))
@@ -147,5 +157,76 @@ describe('MercadolibreApiService', () => {
         nested: { refresh_token: 'secret', reason: 'safe-reason' },
       }),
     ).toEqual({ message: 'safe', nested: { reason: 'safe-reason' } });
+  });
+
+  it('devuelve un mensaje simple por operación sin filtrar causas de ML', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        {
+          message: 'internal upstream detail',
+          cause: [{ code: 'private.code', message: 'private detail' }],
+          access_token: 'must-not-leak',
+        },
+        400,
+      ),
+    );
+
+    let caught: unknown;
+    try {
+      await service.put(
+        '/items/MLA1',
+        { price: 10 },
+        'private-token',
+        'priceMutation',
+      );
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(HttpException);
+    const response = (caught as HttpException).getResponse();
+    expect(response).toEqual(
+      expect.objectContaining({
+        message: 'Mercado Libre no permitió modificar el precio',
+      }),
+    );
+    expect(JSON.stringify(response)).not.toContain('private');
+  });
+
+  it('conserva sólo código, mensaje y referencia en validaciones', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        {
+          message: 'Validation error',
+          cause: [
+            {
+              code: 'item.price.invalid',
+              message: 'Precio inválido',
+              references: ['item.price'],
+              department: 'internal',
+            },
+          ],
+        },
+        400,
+      ),
+    );
+
+    let caught: unknown;
+    try {
+      await service.post('/items/validate', {}, 'token', 'validation');
+    } catch (error) {
+      caught = error;
+    }
+
+    expect((caught as HttpException).getResponse()).toEqual({
+      message: 'Validation error',
+      cause: [
+        {
+          code: 'item.price.invalid',
+          message: 'Precio inválido',
+          references: ['item.price'],
+        },
+      ],
+    });
   });
 });
