@@ -1,17 +1,19 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { MercadolibreChildrenRepository } from '../../database/repositories/mercadolibre-children.repository';
 import { MercadolibreProductsRepository } from '../../database/repositories/mercadolibre-products.repository';
 import { MercadolibreTokenService } from '../auth/mercadolibre-token.service';
-import { PublicationManagementReaderService } from './mutations/publication-management-reader.service';
 import { PublicationLiveContentService } from './mutations/publication-live-content.service';
+import { PublicationManagementReaderService } from './mutations/publication-management-reader.service';
 
 @Injectable()
 export class PublicationsService {
-  /** Recibe la conexión y los repositories de lectura. */
+  private readonly logger = new Logger(PublicationsService.name);
+
   constructor(
     private readonly tokenService: MercadolibreTokenService,
     private readonly productsRepository: MercadolibreProductsRepository,
@@ -20,10 +22,12 @@ export class PublicationsService {
     private readonly liveContent: PublicationLiveContentService,
   ) {}
 
-  /** Lista resúmenes paginados desde Supabase. */
+  /** Lista publicaciones paginadas desde Supabase. */
   async list(page = 1, limit = 20) {
     this.validatePaging(page, limit);
+
     const connection = await this.tokenService.getStoredConnection();
+
     const result = await this.productsRepository.findPage(
       connection.seller_id,
       page,
@@ -33,15 +37,20 @@ export class PublicationsService {
     const variantProductIds = result.products
       .filter(({ model }) => model === 'VARIANT_PRICING')
       .map(({ id }) => id);
+
     const childAttributes = variantProductIds.length
       ? await this.childrenRepository.findAttributesByProductIds(
           variantProductIds,
         )
       : [];
+
     const variantSizes = groupSizesByProduct(childAttributes);
+
     const publications = result.products.map((product) => {
       const { shared_variations: storedVariations, ...summary } = product;
+
       const sharedVariations = asArray(storedVariations);
+
       const sizes =
         product.model === 'SHARED'
           ? sizesFromSharedVariations(sharedVariations)
@@ -69,10 +78,12 @@ export class PublicationsService {
     };
   }
 
-  /** Devuelve un producto guardado y sus hijos cuando corresponde. */
+  /** Devuelve el detalle base y agrega información extra si está disponible. */
   async findOne(productId: string) {
     this.validateProductId(productId);
+
     const connection = await this.tokenService.getStoredConnection();
+
     const product = await this.productsRepository.findById(
       connection.seller_id,
       productId,
@@ -81,64 +92,85 @@ export class PublicationsService {
     if (!product) {
       throw new NotFoundException('Publicación no encontrada');
     }
-    if (product.model === 'SHARED') {
-      const management = await this.managementReader.hydrate(
-        product,
-        product.parent_item_id ? [product.parent_item_id] : [],
-      );
-      const refreshedProduct =
-        (await this.productsRepository.findById(
-          connection.seller_id,
-          productId,
-        )) ?? product;
-      const content = await this.liveContent.read(
-        product.id,
-        product.parent_item_id ? [product.parent_item_id] : [],
-      );
-      return {
-        product: { ...refreshedProduct, ...(content ?? {}) },
-        management,
-      };
-    }
 
-    const children = await this.childrenRepository.findByProductId(product.id);
-    const management = await this.managementReader.hydrate(
-      product,
-      children.map(({ item_id }) => item_id),
-    );
-    const refreshedProduct =
-      (await this.productsRepository.findById(
-        connection.seller_id,
-        productId,
-      )) ?? product;
-    const refreshedChildren = await this.childrenRepository.findByProductId(
-      product.id,
-    );
-    const content = await this.liveContent.read(
-      product.id,
-      refreshedChildren.map(({ item_id }) => item_id),
-    );
+    const children =
+      product.model === 'VARIANT_PRICING'
+        ? await this.childrenRepository.findByProductId(product.id)
+        : [];
+
+    const itemIds =
+      product.model === 'SHARED'
+        ? product.parent_item_id
+          ? [product.parent_item_id]
+          : []
+        : children.map(({ item_id }) => item_id);
+
+    const management = await this.safeManagement(product, itemIds);
+    const content = await this.safeContent(product.id, itemIds);
+
     return {
-      product: { ...refreshedProduct, ...(content ?? {}) },
-      children: refreshedChildren,
+      product: {
+        ...product,
+        ...(isObject(content) ? content : {}),
+      },
+      children,
       management,
     };
+  }
+
+  /** Obtiene información administrativa sin romper el detalle si falla. */
+  private async safeManagement(
+    product: Parameters<PublicationManagementReaderService['hydrate']>[0],
+    itemIds: string[],
+  ): Promise<unknown> {
+    try {
+      return await this.managementReader.hydrate(product, itemIds);
+    } catch (error) {
+      this.logger.warn(
+        `No se pudo cargar management del producto ${product.id}: ${errorMessage(error)}`,
+      );
+
+      return null;
+    }
+  }
+
+  /** Obtiene contenido adicional sin romper el detalle si falla. */
+  private async safeContent(
+    productId: string,
+    itemIds: string[],
+  ): Promise<unknown> {
+    try {
+      return await this.liveContent.read(productId, itemIds);
+    } catch (error) {
+      this.logger.warn(
+        `No se pudo cargar live content del producto ${productId}: ${errorMessage(error)}`,
+      );
+
+      return null;
+    }
   }
 
   /** Valida la paginación solicitada. */
   private validatePaging(page: number, limit: number): void {
     if (!Number.isInteger(page) || page < 1) {
-      throw new BadRequestException('page debe ser un entero mayor que cero');
+      throw new BadRequestException(
+        'page debe ser un entero mayor que cero',
+      );
     }
+
     if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
-      throw new BadRequestException('limit debe ser un entero entre 1 y 100');
+      throw new BadRequestException(
+        'limit debe ser un entero entre 1 y 100',
+      );
     }
   }
 
   /** Valida la PK UUID interna del producto. */
   private validateProductId(productId: string): void {
     if (!UUID_PATTERN.test(productId)) {
-      throw new BadRequestException('productId debe ser un UUID válido');
+      throw new BadRequestException(
+        'productId debe ser un UUID válido',
+      );
     }
   }
 }
@@ -159,8 +191,12 @@ function groupSizesByProduct(
 
   for (const child of children) {
     const size = preferredSize(child.attributes);
+
     if (!size) continue;
-    const sizes = grouped.get(child.product_id) ?? new Set<string>();
+
+    const sizes =
+      grouped.get(child.product_id) ?? new Set<string>();
+
     sizes.add(size);
     grouped.set(child.product_id, sizes);
   }
@@ -173,43 +209,65 @@ function groupSizesByProduct(
   );
 }
 
-/** Extrae talles de variaciones SHARED ya persistidas. */
-function sizesFromSharedVariations(variations: readonly unknown[]): string[] {
+/** Extrae talles de variaciones SHARED persistidas. */
+function sizesFromSharedVariations(
+  variations: readonly unknown[],
+): string[] {
   const sizes = new Set<string>();
 
   for (const variation of variations) {
     if (!isObject(variation)) continue;
+
     const size = preferredSize(variation.attributes);
-    if (size) sizes.add(size);
+
+    if (size) {
+      sizes.add(size);
+    }
   }
 
   return sortSizes([...sizes]);
 }
 
-/** Prioriza SIZE numérico y conserva fallbacks reales si no existe. */
+/** Obtiene el talle principal disponible. */
 function preferredSize(value: unknown): string | null {
-  if (!Array.isArray(value)) return null;
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
   const attributes = value.flatMap((attribute) => {
-    if (!isObject(attribute)) return [];
+    if (!isObject(attribute)) {
+      return [];
+    }
+
     const id = text(attribute.id)?.toUpperCase();
-    const valueName = text(attribute.valueName) ?? text(attribute.value_name);
-    return id && valueName ? [{ id, valueName }] : [];
+    const valueName =
+      text(attribute.valueName) ??
+      text(attribute.value_name);
+
+    return id && valueName
+      ? [{ id, valueName }]
+      : [];
   });
 
   return (
     attributes.find(
-      ({ id, valueName }) => id === 'SIZE' && isNumericSize(valueName),
+      ({ id, valueName }) =>
+        id === 'SIZE' && isNumericSize(valueName),
     )?.valueName ??
     attributes.find(({ id }) => id === 'SIZE')?.valueName ??
     attributes.find(({ id }) => id === 'TALLE')?.valueName ??
-    attributes.find(({ id }) => id === 'FILTRABLE_SIZE')?.valueName ??
+    attributes.find(({ id }) => id === 'FILTRABLE_SIZE')
+      ?.valueName ??
     null
   );
 }
 
+/** Ordena talles de forma natural. */
 function sortSizes(values: string[]): string[] {
   return values.sort((left, right) =>
-    left.localeCompare(right, 'es', { numeric: true }),
+    left.localeCompare(right, 'es', {
+      numeric: true,
+    }),
   );
 }
 
@@ -217,14 +275,29 @@ function asArray(value: unknown): readonly unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+function isObject(
+  value: unknown,
+): value is Record<string, unknown> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value)
+  );
 }
 
 function text(value: unknown): string | null {
-  return typeof value === 'string' && value.trim() ? value.trim() : null;
+  return typeof value === 'string' && value.trim()
+    ? value.trim()
+    : null;
 }
 
 function isNumericSize(value: string): boolean {
   return /^\d+(?:[.,]\d+)?$/.test(value);
+}
+
+/** Convierte un error en texto seguro para logs. */
+function errorMessage(error: unknown): string {
+  return error instanceof Error
+    ? error.message
+    : 'Error desconocido';
 }
