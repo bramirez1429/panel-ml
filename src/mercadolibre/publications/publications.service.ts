@@ -113,6 +113,11 @@ async updatePrice(
       connection.access_token,
     );
 
+    await this.productsRepository.updatePrice(
+  product.id,
+  price,
+); // 2 Supabase
+
     return {
       ok: true,
       itemId: product.parent_item_id,

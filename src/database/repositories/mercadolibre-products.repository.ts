@@ -193,6 +193,21 @@ export class MercadolibreProductsRepository {
       'No se pudieron eliminar productos de Mercado Libre',
     );
   }
+
+  /** Actualiza el precio guardado de un producto. */
+async updatePrice(id: string, price: number): Promise<void> {
+  const { error } = await this.supabaseService
+    .getClient()
+    .from('mercadolibre_products')
+    .update({
+      price_from: price,
+      price_to: price,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id);
+
+  if (error) this.writeError();
+}
 }
 
 /** Divide una lista para limitar cada escritura. */
@@ -203,3 +218,5 @@ function chunk<T>(values: T[], size: number): T[][] {
   }
   return result;
 }
+
+
