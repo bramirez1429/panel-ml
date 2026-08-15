@@ -150,6 +150,11 @@ async updatePrice(
     { price },
     connection.access_token,
   );
+  // Mercado Libre respondió OK → actualizar Supabase
+await this.childrenRepository.updatePrice(
+  child.item_id,
+  price,
+);
 
   return {
     ok: true,
@@ -157,11 +162,6 @@ async updatePrice(
     price,
   };
 }
-
-
-
-
-
 
 
 }
