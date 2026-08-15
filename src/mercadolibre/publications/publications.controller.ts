@@ -5,6 +5,8 @@ import {
   ParseUUIDPipe,
   Post,
   Query,
+  Patch,
+  Body,
 } from '@nestjs/common';
 import { PublicationsService } from './publications.service';
 import { PublicationSyncJobService } from './sync/publication-sync-job.service';
@@ -50,5 +52,18 @@ export class PublicationsController {
   @Get('detalle/:productId')
   findOne(@Param('productId', ParseUUIDPipe) productId: string) {
     return this.publicationsService.findOne(productId);
+  }
+
+    /** Modifica el precio de una publicación. */
+  @Patch(':productId/precio')
+  updatePrice(
+    @Param('productId', ParseUUIDPipe) productId: string,
+    @Body() body: { price: number; itemId?: string },
+  ) {
+    return this.publicationsService.updatePrice(
+      productId,
+      body.price,
+      body.itemId,
+    );
   }
 }

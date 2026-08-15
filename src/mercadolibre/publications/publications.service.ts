@@ -6,6 +6,7 @@ import {
 import { MercadolibreChildrenRepository } from '../../database/repositories/mercadolibre-children.repository';
 import { MercadolibreProductsRepository } from '../../database/repositories/mercadolibre-products.repository';
 import { MercadolibreTokenService } from '../auth/mercadolibre-token.service';
+import { MercadolibreApiService } from '../shared/mercadolibre-api.service';
 
 @Injectable()
 export class PublicationsService {
@@ -14,6 +15,7 @@ export class PublicationsService {
     private readonly tokenService: MercadolibreTokenService,
     private readonly productsRepository: MercadolibreProductsRepository,
     private readonly childrenRepository: MercadolibreChildrenRepository,
+      private readonly apiService: MercadolibreApiService,
   ) {}
 
   /** Lista resúmenes paginados desde Supabase. */
@@ -72,6 +74,91 @@ export class PublicationsService {
       throw new BadRequestException('productId debe ser un UUID válido');
     }
   }
+
+  /** Modifica el precio real de una publicación en Mercado Libre. */
+async updatePrice(
+  productId: string,
+  price: number,
+  itemId?: string,
+) {
+  this.validateProductId(productId);
+
+  if (!Number.isFinite(price) || price <= 0) {
+    throw new BadRequestException(
+      'El precio debe ser mayor que cero',
+    );
+  }
+
+  const connection = await this.tokenService.getStoredConnection();
+
+  const product = await this.productsRepository.findById(
+    connection.seller_id,
+    productId,
+  );
+
+  if (!product) {
+    throw new NotFoundException('Publicación no encontrada');
+  }
+
+  if (product.model === 'SHARED') {
+    if (!product.parent_item_id) {
+      throw new BadRequestException(
+        'La publicación no tiene MLA asociado',
+      );
+    }
+
+    await this.apiService.put(
+      `/items/${product.parent_item_id}`,
+      { price },
+      connection.access_token,
+    );
+
+    return {
+      ok: true,
+      itemId: product.parent_item_id,
+      price,
+    };
+  }
+
+  if (!itemId) {
+    throw new BadRequestException(
+      'itemId es obligatorio para publicaciones con variantes',
+    );
+  }
+
+  const children = await this.childrenRepository.findByProductId(
+    product.id,
+  );
+
+  const child = children.find(
+    (publication) => publication.item_id === itemId,
+  );
+
+  if (!child) {
+    throw new BadRequestException(
+      'El MLA no pertenece a esta publicación',
+    );
+  }
+
+  await this.apiService.put(
+    `/items/${child.item_id}`,
+    { price },
+    connection.access_token,
+  );
+
+  return {
+    ok: true,
+    itemId: child.item_id,
+    price,
+  };
+}
+
+
+
+
+
+
+
 }
 
 const UUID_PATTERN =
