@@ -139,6 +139,24 @@ async updatePrice(itemId: string, price: number): Promise<void> {
     );
   }
 }
+
+/** Actualiza el stock de un hijo por MLA. */
+async updateStock(itemId: string, stock: number): Promise<void> {
+  const { error } = await this.supabaseService
+    .getClient()
+    .from('mercadolibre_product_children')
+    .update({
+      available_quantity: stock,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('item_id', itemId);
+
+  if (error) {
+    throw new ServiceUnavailableException(
+      'No se pudo actualizar el stock de la variante',
+    );
+  }
+}
 }
 
 /** Divide una lista para limitar cada escritura. */

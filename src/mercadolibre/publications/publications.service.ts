@@ -164,6 +164,150 @@ await this.childrenRepository.updatePrice(
 }
 
 
+/** Modifica el stock real en Mercado Libre. */
+async updateStock(
+  productId: string,
+  stock: number,
+  itemId?: string,
+  variationId?: number,
+) {
+  this.validateProductId(productId);
+
+  if (!Number.isInteger(stock) || stock < 0) {
+    throw new BadRequestException(
+      'El stock debe ser un entero mayor o igual a cero',
+    );
+  }
+
+  const connection = await this.tokenService.getStoredConnection();
+
+  const product = await this.productsRepository.findById(
+    connection.seller_id,
+    productId,
+  );
+
+  if (!product) {
+    throw new NotFoundException('Publicación no encontrada');
+  }
+
+  // Publicación nueva: cada hijo tiene su propio MLA.
+  if (product.model === 'VARIANT_PRICING') {
+    if (!itemId) {
+      throw new BadRequestException(
+        'itemId es obligatorio para publicaciones con variantes',
+      );
+    }
+
+    const children = await this.childrenRepository.findByProductId(
+      product.id,
+    );
+
+    const child = children.find(
+      (publication) => publication.item_id === itemId,
+    );
+
+    if (!child) {
+      throw new BadRequestException(
+        'El MLA no pertenece a esta publicación',
+      );
+    }
+
+    await this.apiService.put(
+      `/items/${child.item_id}`,
+      { available_quantity: stock },
+      connection.access_token,
+    );
+
+    await this.childrenRepository.updateStock(
+      child.item_id,
+      stock,
+    );
+
+    return {
+      ok: true,
+      itemId: child.item_id,
+      stock,
+    };
+  }
+
+  // Publicación vieja SHARED.
+  if (!product.parent_item_id) {
+    throw new BadRequestException(
+      'La publicación no tiene MLA asociado',
+    );
+  }
+
+  // SHARED sin variación.
+  if (!variationId) {
+    await this.apiService.put(
+      `/items/${product.parent_item_id}`,
+      { available_quantity: stock },
+      connection.access_token,
+    );
+
+    await this.productsRepository.updateStock(
+      product.id,
+      stock,
+    );
+
+    return {
+      ok: true,
+      itemId: product.parent_item_id,
+      stock,
+    };
+  }
+
+  // SHARED con variaciones: traerlas para conservar todos los IDs.
+  const item = await this.apiService.get<{
+    variations?: Array<{ id: number }>;
+  }>(
+    `/items/${product.parent_item_id}`,
+    connection.access_token,
+  );
+
+  const variations = item.variations ?? [];
+
+  const exists = variations.some(
+    (variation) => variation.id === variationId,
+  );
+
+  if (!exists) {
+    throw new BadRequestException(
+      'La variación no pertenece a esta publicación',
+    );
+  }
+
+  await this.apiService.put(
+    `/items/${product.parent_item_id}`,
+    {
+      variations: variations.map((variation) =>
+        variation.id === variationId
+          ? {
+              id: variation.id,
+              available_quantity: stock,
+            }
+          : {
+              id: variation.id,
+            },
+      ),
+    },
+    connection.access_token,
+  );
+
+  await this.productsRepository.updateVariationStock(
+    product.id,
+    variationId,
+    stock,
+  );
+
+  return {
+    ok: true,
+    itemId: product.parent_item_id,
+    variationId,
+    stock,
+  };
+}
+
 }
 
 const UUID_PATTERN =

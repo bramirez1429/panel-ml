@@ -66,4 +66,23 @@ export class PublicationsController {
       body.itemId,
     );
   }
+
+  /** Modifica el stock de una publicación. */
+@Patch(':productId/stock')
+updateStock(
+  @Param('productId', ParseUUIDPipe) productId: string,
+  @Body()
+  body: {
+    stock: number;
+    itemId?: string;
+    variationId?: number;
+  },
+) {
+  return this.publicationsService.updateStock(
+    productId,
+    body.stock,
+    body.itemId,
+    body.variationId,
+  );
+}
 }
