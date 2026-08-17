@@ -94,7 +94,6 @@ getPromotions(
 ) {
   return this.publicationsService.getPromotions(
     productId,
-    itemId,
   );
 }
 }

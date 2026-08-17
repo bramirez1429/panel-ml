@@ -309,29 +309,22 @@ async updateStock(
 }
 
 
-/** Obtiene las promociones reales desde Mercado Libre. */
-async getPromotions(
-  productId: string,
-  itemId?: string,
-) {
+/** Obtiene las promociones de todos los MLA de una publicación. */
+async getPromotions(productId: string) {
   this.validateProductId(productId);
 
-  const connection =
-    await this.tokenService.getStoredConnection();
+  const connection = await this.tokenService.getStoredConnection();
 
-  const product =
-    await this.productsRepository.findById(
-      connection.seller_id,
-      productId,
-    );
+  const product = await this.productsRepository.findById(
+    connection.seller_id,
+    productId,
+  );
 
   if (!product) {
-    throw new NotFoundException(
-      'Publicación no encontrada',
-    );
+    throw new NotFoundException('Publicación no encontrada');
   }
 
-  let targetItemId: string;
+  let itemIds: string[] = [];
 
   if (product.model === 'SHARED') {
     if (!product.parent_item_id) {
@@ -340,41 +333,32 @@ async getPromotions(
       );
     }
 
-    targetItemId = product.parent_item_id;
+    itemIds = [product.parent_item_id];
   } else {
-    if (!itemId) {
-      throw new BadRequestException(
-        'itemId es obligatorio para publicaciones con variantes',
-      );
-    }
-
-    const children =
-      await this.childrenRepository.findByProductId(
-        product.id,
-      );
-
-    const child = children.find(
-      (publication) =>
-        publication.item_id === itemId,
+    const children = await this.childrenRepository.findByProductId(
+      product.id,
     );
 
-    if (!child) {
-      throw new BadRequestException(
-        'El MLA no pertenece a esta publicación',
-      );
-    }
-
-    targetItemId = child.item_id;
+    itemIds = children.map((child) => child.item_id);
   }
 
-  const promotions = await this.apiService.get(
-    `/seller-promotions/items/${targetItemId}?app_version=v2`,
-    connection.access_token,
-  );
+  const items = [];
+
+  for (const itemId of itemIds) {
+    const promotions = await this.apiService.get<unknown[]>(
+      `/seller-promotions/items/${itemId}?app_version=v2`,
+      connection.access_token,
+    );
+
+    items.push({
+      itemId,
+      promotions,
+    });
+  }
 
   return {
-    itemId: targetItemId,
-    promotions,
+    productId,
+    items,
   };
 }
 }
