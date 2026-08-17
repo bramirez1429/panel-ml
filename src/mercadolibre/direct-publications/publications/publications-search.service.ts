@@ -32,9 +32,9 @@ export class PublicationsSearchService {
     limit: number,
     cursor?: string,
   ): Promise<MlScanResponse> {
-    const path = cursor
-      ? `/users/${sellerId}/items/search?search_type=scan&scroll_id=${encodeURIComponent(cursor)}`
-      : `/users/${sellerId}/items/search?search_type=scan&limit=${limit}`;
+const path = cursor
+  ? `/users/${sellerId}/items/search?search_type=scan&scroll_id=${encodeURIComponent(cursor)}&limit=${limit}`
+  : `/users/${sellerId}/items/search?search_type=scan&limit=${limit}`;
 
     return this.apiService.get<MlScanResponse>(
       path,
