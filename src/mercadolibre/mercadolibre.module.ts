@@ -22,20 +22,28 @@ import { UserProductFamilyService } from './user-products/user-product-family.se
 import { UserProductsService } from './user-products/user-products.service';
 import { WebhookController } from './webhook/webhook.controller';
 import { WebhookService } from './webhook/webhook.service';
-import { DirectPublicationsController } from './direct-publications/direct-publications.controller';
-import { DirectPublicationsService } from './direct-publications/direct-publications.service';
-import { DirectFamiliesController } from './direct-publications/direct-families.controller';
-import { DirectFamiliesService } from './direct-publications/direct-families.service';
+
+import { FamiliesController } from './direct-publications/families/families.controller';
+import { FamiliesService } from './direct-publications/families/families.service';
+import { FamiliesDetailService } from './direct-publications/families/families-detail.service';
+
+import { ItemsService } from './direct-publications/items/items.service';
+
+import { PublicationsSearchService } from './direct-publications/publications/publications-search.service';
+
+import { PricingService } from './direct-publications/pricing/pricing.service';
+
+import { PromotionsService } from './direct-publications/promotions/promotions.service';
+
 @Module({
   controllers: [
     MercadolibreController,
     PublicationsController,
     WebhookController,
-    DirectPublicationsController,
-    DirectFamiliesController
+    FamiliesController
+    
   ],
   providers: [
-    DirectPublicationsService,
     SupabaseService,
     MercadolibreProductsRepository,
     MercadolibreChildrenRepository,
@@ -56,7 +64,12 @@ import { DirectFamiliesService } from './direct-publications/direct-families.ser
     PublicationSyncQueueService,
     PublicationsService,
     WebhookService,
-    DirectFamiliesService
+    FamiliesService,
+    FamiliesDetailService,
+    ItemsService,
+    PublicationsSearchService,
+    PricingService,
+    PromotionsService
   ],
 })
 export class MercadolibreModule {}
