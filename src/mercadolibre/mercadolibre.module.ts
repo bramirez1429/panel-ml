@@ -8,7 +8,7 @@ import { MercadolibreTokenService } from './auth/mercadolibre-token.service';
 import { MercadolibreController } from './mercadolibre.controller';
 import { PublicationModelDetectorService } from './publications/normalization/publication-model-detector.service';
 import { PublicationNormalizerService } from './publications/normalization/publication-normalizer.service';
-import { PublicationsController } from './publications/publications.controller';
+import { PublicationsController } from './direct-publications/publications/publications.controller';
 import { PublicationsService } from './publications/publications.service';
 import { PublicationSourceService } from './publications/sync/publication-source.service';
 import { PublicationFamilySyncService } from './publications/sync/publication-family-sync.service';
