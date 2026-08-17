@@ -308,6 +308,75 @@ async updateStock(
   };
 }
 
+
+/** Obtiene las promociones reales desde Mercado Libre. */
+async getPromotions(
+  productId: string,
+  itemId?: string,
+) {
+  this.validateProductId(productId);
+
+  const connection =
+    await this.tokenService.getStoredConnection();
+
+  const product =
+    await this.productsRepository.findById(
+      connection.seller_id,
+      productId,
+    );
+
+  if (!product) {
+    throw new NotFoundException(
+      'Publicación no encontrada',
+    );
+  }
+
+  let targetItemId: string;
+
+  if (product.model === 'SHARED') {
+    if (!product.parent_item_id) {
+      throw new BadRequestException(
+        'La publicación no tiene MLA asociado',
+      );
+    }
+
+    targetItemId = product.parent_item_id;
+  } else {
+    if (!itemId) {
+      throw new BadRequestException(
+        'itemId es obligatorio para publicaciones con variantes',
+      );
+    }
+
+    const children =
+      await this.childrenRepository.findByProductId(
+        product.id,
+      );
+
+    const child = children.find(
+      (publication) =>
+        publication.item_id === itemId,
+    );
+
+    if (!child) {
+      throw new BadRequestException(
+        'El MLA no pertenece a esta publicación',
+      );
+    }
+
+    targetItemId = child.item_id;
+  }
+
+  const promotions = await this.apiService.get(
+    `/seller-promotions/items/${targetItemId}?app_version=v2`,
+    connection.access_token,
+  );
+
+  return {
+    itemId: targetItemId,
+    promotions,
+  };
+}
 }
 
 const UUID_PATTERN =

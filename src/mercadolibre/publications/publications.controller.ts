@@ -85,4 +85,16 @@ updateStock(
     body.variationId,
   );
 }
+
+/** Obtiene las promociones de una publicación. */
+@Get(':productId/promociones')
+getPromotions(
+  @Param('productId', ParseUUIDPipe) productId: string,
+  @Query('itemId') itemId?: string,
+) {
+  return this.publicationsService.getPromotions(
+    productId,
+    itemId,
+  );
+}
 }
