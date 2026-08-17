@@ -22,14 +22,17 @@ import { UserProductFamilyService } from './user-products/user-product-family.se
 import { UserProductsService } from './user-products/user-products.service';
 import { WebhookController } from './webhook/webhook.controller';
 import { WebhookService } from './webhook/webhook.service';
-
+import { DirectPublicationsController } from './direct-publications/direct-publications.controller';
+import { DirectPublicationsService } from './direct-publications/direct-publications.service';
 @Module({
   controllers: [
     MercadolibreController,
     PublicationsController,
     WebhookController,
+    DirectPublicationsController,
   ],
   providers: [
+    DirectPublicationsService,
     SupabaseService,
     MercadolibreProductsRepository,
     MercadolibreChildrenRepository,
