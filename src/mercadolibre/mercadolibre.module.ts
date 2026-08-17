@@ -9,7 +9,7 @@ import { MercadolibreController } from './mercadolibre.controller';
 import { PublicationModelDetectorService } from './publications/normalization/publication-model-detector.service';
 import { PublicationNormalizerService } from './publications/normalization/publication-normalizer.service';
 import { PublicationsController } from './direct-publications/publications/publications.controller';
-import { PublicationsService } from './publications/publications.service';
+import { PublicationsService } from './direct-publications/publications/publications.service';
 import { PublicationSourceService } from './publications/sync/publication-source.service';
 import { PublicationFamilySyncService } from './publications/sync/publication-family-sync.service';
 import { PublicationSyncPreparerService } from './publications/sync/publication-sync-preparer.service';
