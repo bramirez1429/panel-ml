@@ -24,12 +24,15 @@ import { WebhookController } from './webhook/webhook.controller';
 import { WebhookService } from './webhook/webhook.service';
 import { DirectPublicationsController } from './direct-publications/direct-publications.controller';
 import { DirectPublicationsService } from './direct-publications/direct-publications.service';
+import { DirectFamiliesController } from './direct-publications/direct-families.controller';
+import { DirectFamiliesService } from './direct-publications/direct-families.service';
 @Module({
   controllers: [
     MercadolibreController,
     PublicationsController,
     WebhookController,
     DirectPublicationsController,
+    DirectFamiliesController
   ],
   providers: [
     DirectPublicationsService,
@@ -53,6 +56,7 @@ import { DirectPublicationsService } from './direct-publications/direct-publicat
     PublicationSyncQueueService,
     PublicationsService,
     WebhookService,
+    DirectFamiliesService
   ],
 })
 export class MercadolibreModule {}
