@@ -1,15 +1,18 @@
 import {
   Controller,
   Get,
+  Param,
   Query,
 } from '@nestjs/common';
 
 import { PublicationsService } from './publications.service';
+import { PublicationDetailService } from './publication-detail.service';
 
 @Controller('mercadolibre/direct/publicaciones')
 export class PublicationsController {
   constructor(
     private readonly service: PublicationsService,
+    private readonly detailService: PublicationDetailService,
   ) {}
 
   /** Listado agrupado para el frontend. */
@@ -22,6 +25,14 @@ export class PublicationsController {
       Number(limit),
       cursor,
     );
+  }
+
+  /** Detalle de una sola publicación MLA. */
+  @Get(':itemId')
+  getDetail(
+    @Param('itemId') itemId: string,
+  ) {
+    return this.detailService.getDetail(itemId);
   }
 
   /** Listado directo sin agrupar. */
