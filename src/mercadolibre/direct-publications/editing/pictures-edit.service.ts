@@ -89,50 +89,72 @@ export class PicturesEditService {
   }
 
   /** Consulta imágenes de un User Product nuevo. */
-  async getNewPictures(
-    familyId: string,
-    itemId: string,
-  ) {
-    const accessToken =
-      await this.tokenService.getValidAccessToken();
+async getNewPictures(
+  familyId: string,
+  itemId: string,
+) {
+  const accessToken =
+    await this.tokenService.getValidAccessToken();
 
-    const item = await this.itemsService.getOne(
-      itemId,
+  const item = await this.itemsService.getOne(
+    itemId,
+    accessToken,
+  );
+
+  if (
+    PublicationsMapper.getModel(item) !==
+    'VARIANT_PRICING'
+  ) {
+    throw new BadRequestException(
+      'La publicación no es versión nueva',
+    );
+  }
+
+  this.validateFamily(
+    familyId,
+    item.family_id,
+  );
+
+  const userProductId =
+    item.user_product_id;
+
+  if (!userProductId) {
+    throw new BadRequestException(
+      'La publicación no tiene userProductId',
+    );
+  }
+
+  const userProduct =
+    await this.apiService.get<{
+      id: string;
+      pictures?: Array<{
+        id?: string;
+        url?: string;
+        secure_url?: string;
+      }>;
+    }>(
+      `/user-products/${userProductId}`,
       accessToken,
     );
 
-    if (
-      PublicationsMapper.getModel(item) !==
-      'VARIANT_PRICING'
-    ) {
-      throw new BadRequestException(
-        'La publicación no es versión nueva',
-      );
-    }
+  return {
+    model: 'VARIANT_PRICING',
+    familyId,
+    itemId: item.id,
+    userProductId,
 
-    this.validateFamily(
-      familyId,
-      item.family_id,
-    );
-
-    return {
-      model: 'VARIANT_PRICING',
-      familyId,
-      itemId: item.id,
-
-      userProductId:
-        item.user_product_id ?? null,
-
-      pictures:
-        item.pictures?.map((picture) => ({
-          id: picture.id,
+    pictures:
+      userProduct.pictures?.map(
+        (picture) => ({
+          id: picture.id ?? null,
           url:
             picture.secure_url ??
             picture.url ??
             null,
-        })) ?? [],
-    };
-  }
+        }),
+      ) ?? [],
+  };
+}
 
   /** Reemplaza/reordena imágenes de un User Product nuevo. */
   async updateNewPictures(
