@@ -32,14 +32,16 @@ import { PublicationsSearchService } from './direct-publications/publications/pu
 import { PricingService } from './direct-publications/pricing/pricing.service';
 import { PromotionsService } from './direct-publications/promotions/promotions.service';
 import { PublicationDetailService } from './direct-publications/publications/publication-detail.service';
-
+import { ItemEditService } from './direct-publications/editing/item-edit.service';
+import { ItemEditController } from './direct-publications/editing/item-edit.controller';
 
 @Module({
   controllers: [
     MercadolibreController,
     PublicationsController,
     WebhookController,
-    FamiliesController
+    FamiliesController,
+    ItemEditController
     
   ],
   providers: [
@@ -69,7 +71,8 @@ import { PublicationDetailService } from './direct-publications/publications/pub
     PublicationsSearchService,
     PricingService,
     PromotionsService,
-    PublicationDetailService
+    PublicationDetailService,
+    ItemEditService
   ],
 })
 export class MercadolibreModule {}
