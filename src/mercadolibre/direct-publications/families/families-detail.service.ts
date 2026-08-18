@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { FamiliesService } from './families.service';
 import { PricingService } from '../pricing/pricing.service';
 import { PromotionsService } from '../promotions/promotions.service';
+import { PublicationDetailMapper } from '../publications/publication-detail.mapper';
 
 @Injectable()
 export class FamiliesDetailService {
@@ -43,6 +44,26 @@ export class FamiliesDetailService {
               ),
             ]);
 
+          const friendlyStatus =
+            PublicationDetailMapper.getStatus(
+              item.status,
+            );
+
+          const friendlyPricing =
+            PublicationDetailMapper.getPricing(
+              price,
+            );
+
+          const friendlyPromotion =
+            PublicationDetailMapper.getPromotion(
+              promotions,
+            );
+
+          const friendlyShipping =
+            PublicationDetailMapper.getShipping(
+              item.shipping,
+            );
+
           return {
             itemId: item.id,
 
@@ -51,6 +72,13 @@ export class FamiliesDetailService {
 
             title:
               item.title ?? null,
+
+            friendly: {
+              status: friendlyStatus,
+              pricing: friendlyPricing,
+              promotion: friendlyPromotion,
+              shipping: friendlyShipping,
+            },
 
             status:
               item.status ?? null,
@@ -109,6 +137,10 @@ export class FamiliesDetailService {
     }
 
     return {
+      model: 'VARIANT_PRICING',
+      version: 'NEW',
+      versionLabel: 'Versión nueva',
+
       familyId:
         String(family.family_id),
 

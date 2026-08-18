@@ -4,87 +4,126 @@ import { ItemsService } from '../items/items.service';
 import { PricingService } from '../pricing/pricing.service';
 import { PromotionsService } from '../promotions/promotions.service';
 import { PublicationsMapper } from './publications.mapper';
-
+import { PublicationDetailMapper } from './publication-detail.mapper';
 @Injectable()
 export class PublicationDetailService {
-    constructor(
-        private readonly tokenService: MercadolibreTokenService,
-        private readonly itemsService: ItemsService,
-        private readonly pricingService: PricingService,
-        private readonly promotionsService: PromotionsService,
-    ) { }
+  constructor(
+    private readonly tokenService: MercadolibreTokenService,
+    private readonly itemsService: ItemsService,
+    private readonly pricingService: PricingService,
+    private readonly promotionsService: PromotionsService,
+  ) { }
 
-    async getDetail(itemId: string) {
-  const accessToken =
-    await this.tokenService.getValidAccessToken();
+  async getDetail(itemId: string) {
+    const accessToken =
+      await this.tokenService.getValidAccessToken();
 
-  const item = await this.itemsService.getOne(
-    itemId,
-    accessToken,
-  );
-
-  const [price, promotions] = await Promise.all([
-    this.pricingService.getPrice(
-      item,
-      accessToken,
-    ),
-    this.promotionsService.getPromotions(
+    const item = await this.itemsService.getOne(
       itemId,
       accessToken,
-    ),
-  ]);
+    );
 
-  return {
-    model: PublicationsMapper.getModel(item),
+    const [price, promotions] = await Promise.all([
+      this.pricingService.getPrice(
+        item,
+        accessToken,
+      ),
+      this.promotionsService.getPromotions(
+        itemId,
+        accessToken,
+      ),
+    ]);
 
-    itemId: item.id,
-    title: item.title ?? null,
+    const version =
+      PublicationDetailMapper.getVersion(item);
 
-    familyId: item.family_id
-      ? String(item.family_id)
-      : null,
+    const friendlyStatus =
+      PublicationDetailMapper.getStatus(item.status);
 
-    familyName: item.family_name ?? null,
-    userProductId: item.user_product_id ?? null,
+    const friendlyPricing =
+      PublicationDetailMapper.getPricing(price);
 
-    status: item.status ?? null,
-    subStatus: item.sub_status ?? [],
-    condition: item.condition ?? null,
+    const friendlyPromotion =
+      PublicationDetailMapper.getPromotion(promotions);
 
-    stock: {
-      available: item.available_quantity ?? 0,
-      initial: item.initial_quantity ?? 0,
-      sold: item.sold_quantity ?? 0,
-    },
+    const friendlyShipping =
+      PublicationDetailMapper.getShipping(item.shipping);
 
-    price,
-    promotions,
 
-    sku: item.seller_custom_field ?? null,
-    inventoryId: item.inventory_id ?? null,
+    return {
+      version: version.version,
+      versionLabel: version.versionLabel,
 
-    thumbnail: item.thumbnail ?? null,
-    pictures: item.pictures ?? [],
+      identifiers: {
+        itemId: item.id,
+        familyId: item.family_id
+          ? String(item.family_id)
+          : null,
+        userProductId: item.user_product_id ?? null,
+      },
 
-    variations: item.variations ?? [],
-    attributes: item.attributes ?? [],
+      friendly: {
+        status: friendlyStatus,
+        pricing: friendlyPricing,
+        promotion: friendlyPromotion,
+        shipping: friendlyShipping,
+      },
 
-    shipping: item.shipping ?? null,
-    listingTypeId: item.listing_type_id ?? null,
+      model: PublicationsMapper.getModel(item),
 
-    tags: item.tags ?? [],
-    channels: item.channels ?? [],
+      itemId: item.id,
+      title: item.title ?? null,
 
-    permalink: item.permalink ?? null,
+      familyId: item.family_id
+        ? String(item.family_id)
+        : null,
 
-    saleTerms: item.sale_terms ?? [],
-    warranty: item.warranty ?? null,
+      familyName: item.family_name ?? null,
+      userProductId: item.user_product_id ?? null,
 
-    catalogProductId: item.catalog_product_id ?? null,
-    health: item.health ?? null,
+      status: item.status ?? null,
+      subStatus: item.sub_status ?? [],
+      condition: item.condition ?? null,
 
-    dateCreated: item.date_created ?? null,
-    lastUpdated: item.last_updated ?? null,
-  };
-}
+      stock: {
+        available: item.available_quantity ?? 0,
+        initial: item.initial_quantity ?? 0,
+        sold: item.sold_quantity ?? 0,
+      },
+
+      price,
+      promotions,
+
+      sku: item.seller_custom_field ?? null,
+      inventoryId: item.inventory_id ?? null,
+
+      thumbnail: item.thumbnail ?? null,
+      pictures: item.pictures ?? [],
+
+      variations: item.variations ?? [],
+      attributes: item.attributes ?? [],
+
+      shipping: item.shipping ?? null,
+      listingTypeId: item.listing_type_id ?? null,
+
+      tags: item.tags ?? [],
+      channels: item.channels ?? [],
+
+      permalink: item.permalink ?? null,
+
+      saleTerms: item.sale_terms ?? [],
+      warranty: item.warranty ?? null,
+
+      catalogProductId: item.catalog_product_id ?? null,
+      health: item.health ?? null,
+
+      dateCreated: item.date_created ?? null,
+      lastUpdated: item.last_updated ?? null,
+
+
+
+
+
+    };
+  }
 }
