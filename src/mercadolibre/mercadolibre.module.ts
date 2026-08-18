@@ -36,6 +36,7 @@ import { ItemEditService } from './direct-publications/editing/item-edit.service
 import { ItemEditController } from './direct-publications/editing/item-edit.controller';
 import { FamilyEditService } from './direct-publications/editing/family-edit.service';
 import { StockEditService } from './direct-publications/editing/stock-edit.service';
+import { SkuEditService } from './direct-publications/editing/sku-edit.service';
 
 @Module({
   controllers: [
@@ -77,6 +78,7 @@ import { StockEditService } from './direct-publications/editing/stock-edit.servi
     ItemEditService,
   FamilyEditService,
   StockEditService,
+  SkuEditService
   ],
 })
 export class MercadolibreModule {}

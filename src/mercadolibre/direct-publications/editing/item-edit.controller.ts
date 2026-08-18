@@ -20,12 +20,22 @@ import type {
   NewStockUpdate,
 } from './stock-edit.types';
 
+import { SkuEditService } from './sku-edit.service';
+
+import type {
+  ClassicSkuUpdate,
+  NewSkuUpdate,
+} from './sku-edit.types';
+
+
+
 @Controller('mercadolibre/direct/edicion')
 export class ItemEditController {
   constructor(
     private readonly itemEditService: ItemEditService,
     private readonly familyEditService: FamilyEditService,
     private readonly stockEditService: StockEditService,
+    private readonly skuEditService: SkuEditService,
   ) {}
 
   /** Edita una publicación clásica. */
@@ -124,6 +134,54 @@ getNewStock(
   return this.stockEditService.getNewStock(
     familyId,
     itemId,
+  );
+}
+
+/** Consulta SKU de publicación clásica. */
+@Get('clasica/:itemId/sku')
+getClassicSku(
+  @Param('itemId') itemId: string,
+) {
+  return this.skuEditService.getClassicSku(
+    itemId,
+  );
+}
+
+/** Edita SKU de publicación clásica. */
+@Patch('clasica/:itemId/sku')
+updateClassicSku(
+  @Param('itemId') itemId: string,
+  @Body() changes: ClassicSkuUpdate,
+) {
+  return this.skuEditService.updateClassicSku(
+    itemId,
+    changes,
+  );
+}
+
+/** Consulta SKU de publicación nueva. */
+@Get('nueva/:familyId/items/:itemId/sku')
+getNewSku(
+  @Param('familyId') familyId: string,
+  @Param('itemId') itemId: string,
+) {
+  return this.skuEditService.getNewSku(
+    familyId,
+    itemId,
+  );
+}
+
+/** Edita SKU de publicación nueva. */
+@Patch('nueva/:familyId/items/:itemId/sku')
+updateNewSku(
+  @Param('familyId') familyId: string,
+  @Param('itemId') itemId: string,
+  @Body() changes: NewSkuUpdate,
+) {
+  return this.skuEditService.updateNewSku(
+    familyId,
+    itemId,
+    changes,
   );
 }
 }
