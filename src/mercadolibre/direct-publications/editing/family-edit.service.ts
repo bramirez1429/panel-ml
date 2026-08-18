@@ -6,10 +6,14 @@ import {
 import { MercadolibreApiService } from '../../shared/mercadolibre-api.service';
 
 import { FamiliesService } from '../families/families.service';
+import { MercadolibreTokenService } from '../../auth/mercadolibre-token.service';
+
 
 import type {
   FamilyTaskResponse,
   FamilyUpdateRequest,
+  FamilyTaskStatusResponse,
+
 } from './family-edit.types';
 
 @Injectable()
@@ -17,6 +21,7 @@ export class FamilyEditService {
   constructor(
     private readonly familiesService: FamiliesService,
     private readonly apiService: MercadolibreApiService,
+    private readonly tokenService: MercadolibreTokenService,
   ) {}
 
   /**
@@ -122,4 +127,22 @@ export class FamilyEditService {
       });
     }
   }
+
+  async getTaskStatus(
+  taskId: string,
+): Promise<FamilyTaskStatusResponse> {
+  if (!taskId.trim()) {
+    throw new BadRequestException(
+      'taskId inválido',
+    );
+  }
+
+  const accessToken =
+    await this.tokenService.getValidAccessToken();
+
+  return this.apiService.get<FamilyTaskStatusResponse>(
+    `/user-products-families/tasks/${encodeURIComponent(taskId)}`,
+    accessToken,
+  );
+}
 }

@@ -3,6 +3,7 @@ import {
   Controller,
   Param,
   Patch,
+  Get
 } from '@nestjs/common';
 
 import { ItemEditService } from './item-edit.service';
@@ -60,4 +61,13 @@ updateVariantPricing(
       changes,
     );
   }
+  
+  @Get('nueva/tasks/:taskId')
+getFamilyTaskStatus(
+  @Param('taskId') taskId: string,
+) {
+  return this.familyEditService.getTaskStatus(
+    taskId,
+  );
+}
 }
