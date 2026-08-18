@@ -27,14 +27,12 @@ import { WebhookService } from './webhook/webhook.service';
 import { FamiliesController } from './direct-publications/families/families.controller';
 import { FamiliesService } from './direct-publications/families/families.service';
 import { FamiliesDetailService } from './direct-publications/families/families-detail.service';
-
 import { ItemsService } from './direct-publications/items/items.service';
-
 import { PublicationsSearchService } from './direct-publications/publications/publications-search.service';
-
 import { PricingService } from './direct-publications/pricing/pricing.service';
-
 import { PromotionsService } from './direct-publications/promotions/promotions.service';
+import { PublicationDetailService } from './direct-publications/publications/publication-detail.service';
+
 
 @Module({
   controllers: [
@@ -70,7 +68,8 @@ import { PromotionsService } from './direct-publications/promotions/promotions.s
     ItemsService,
     PublicationsSearchService,
     PricingService,
-    PromotionsService
+    PromotionsService,
+    PublicationDetailService
   ],
 })
 export class MercadolibreModule {}
