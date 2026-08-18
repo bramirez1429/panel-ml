@@ -27,6 +27,11 @@ import type {
   NewSkuUpdate,
 } from './sku-edit.types';
 
+import { PicturesEditService } from './pictures-edit.service';
+
+import type {
+  PicturesUpdate,
+} from './pictures-edit.types';
 
 
 @Controller('mercadolibre/direct/edicion')
@@ -36,6 +41,7 @@ export class ItemEditController {
     private readonly familyEditService: FamilyEditService,
     private readonly stockEditService: StockEditService,
     private readonly skuEditService: SkuEditService,
+    private readonly picturesEditService: PicturesEditService,
   ) {}
 
   /** Edita una publicación clásica. */
@@ -179,6 +185,54 @@ updateNewSku(
   @Body() changes: NewSkuUpdate,
 ) {
   return this.skuEditService.updateNewSku(
+    familyId,
+    itemId,
+    changes,
+  );
+}
+
+/** Consulta imágenes de publicación clásica. */
+@Get('clasica/:itemId/imagenes')
+getClassicPictures(
+  @Param('itemId') itemId: string,
+) {
+  return this.picturesEditService.getClassicPictures(
+    itemId,
+  );
+}
+
+/** Edita imágenes de publicación clásica. */
+@Patch('clasica/:itemId/imagenes')
+updateClassicPictures(
+  @Param('itemId') itemId: string,
+  @Body() changes: PicturesUpdate,
+) {
+  return this.picturesEditService.updateClassicPictures(
+    itemId,
+    changes,
+  );
+}
+
+/** Consulta imágenes de publicación nueva. */
+@Get('nueva/:familyId/items/:itemId/imagenes')
+getNewPictures(
+  @Param('familyId') familyId: string,
+  @Param('itemId') itemId: string,
+) {
+  return this.picturesEditService.getNewPictures(
+    familyId,
+    itemId,
+  );
+}
+
+/** Edita imágenes de publicación nueva. */
+@Patch('nueva/:familyId/items/:itemId/imagenes')
+updateNewPictures(
+  @Param('familyId') familyId: string,
+  @Param('itemId') itemId: string,
+  @Body() changes: PicturesUpdate,
+) {
+  return this.picturesEditService.updateNewPictures(
     familyId,
     itemId,
     changes,
