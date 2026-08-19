@@ -62,47 +62,75 @@ export class ItemEditService {
   ) {}
 
   /** Edita una publicación versión clásica. */
-  async updateClassic(
-    itemId: string,
-    changes: ClassicItemUpdate,
-  ): Promise<MlItem> {
-    this.validateItemId(itemId);
-    this.validateChanges(changes);
+ async updateClassic(
+  itemId: string,
+  changes: ClassicItemUpdate,
+): Promise<MlItem> {
+  this.validateItemId(itemId);
+  this.validateChanges(changes);
 
-    this.validateAllowedFields(
-      changes,
-      CLASSIC_ALLOWED_FIELDS,
-    );
+  this.validateAllowedFields(
+    changes,
+    CLASSIC_ALLOWED_FIELDS,
+  );
 
-    const accessToken =
-      await this.tokenService.getValidAccessToken();
+  const accessToken =
+    await this.tokenService.getValidAccessToken();
 
-    const item =
-      await this.itemsService.getOne(
-        itemId,
-        accessToken,
-      );
-
-    const model =
-      PublicationsMapper.getModel(item);
-
-    if (model !== 'SHARED') {
-      throw new BadRequestException(
-        'La publicación no es versión clásica',
-      );
-    }
-
-    this.validateClassicUpdate(
-      item,
-      changes,
-    );
-
-    return this.apiService.put<MlItem>(
-      `/items/${item.id}`,
-      changes,
+  const item =
+    await this.itemsService.getOne(
+      itemId,
       accessToken,
     );
+
+  const model =
+    PublicationsMapper.getModel(item);
+
+  if (model !== 'SHARED') {
+    throw new BadRequestException(
+      'La publicación no es versión clásica',
+    );
   }
+
+  this.validateClassicUpdate(
+    item,
+    changes,
+  );
+
+  const body: Record<string, unknown> = {
+    ...changes,
+  };
+
+  const variations = Array.isArray(item.variations)
+    ? item.variations
+    : [];
+
+  if (
+    changes.price !== undefined &&
+    variations.length > 0
+  ) {
+    delete body.price;
+
+    body.variations = variations.map(
+      (variation) => {
+        const current = variation as {
+          id?: number | string;
+        };
+
+        return {
+          id: current.id,
+          price: changes.price,
+        };
+      },
+    );
+  }
+
+  return this.apiService.put<MlItem>(
+    `/items/${item.id}`,
+    body,
+    accessToken,
+  );
+}
 
   /** Edita un MLA perteneciente a una publicación nueva. */
 async updateVariantPricingItem(
