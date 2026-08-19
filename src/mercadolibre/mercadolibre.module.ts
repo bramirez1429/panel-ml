@@ -42,6 +42,8 @@ import { DescriptionEditService } from './direct-publications/editing/descriptio
 import { DescriptionEditController } from './direct-publications/editing/description-edit.controller';
 import { AttributeEditService } from './direct-publications/editing/attribute-edit.service';
 import { AttributeEditController } from './direct-publications/editing/attribute-edit.controller';
+import { ShippingEditService } from './direct-publications/editing/shipping-edit.service';
+import { ShippingEditController } from './direct-publications/editing/shipping-edit.controller';
 
 @Module({
   controllers: [
@@ -51,8 +53,8 @@ import { AttributeEditController } from './direct-publications/editing/attribute
     FamiliesController,
     ItemEditController,
     DescriptionEditController,
-    AttributeEditController
-    
+    AttributeEditController,
+    ShippingEditController
   ],
   providers: [
     SupabaseService,
@@ -88,7 +90,8 @@ import { AttributeEditController } from './direct-publications/editing/attribute
   SkuEditService,
   PicturesEditService,
   DescriptionEditService,
-  AttributeEditService
+  AttributeEditService,
+  ShippingEditService
   ],
 })
 export class MercadolibreModule {}
