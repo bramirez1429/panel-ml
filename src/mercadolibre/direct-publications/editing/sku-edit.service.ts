@@ -8,6 +8,7 @@ import { MercadolibreApiService } from '../../shared/mercadolibre-api.service';
 
 import { ItemsService } from '../items/items.service';
 import { PublicationsMapper } from '../publications/publications.mapper';
+import type { MlItem } from '../items/items.types';
 
 import type {
   ClassicSkuUpdate,
@@ -33,7 +34,7 @@ export class SkuEditService {
     private readonly tokenService: MercadolibreTokenService,
     private readonly apiService: MercadolibreApiService,
     private readonly itemsService: ItemsService,
-  ) {}
+  ) { }
 
   /**
    * Consulta SKU de una publicación clásica.
@@ -42,10 +43,11 @@ export class SkuEditService {
     const accessToken =
       await this.tokenService.getValidAccessToken();
 
-    const item = await this.itemsService.getOne(
-      itemId,
-      accessToken,
-    );
+    const item =
+      await this.getClassicItemWithAttributes(
+        itemId,
+        accessToken,
+      );
 
     if (
       PublicationsMapper.getModel(item) !== 'SHARED'
@@ -96,11 +98,12 @@ export class SkuEditService {
 
     const accessToken =
       await this.tokenService.getValidAccessToken();
-
-    const item = await this.itemsService.getOne(
-      itemId,
-      accessToken,
-    );
+      
+    const item =
+      await this.getClassicItemWithAttributes(
+        itemId,
+        accessToken,
+      );
 
     if (
       PublicationsMapper.getModel(item) !== 'SHARED'
@@ -389,5 +392,15 @@ export class SkuEditService {
         'El MLA no pertenece a la familia indicada',
       );
     }
+  }
+
+  private async getClassicItemWithAttributes(
+    itemId: string,
+    accessToken: string,
+  ) {
+    return this.apiService.get<MlItem>(
+      `/items/${itemId}?include_attributes=all`,
+      accessToken,
+    );
   }
 }
