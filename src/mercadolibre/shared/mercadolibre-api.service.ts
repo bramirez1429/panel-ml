@@ -231,17 +231,18 @@ export class MercadolibreApiService {
     const data = await readJson(response);
 
     if (data === INVALID_JSON) {
-      if (!response.ok) {
-        this.throwApiError(
-          response.status,
-          kind,
-        );
-      }
+  if (!response.ok) {
+    this.throwApiError(
+      response.status,
+      kind,
+    );
+  }
 
-      throw new BadGatewayException(
-        'Mercado Libre devolvió JSON inválido',
-      );
-    }
+  return {
+    data: undefined as T,
+    headers: response.headers,
+  };
+}
 
     if (!response.ok) {
       this.throwApiError(
