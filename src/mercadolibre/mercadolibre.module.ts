@@ -40,6 +40,8 @@ import { SkuEditService } from './direct-publications/editing/sku-edit.service';
 import { PicturesEditService } from './direct-publications/editing/pictures-edit.service';
 import { DescriptionEditService } from './direct-publications/editing/description-edit.service';
 import { DescriptionEditController } from './direct-publications/editing/description-edit.controller';
+import { AttributeEditService } from './direct-publications/editing/attribute-edit.service';
+import { AttributeEditController } from './direct-publications/editing/attribute-edit.controller';
 
 @Module({
   controllers: [
@@ -48,7 +50,8 @@ import { DescriptionEditController } from './direct-publications/editing/descrip
     WebhookController,
     FamiliesController,
     ItemEditController,
-    DescriptionEditController
+    DescriptionEditController,
+    AttributeEditController
     
   ],
   providers: [
@@ -84,7 +87,8 @@ import { DescriptionEditController } from './direct-publications/editing/descrip
   StockEditService,
   SkuEditService,
   PicturesEditService,
-  DescriptionEditService
+  DescriptionEditService,
+  AttributeEditService
   ],
 })
 export class MercadolibreModule {}
