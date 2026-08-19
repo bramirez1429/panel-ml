@@ -1,22 +1,59 @@
-import { PublicationModel, SharedProduct } from './publication.types';
+import {
+  PublicationModel,
+  SharedProduct,
+} from './publication.types';
 
 import { MlItem } from '../items/items.types';
-
 
 export class PublicationsMapper {
   static getModel(
     item: MlItem,
   ): PublicationModel {
-    const isVariantPricing =
+    const hasFamily =
       Boolean(item.family_name) ||
-      Boolean(item.family_id) ||
-      item.tags?.includes(
-        'user_product_listing',
+      (
+        item.family_id !== null &&
+        item.family_id !== undefined
       );
 
-    return isVariantPricing
-      ? 'VARIANT_PRICING'
-      : 'SHARED';
+    const hasVariations =
+      Array.isArray(item.variations) &&
+      item.variations.length > 0;
+
+    /**
+     * Si tiene family_id o family_name,
+     * es definitivamente Versión nueva.
+     */
+    if (hasFamily) {
+      return 'VARIANT_PRICING';
+    }
+
+    /**
+     * Si todavía tiene variations[],
+     * la tratamos como Versión clásica.
+     *
+     * Esto tiene prioridad sobre
+     * user_product_listing.
+     */
+    if (hasVariations) {
+      return 'SHARED';
+    }
+
+    /**
+     * Si ya no tiene variations[]
+     * pero Mercado Libre informa
+     * user_product_listing,
+     * es Versión nueva.
+     */
+    if (
+      item.tags?.includes(
+        'user_product_listing',
+      )
+    ) {
+      return 'VARIANT_PRICING';
+    }
+
+    return 'SHARED';
   }
 
   static toDirectPublication(
