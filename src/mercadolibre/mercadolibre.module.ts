@@ -44,7 +44,9 @@ import { PriceDiscountController } from './direct-publications/promotions/price-
 import { DealService } from './direct-publications/promotions/deal.service';
 import { DealController } from './direct-publications/promotions/deal.controller';
 import { SellerCampaignService } from './direct-publications/promotions/seller-campaign.service';
+import { SmartPromotionService } from './direct-publications/promotions/smart-promotion.service';
 import { SellerCampaignController } from './direct-publications/promotions/seller-campaign.controller';
+import { SmartPromotionController } from './direct-publications/promotions/smart-promotion.controller';
 import { StockService } from './direct-publications/stock/stock.service';
 import { SkuService } from './direct-publications/sku/sku.service';
 import { PicturesService } from './direct-publications/pictures/pictures.service';
@@ -73,6 +75,7 @@ import { ShippingController } from './direct-publications/shipping/shipping.cont
     PriceDiscountController,
     DealController,
     SellerCampaignController,
+    SmartPromotionController,
   ],
   providers: [
     SupabaseService,
@@ -113,6 +116,7 @@ import { ShippingController } from './direct-publications/shipping/shipping.cont
     PriceDiscountService,
     DealService,
     SellerCampaignService,
+    SmartPromotionService,
   ],
 })
 export class MercadolibreModule { }
