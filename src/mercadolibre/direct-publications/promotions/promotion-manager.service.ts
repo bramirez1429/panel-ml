@@ -104,6 +104,11 @@ export class PromotionManagerService {
       );
     }
 
+    await this.waitForCandidate(
+      publication.itemId,
+      request,
+    );
+
     await this.activatePromotion(
       publication,
       request,
@@ -513,6 +518,74 @@ export class PromotionManagerService {
     }
 
     return promotion.ref_id;
+  }
+
+  private async waitForCandidate(
+    itemId: string,
+    request: PromotionSwitchRequest,
+  ): Promise<void> {
+    for (
+      let attempt = 0;
+      attempt < 10;
+      attempt++
+    ) {
+      const detail =
+        await this.publicationDetailService.getDetail(
+          itemId,
+        );
+
+      const candidates =
+        (detail.promotions?.candidates ??
+          []) as ManagedActivePromotion[];
+
+      const candidate =
+        candidates.find(
+          (promotion) => {
+            if (
+              promotion.type !==
+              request.type
+            ) {
+              return false;
+            }
+
+            if (
+              request.type ===
+              'PRICE_DISCOUNT'
+            ) {
+              return true;
+            }
+
+            if (
+              promotion.id !==
+              request.promotionId
+            ) {
+              return false;
+            }
+
+            if (
+              request.type ===
+              'SMART'
+            ) {
+              return (
+                promotion.ref_id ===
+                request.offerId
+              );
+            }
+
+            return true;
+          },
+        );
+
+      if (candidate) {
+        return;
+      }
+
+      await this.delay(1000);
+    }
+
+    throw new BadRequestException(
+      `Mercado Libre todavía no habilitó el candidato ${request.type}`,
+    );
   }
 
   private delay(
