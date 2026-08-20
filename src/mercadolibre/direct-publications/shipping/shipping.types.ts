@@ -10,5 +10,8 @@ export type ShippingInfo = {
   localPickUp: boolean;
   storePickUp: boolean;
   mandatoryFreeShipping: boolean;
+  isFlex: boolean;
+  isFull: boolean;
+  isDropOff: boolean;
   tags: string[];
 };

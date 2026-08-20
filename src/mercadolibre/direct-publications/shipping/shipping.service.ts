@@ -235,13 +235,15 @@ export class ShippingService {
     const tags =
       shipping?.tags ?? [];
 
+    const logisticType =
+      shipping?.logistic_type ??
+      null;
+
     return {
       mode:
         shipping?.mode ?? null,
 
-      logisticType:
-        shipping?.logistic_type ??
-        null,
+      logisticType,
 
       freeShipping:
         shipping?.free_shipping ??
@@ -259,6 +261,20 @@ export class ShippingService {
         tags.includes(
           'mandatory_free_shipping',
         ),
+
+      isFlex:
+        logisticType ===
+        'self_service',
+
+      isFull:
+        logisticType ===
+        'fulfillment',
+
+      isDropOff:
+        logisticType ===
+          'drop_off' ||
+        logisticType ===
+          'xd_drop_off',
 
       tags,
     };
