@@ -109,7 +109,7 @@ export class PromotionManagerService {
       request,
     );
 
-    await this.activatePromotion(
+    await this.activatePromotionWithRetry(
       publication,
       request,
     );
@@ -138,6 +138,78 @@ export class PromotionManagerService {
 
       verified,
     };
+  }
+
+  private async activatePromotionWithRetry(
+    publication: PublicationKind,
+    request: PromotionSwitchRequest,
+  ): Promise<void> {
+    let lastError: unknown = null;
+
+    for (
+      let attempt = 0;
+      attempt < 10;
+      attempt++
+    ) {
+      try {
+        await this.activatePromotion(
+          publication,
+          request,
+        );
+
+        return;
+      } catch (error) {
+        lastError = error;
+
+        if (
+          !this.isNoCandidatesError(
+            error,
+          )
+        ) {
+          throw error;
+        }
+
+        await this.delay(1000);
+      }
+    }
+
+    throw lastError;
+  }
+
+  private isNoCandidatesError(
+    error: unknown,
+  ): boolean {
+    const httpError =
+      error as {
+        message?: unknown;
+        response?: unknown;
+        getResponse?: () => unknown;
+      };
+
+    let response:
+      | unknown
+      | undefined;
+
+    try {
+      response =
+        typeof httpError?.getResponse ===
+        'function'
+          ? httpError.getResponse()
+          : httpError?.response;
+    } catch {
+      response = undefined;
+    }
+
+    const content =
+      JSON.stringify(
+        response ??
+          httpError?.message ??
+          error,
+      ).toLowerCase();
+
+    return content.includes(
+      'no candidates found',
+    );
   }
 
   private async activatePromotion(
