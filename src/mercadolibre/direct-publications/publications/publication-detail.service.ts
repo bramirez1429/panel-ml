@@ -43,8 +43,16 @@ export class PublicationDetailService {
     const friendlyPricing =
       PublicationDetailMapper.getPricing(price);
 
-    const friendlyPromotion =
-      PublicationDetailMapper.getPromotion(promotions);
+const effectivePromotions =
+  PublicationDetailMapper.reconcilePromotions(
+    price,
+    promotions,
+  );
+
+const friendlyPromotion =
+  PublicationDetailMapper.getPromotion(
+    effectivePromotions,
+  );
 
     const friendlyShipping =
       PublicationDetailMapper.getShipping(item.shipping);
@@ -91,8 +99,8 @@ export class PublicationDetailService {
         sold: item.sold_quantity ?? 0,
       },
 
-      price,
-      promotions,
+  price,
+promotions: effectivePromotions,
 
       sku: item.seller_custom_field ?? null,
       inventoryId: item.inventory_id ?? null,
