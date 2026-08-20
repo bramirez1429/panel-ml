@@ -416,7 +416,7 @@ export class PromotionManagerService {
   ): Promise<ManagedActivePromotion | null> {
     for (
       let attempt = 0;
-      attempt < 5;
+      attempt < 10;
       attempt++
     ) {
       const detail =
@@ -436,7 +436,7 @@ export class PromotionManagerService {
         return active;
       }
 
-      await this.delay(500);
+      await this.delay(1000);
     }
 
     return null;
@@ -447,7 +447,7 @@ export class PromotionManagerService {
   ): Promise<void> {
     for (
       let attempt = 0;
-      attempt < 5;
+      attempt < 10;
       attempt++
     ) {
       const detail =
@@ -464,7 +464,7 @@ export class PromotionManagerService {
         return;
       }
 
-      await this.delay(500);
+      await this.delay(1000);
     }
   }
 
