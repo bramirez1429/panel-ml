@@ -68,7 +68,8 @@ import { ShippingController } from './direct-publications/shipping/shipping.cont
     DescriptionController,
     AttributesController,
     ShippingController,
-    PriceDiscountController
+    PriceDiscountController,
+    DealController,
   ],
   providers: [
     SupabaseService,
@@ -106,7 +107,8 @@ import { ShippingController } from './direct-publications/shipping/shipping.cont
     DescriptionService,
     AttributesService,
     ShippingService,
-    PriceDiscountService
+    PriceDiscountService,
+    DealService,
   ],
 })
 export class MercadolibreModule { }
