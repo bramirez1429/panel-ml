@@ -16,7 +16,7 @@ import { PublicationsMapper } from '../publications/publications.mapper';
 import type {
   AttributeInput,
   AttributeUpdate,
-} from './attribute-edit.types';
+} from './attributes.types';
 
 type MlVariationAttribute = {
   id: string;
@@ -40,7 +40,7 @@ type MlVariation = {
 };
 
 @Injectable()
-export class AttributeEditService {
+export class AttributesService {
   constructor(
     private readonly tokenService:
       MercadolibreTokenService,

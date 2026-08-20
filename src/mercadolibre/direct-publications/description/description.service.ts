@@ -12,10 +12,10 @@ import { PublicationsMapper } from '../publications/publications.mapper';
 import type {
   DescriptionUpdate,
   MlDescription,
-} from './description-edit.types';
+} from './description.types';
 
 @Injectable()
-export class DescriptionEditService {
+export class DescriptionService {
   constructor(
     private readonly tokenService: MercadolibreTokenService,
     private readonly apiService: MercadolibreApiService,

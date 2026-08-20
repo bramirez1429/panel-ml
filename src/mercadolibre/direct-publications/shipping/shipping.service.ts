@@ -14,12 +14,12 @@ import type {
 } from '../items/items.types';
 
 import type {
-  MlPromotionPriceResponse,
-  PriceDiscountUpdate,
-} from './promotion-edit.types';
+  ShippingInfo,
+  ShippingUpdate,
+} from './shipping.types';
 
 @Injectable()
-export class PromotionEditService {
+export class ShippingService {
   constructor(
     private readonly tokenService:
       MercadolibreTokenService,
@@ -31,36 +31,7 @@ export class PromotionEditService {
       ItemsService,
   ) {}
 
-  async createClassicPriceDiscount(
-    itemId: string,
-    changes: PriceDiscountUpdate,
-  ) {
-    const accessToken =
-      await this.tokenService.getValidAccessToken();
-
-    const item =
-      await this.itemsService.getOne(
-        itemId,
-        accessToken,
-      );
-
-    if (
-      PublicationsMapper.getModel(item) !==
-      'SHARED'
-    ) {
-      throw new BadRequestException(
-        'La publicación no es versión clásica',
-      );
-    }
-
-    return this.createPriceDiscount(
-      item.id,
-      changes,
-      accessToken,
-    );
-  }
-
-  async deleteClassicPriceDiscount(
+  async getClassic(
     itemId: string,
   ) {
     const accessToken =
@@ -81,16 +52,17 @@ export class PromotionEditService {
       );
     }
 
-    return this.deletePriceDiscount(
-      item.id,
-      accessToken,
-    );
+    return {
+      model: 'SHARED',
+      itemId: item.id,
+      shipping:
+        this.mapShipping(item),
+    };
   }
 
-  async createNewPriceDiscount(
-    familyId: string,
+  async updateClassic(
     itemId: string,
-    changes: PriceDiscountUpdate,
+    changes: ShippingUpdate,
   ) {
     const accessToken =
       await this.tokenService.getValidAccessToken();
@@ -101,155 +73,195 @@ export class PromotionEditService {
         accessToken,
       );
 
-    this.validateNew(
-      familyId,
-      item,
-    );
+    if (
+      PublicationsMapper.getModel(item) !==
+      'SHARED'
+    ) {
+      throw new BadRequestException(
+        'La publicación no es versión clásica',
+      );
+    }
 
-    return this.createPriceDiscount(
-      item.id,
-      changes,
-      accessToken,
-    );
-  }
-
-  async deleteNewPriceDiscount(
-    familyId: string,
-    itemId: string,
-  ) {
-    const accessToken =
-      await this.tokenService.getValidAccessToken();
-
-    const item =
-      await this.itemsService.getOne(
-        itemId,
-        accessToken,
+    const shipping =
+      this.buildShippingUpdate(
+        item,
+        changes,
       );
 
-    this.validateNew(
-      familyId,
-      item,
-    );
-
-    return this.deletePriceDiscount(
-      item.id,
-      accessToken,
-    );
-  }
-
-  private createPriceDiscount(
-    itemId: string,
-    changes: PriceDiscountUpdate,
-    accessToken: string,
-  ) {
-    this.validateChanges(changes);
-
-    return this.apiService.post<MlPromotionPriceResponse>(
-      `/seller-promotions/items/${itemId}?app_version=v2`,
+    return this.apiService.put<MlItem>(
+      `/items/${item.id}`,
       {
-        deal_price:
-          changes.dealPrice,
-
-        ...(changes.topDealPrice !==
-        undefined
-          ? {
-              top_deal_price:
-                changes.topDealPrice,
-            }
-          : {}),
-
-        start_date:
-          changes.startDate,
-
-        finish_date:
-          changes.finishDate,
-
-        promotion_type:
-          'PRICE_DISCOUNT',
+        shipping,
       },
       accessToken,
     );
   }
 
-  private deletePriceDiscount(
+  async getNew(
+    familyId: string,
     itemId: string,
-    accessToken: string,
   ) {
-    return this.apiService.delete<unknown>(
-      `/seller-promotions/items/${itemId}` +
-        '?promotion_type=PRICE_DISCOUNT' +
-        '&app_version=v2',
+    const accessToken =
+      await this.tokenService.getValidAccessToken();
+
+    const item =
+      await this.itemsService.getOne(
+        itemId,
+        accessToken,
+      );
+
+    this.validateNew(
+      familyId,
+      item,
+    );
+
+    return {
+      model: 'VARIANT_PRICING',
+      familyId,
+      itemId: item.id,
+      userProductId:
+        item.user_product_id ?? null,
+      shipping:
+        this.mapShipping(item),
+    };
+  }
+
+  async updateNew(
+    familyId: string,
+    itemId: string,
+    changes: ShippingUpdate,
+  ) {
+    const accessToken =
+      await this.tokenService.getValidAccessToken();
+
+    const item =
+      await this.itemsService.getOne(
+        itemId,
+        accessToken,
+      );
+
+    this.validateNew(
+      familyId,
+      item,
+    );
+
+    const shipping =
+      this.buildShippingUpdate(
+        item,
+        changes,
+      );
+
+    return this.apiService.put<MlItem>(
+      `/items/${item.id}`,
+      {
+        shipping,
+      },
       accessToken,
     );
   }
 
-  private validateChanges(
-    changes: PriceDiscountUpdate,
-  ): void {
+  private buildShippingUpdate(
+    item: MlItem,
+    changes: ShippingUpdate,
+  ): Record<string, boolean> {
     if (
-      !Number.isFinite(
-        changes?.dealPrice,
-      ) ||
-      changes.dealPrice <= 0
+      changes.freeShipping === undefined &&
+      changes.localPickUp === undefined
     ) {
       throw new BadRequestException(
-        'dealPrice debe ser mayor a 0',
+        'Debes enviar freeShipping o localPickUp',
       );
     }
 
     if (
-      changes.topDealPrice !==
-        undefined &&
-      (
-        !Number.isFinite(
-          changes.topDealPrice,
-        ) ||
-        changes.topDealPrice <= 0
+      changes.freeShipping !== undefined &&
+      typeof changes.freeShipping !==
+        'boolean'
+    ) {
+      throw new BadRequestException(
+        'freeShipping debe ser boolean',
+      );
+    }
+
+    if (
+      changes.localPickUp !== undefined &&
+      typeof changes.localPickUp !==
+        'boolean'
+    ) {
+      throw new BadRequestException(
+        'localPickUp debe ser boolean',
+      );
+    }
+
+    const tags =
+      item.shipping?.tags ?? [];
+
+    if (
+      changes.freeShipping === false &&
+      tags.includes(
+        'mandatory_free_shipping',
       )
     ) {
       throw new BadRequestException(
-        'topDealPrice debe ser mayor a 0',
+        'Mercado Libre exige envío gratis para esta publicación',
       );
     }
 
-    if (
-      !changes.startDate ||
-      Number.isNaN(
-        Date.parse(
-          changes.startDate,
+    return {
+      ...(changes.freeShipping !==
+      undefined
+        ? {
+            free_shipping:
+              changes.freeShipping,
+          }
+        : {}),
+
+      ...(changes.localPickUp !==
+      undefined
+        ? {
+            local_pick_up:
+              changes.localPickUp,
+          }
+        : {}),
+    };
+  }
+
+  private mapShipping(
+    item: MlItem,
+  ): ShippingInfo {
+    const shipping =
+      item.shipping;
+
+    const tags =
+      shipping?.tags ?? [];
+
+    return {
+      mode:
+        shipping?.mode ?? null,
+
+      logisticType:
+        shipping?.logistic_type ??
+        null,
+
+      freeShipping:
+        shipping?.free_shipping ??
+        false,
+
+      localPickUp:
+        shipping?.local_pick_up ??
+        false,
+
+      storePickUp:
+        shipping?.store_pick_up ??
+        false,
+
+      mandatoryFreeShipping:
+        tags.includes(
+          'mandatory_free_shipping',
         ),
-      )
-    ) {
-      throw new BadRequestException(
-        'startDate inválido',
-      );
-    }
 
-    if (
-      !changes.finishDate ||
-      Number.isNaN(
-        Date.parse(
-          changes.finishDate,
-        ),
-      )
-    ) {
-      throw new BadRequestException(
-        'finishDate inválido',
-      );
-    }
-
-    if (
-      new Date(
-        changes.finishDate,
-      ).getTime() <
-      new Date(
-        changes.startDate,
-      ).getTime()
-    ) {
-      throw new BadRequestException(
-        'finishDate debe ser posterior a startDate',
-      );
-    }
+      tags,
+    };
   }
 
   private validateNew(

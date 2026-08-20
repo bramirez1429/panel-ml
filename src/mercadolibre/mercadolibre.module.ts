@@ -24,6 +24,10 @@ import { UserProductsService } from './user-products/user-products.service';
 import { WebhookController } from './webhook/webhook.controller';
 import { WebhookService } from './webhook/webhook.service';
 
+import { FamilyController } from './direct-publications/families/family.controller';
+import { StockController } from './direct-publications/stock/stock.controller';
+import { SkuController } from './direct-publications/sku/sku.controller';
+import { PicturesController } from './direct-publications/pictures/pictures.controller';
 import { FamiliesController } from './direct-publications/families/families.controller';
 import { FamiliesService } from './direct-publications/families/families.service';
 import { FamiliesDetailService } from './direct-publications/families/families-detail.service';
@@ -32,20 +36,21 @@ import { PublicationsSearchService } from './direct-publications/publications/pu
 import { PricingService } from './direct-publications/pricing/pricing.service';
 import { PromotionsService } from './direct-publications/promotions/promotions.service';
 import { PublicationDetailService } from './direct-publications/publications/publication-detail.service';
-import { ItemEditService } from './direct-publications/editing/item-edit.service';
-import { ItemEditController } from './direct-publications/editing/item-edit.controller';
-import { FamilyEditService } from './direct-publications/editing/family-edit.service';
-import { StockEditService } from './direct-publications/editing/stock-edit.service';
-import { SkuEditService } from './direct-publications/editing/sku-edit.service';
-import { PicturesEditService } from './direct-publications/editing/pictures-edit.service';
-import { DescriptionEditService } from './direct-publications/editing/description-edit.service';
-import { DescriptionEditController } from './direct-publications/editing/description-edit.controller';
-import { AttributeEditService } from './direct-publications/editing/attribute-edit.service';
-import { AttributeEditController } from './direct-publications/editing/attribute-edit.controller';
-import { ShippingEditService } from './direct-publications/editing/shipping-edit.service';
-import { ShippingEditController } from './direct-publications/editing/shipping-edit.controller';
-import { PromotionEditService } from './direct-publications/editing/promotion-edit.service';
-import { PromotionEditController } from './direct-publications/editing/promotion-edit.controller';
+import { ItemUpdateService } from './direct-publications/items/item-update.service';
+import { ItemController } from './direct-publications/items/item.controller';
+import { FamilyUpdateService } from './direct-publications/families/family-update.service';
+import { PriceDiscountService } from './direct-publications/promotions/price-discount.service';
+import { PriceDiscountController } from './direct-publications/promotions/price-discount.controller';
+import { StockService } from './direct-publications/stock/stock.service';
+import { SkuService } from './direct-publications/sku/sku.service';
+import { PicturesService } from './direct-publications/pictures/pictures.service';
+import { DescriptionService } from './direct-publications/description/description.service';
+import { DescriptionController } from './direct-publications/description/description.controller';
+import { AttributesService } from './direct-publications/attributes/attributes.service';
+import { AttributesController } from './direct-publications/attributes/attributes.controller';
+import { ShippingService } from './direct-publications/shipping/shipping.service';
+import { ShippingController } from './direct-publications/shipping/shipping.controller';
+
 
 @Module({
   controllers: [
@@ -53,11 +58,15 @@ import { PromotionEditController } from './direct-publications/editing/promotion
     PublicationsController,
     WebhookController,
     FamiliesController,
-    ItemEditController,
-    DescriptionEditController,
-    AttributeEditController,
-    ShippingEditController,
-    PromotionEditController
+    FamilyController,
+    StockController,
+    SkuController,
+    PicturesController,
+    ItemController,
+    DescriptionController,
+    AttributesController,
+    ShippingController,
+    PriceDiscountController
   ],
   providers: [
     SupabaseService,
@@ -87,15 +96,15 @@ import { PromotionEditController } from './direct-publications/editing/promotion
     PricingService,
     PromotionsService,
     PublicationDetailService,
-    ItemEditService,
-  FamilyEditService,
-  StockEditService,
-  SkuEditService,
-  PicturesEditService,
-  DescriptionEditService,
-  AttributeEditService,
-  ShippingEditService,
-  PromotionEditService
+    ItemUpdateService,
+    FamilyUpdateService,
+    StockService,
+    SkuService,
+    PicturesService,
+    DescriptionService,
+    AttributesService,
+    ShippingService,
+    PriceDiscountService
   ],
 })
-export class MercadolibreModule {}
+export class MercadolibreModule { }

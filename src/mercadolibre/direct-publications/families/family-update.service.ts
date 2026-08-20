@@ -14,10 +14,10 @@ import type {
   FamilyUpdateRequest,
   FamilyTaskStatusResponse,
 
-} from './family-edit.types';
+} from './family-update.types';
 
 @Injectable()
-export class FamilyEditService {
+export class FamilyUpdateService {
   constructor(
     private readonly familiesService: FamiliesService,
     private readonly apiService: MercadolibreApiService,

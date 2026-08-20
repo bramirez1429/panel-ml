@@ -6,24 +6,24 @@ import {
   Patch,
 } from '@nestjs/common';
 
-import { AttributeEditService } from './attribute-edit.service';
+import { AttributesService } from './attributes.service';
 
 import type {
   AttributeUpdate,
-} from './attribute-edit.types';
+} from './attributes.types';
 
 @Controller('mercadolibre/direct/edicion')
-export class AttributeEditController {
+export class AttributesController {
   constructor(
-    private readonly attributeEditService:
-      AttributeEditService,
+    private readonly attributesService:
+      AttributesService,
   ) {}
 
   @Get('clasica/:itemId/atributos')
   getClassic(
     @Param('itemId') itemId: string,
   ) {
-    return this.attributeEditService.getClassic(
+    return this.attributesService.getClassic(
       itemId,
     );
   }
@@ -33,7 +33,7 @@ export class AttributeEditController {
     @Param('itemId') itemId: string,
     @Body() changes: AttributeUpdate,
   ) {
-    return this.attributeEditService.updateClassicItemAttribute(
+    return this.attributesService.updateClassicItemAttribute(
       itemId,
       changes,
     );
@@ -48,7 +48,7 @@ export class AttributeEditController {
     variationId: string,
     @Body() changes: AttributeUpdate,
   ) {
-    return this.attributeEditService.updateClassicVariationAttribute(
+    return this.attributesService.updateClassicVariationAttribute(
       itemId,
       variationId,
       changes,
@@ -64,7 +64,7 @@ export class AttributeEditController {
     variationId: string,
     @Body() changes: AttributeUpdate,
   ) {
-    return this.attributeEditService.updateClassicCombination(
+    return this.attributesService.updateClassicCombination(
       itemId,
       variationId,
       changes,
@@ -78,7 +78,7 @@ export class AttributeEditController {
     @Param('familyId') familyId: string,
     @Param('itemId') itemId: string,
   ) {
-    return this.attributeEditService.getNew(
+    return this.attributesService.getNew(
       familyId,
       itemId,
     );
@@ -92,7 +92,7 @@ export class AttributeEditController {
     @Param('itemId') itemId: string,
     @Body() changes: AttributeUpdate,
   ) {
-    return this.attributeEditService.updateNewAttribute(
+    return this.attributesService.updateNewAttribute(
       familyId,
       itemId,
       changes,

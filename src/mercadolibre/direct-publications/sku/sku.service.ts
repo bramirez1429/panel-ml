@@ -13,7 +13,7 @@ import type { MlItem } from '../items/items.types';
 import type {
   ClassicSkuUpdate,
   NewSkuUpdate,
-} from './sku-edit.types';
+} from './sku.types';
 
 type VariationAttribute = {
   id?: string;
@@ -29,7 +29,7 @@ type ClassicVariation = {
 };
 
 @Injectable()
-export class SkuEditService {
+export class SkuService {
   constructor(
     private readonly tokenService: MercadolibreTokenService,
     private readonly apiService: MercadolibreApiService,

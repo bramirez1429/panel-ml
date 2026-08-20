@@ -7,24 +7,24 @@ import {
   Post,
 } from '@nestjs/common';
 
-import { DescriptionEditService } from './description-edit.service';
+import { DescriptionService } from './description.service';
 
 import type {
   DescriptionUpdate,
-} from './description-edit.types';
+} from './description.types';
 
 @Controller('mercadolibre/direct/edicion')
-export class DescriptionEditController {
+export class DescriptionController {
   constructor(
-    private readonly descriptionEditService:
-      DescriptionEditService,
+    private readonly descriptionService:
+      DescriptionService,
   ) {}
 
   @Get('clasica/:itemId/descripcion')
   getClassic(
     @Param('itemId') itemId: string,
   ) {
-    return this.descriptionEditService.getClassic(
+    return this.descriptionService.getClassic(
       itemId,
     );
   }
@@ -34,7 +34,7 @@ export class DescriptionEditController {
     @Param('itemId') itemId: string,
     @Body() changes: DescriptionUpdate,
   ) {
-    return this.descriptionEditService.createClassic(
+    return this.descriptionService.createClassic(
       itemId,
       changes,
     );
@@ -45,7 +45,7 @@ export class DescriptionEditController {
     @Param('itemId') itemId: string,
     @Body() changes: DescriptionUpdate,
   ) {
-    return this.descriptionEditService.updateClassic(
+    return this.descriptionService.updateClassic(
       itemId,
       changes,
     );
@@ -56,7 +56,7 @@ export class DescriptionEditController {
     @Param('familyId') familyId: string,
     @Param('itemId') itemId: string,
   ) {
-    return this.descriptionEditService.getNew(
+    return this.descriptionService.getNew(
       familyId,
       itemId,
     );
@@ -68,7 +68,7 @@ export class DescriptionEditController {
     @Param('itemId') itemId: string,
     @Body() changes: DescriptionUpdate,
   ) {
-    return this.descriptionEditService.createNew(
+    return this.descriptionService.createNew(
       familyId,
       itemId,
       changes,
@@ -81,7 +81,7 @@ export class DescriptionEditController {
     @Param('itemId') itemId: string,
     @Body() changes: DescriptionUpdate,
   ) {
-    return this.descriptionEditService.updateNew(
+    return this.descriptionService.updateNew(
       familyId,
       itemId,
       changes,

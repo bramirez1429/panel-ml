@@ -14,7 +14,7 @@ import { PublicationsMapper } from '../publications/publications.mapper';
 import type {
   ClassicItemUpdate,
   VariantPricingItemUpdate,
-} from './item-edit.types';
+} from './item-update.types';
 
 const CLASSIC_ALLOWED_FIELDS = new Set([
   'title',
@@ -54,7 +54,7 @@ const ALLOWED_STATUSES = new Set([
 ]);
 
 @Injectable()
-export class ItemEditService {
+export class ItemUpdateService {
   constructor(
     private readonly tokenService: MercadolibreTokenService,
     private readonly apiService: MercadolibreApiService,

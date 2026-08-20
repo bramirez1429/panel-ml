@@ -12,10 +12,10 @@ import { PublicationsMapper } from '../publications/publications.mapper';
 import type {
   EditablePictureInput,
   PicturesUpdate,
-} from './pictures-edit.types';
+} from './pictures.types';
 
 @Injectable()
-export class PicturesEditService {
+export class PicturesService {
   constructor(
     private readonly tokenService: MercadolibreTokenService,
     private readonly apiService: MercadolibreApiService,

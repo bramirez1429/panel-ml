@@ -1,24 +1,24 @@
-export type FamilyEditAttributeValue = {
+export type FamilyUpdateAttributeValue = {
   id?: string | null;
   name?: string | null;
 };
 
-export type FamilyEditAttribute = {
+export type FamilyUpdateAttribute = {
   id?: string;
   name?: string;
-  values: FamilyEditAttributeValue[];
+  values: FamilyUpdateAttributeValue[];
 };
 
 export type FamilyUserProductUpdate = {
   id: string;
-  attributes?: FamilyEditAttribute[];
+  attributes?: FamilyUpdateAttribute[];
 };
 
 export type FamilyUpdateRequest = {
   common_content?: {
     family_name?: string;
     domain_id?: string;
-    attributes?: FamilyEditAttribute[];
+    attributes?: FamilyUpdateAttribute[];
   };
 
   user_products: FamilyUserProductUpdate[];

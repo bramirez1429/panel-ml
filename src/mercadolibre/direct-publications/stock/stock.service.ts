@@ -13,10 +13,11 @@ import type {
   ClassicStockUpdate,
   NewStockUpdate,
   UserProductStockResponse,
-} from './stock-edit.types';
+} from './stock.types';
+
 
 @Injectable()
-export class StockEditService {
+export class StockService {
   constructor(
     private readonly tokenService: MercadolibreTokenService,
     private readonly apiService: MercadolibreApiService,

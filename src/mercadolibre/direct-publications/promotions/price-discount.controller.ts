@@ -6,17 +6,17 @@ import {
   Post,
 } from '@nestjs/common';
 
-import { PromotionEditService } from './promotion-edit.service';
+import { PriceDiscountService } from './price-discount.service';
 
 import type {
   PriceDiscountUpdate,
-} from './promotion-edit.types';
+} from './price-discount.types';
 
 @Controller('mercadolibre/direct/edicion')
-export class PromotionEditController {
+export class PriceDiscountController {
   constructor(
-    private readonly promotionEditService:
-      PromotionEditService,
+    private readonly priceDiscountService:
+      PriceDiscountService,
   ) {}
 
   @Post(
@@ -29,7 +29,7 @@ export class PromotionEditController {
     @Body()
     changes: PriceDiscountUpdate,
   ) {
-    return this.promotionEditService
+    return this.priceDiscountService
       .createClassicPriceDiscount(
         itemId,
         changes,
@@ -43,7 +43,7 @@ export class PromotionEditController {
     @Param('itemId')
     itemId: string,
   ) {
-    return this.promotionEditService
+    return this.priceDiscountService
       .deleteClassicPriceDiscount(
         itemId,
       );
@@ -62,7 +62,7 @@ export class PromotionEditController {
     @Body()
     changes: PriceDiscountUpdate,
   ) {
-    return this.promotionEditService
+    return this.priceDiscountService
       .createNewPriceDiscount(
         familyId,
         itemId,
@@ -80,7 +80,7 @@ export class PromotionEditController {
     @Param('itemId')
     itemId: string,
   ) {
-    return this.promotionEditService
+    return this.priceDiscountService
       .deleteNewPriceDiscount(
         familyId,
         itemId,

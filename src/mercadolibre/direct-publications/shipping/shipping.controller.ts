@@ -6,24 +6,24 @@ import {
   Patch,
 } from '@nestjs/common';
 
-import { ShippingEditService } from './shipping-edit.service';
+import { ShippingService } from './shipping.service';
 
 import type {
   ShippingUpdate,
-} from './shipping-edit.types';
+} from './shipping.types';
 
 @Controller('mercadolibre/direct/edicion')
-export class ShippingEditController {
+export class ShippingController {
   constructor(
-    private readonly shippingEditService:
-      ShippingEditService,
+    private readonly shippingService:
+      ShippingService,
   ) {}
 
   @Get('clasica/:itemId/envio')
   getClassic(
     @Param('itemId') itemId: string,
   ) {
-    return this.shippingEditService.getClassic(
+    return this.shippingService.getClassic(
       itemId,
     );
   }
@@ -33,7 +33,7 @@ export class ShippingEditController {
     @Param('itemId') itemId: string,
     @Body() changes: ShippingUpdate,
   ) {
-    return this.shippingEditService.updateClassic(
+    return this.shippingService.updateClassic(
       itemId,
       changes,
     );
@@ -46,7 +46,7 @@ export class ShippingEditController {
     @Param('familyId') familyId: string,
     @Param('itemId') itemId: string,
   ) {
-    return this.shippingEditService.getNew(
+    return this.shippingService.getNew(
       familyId,
       itemId,
     );
@@ -60,7 +60,7 @@ export class ShippingEditController {
     @Param('itemId') itemId: string,
     @Body() changes: ShippingUpdate,
   ) {
-    return this.shippingEditService.updateNew(
+    return this.shippingService.updateNew(
       familyId,
       itemId,
       changes,
