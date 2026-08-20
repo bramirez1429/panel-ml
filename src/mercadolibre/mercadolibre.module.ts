@@ -41,6 +41,8 @@ import { ItemController } from './direct-publications/items/item.controller';
 import { FamilyUpdateService } from './direct-publications/families/family-update.service';
 import { PriceDiscountService } from './direct-publications/promotions/price-discount.service';
 import { PriceDiscountController } from './direct-publications/promotions/price-discount.controller';
+import { DealService } from './direct-publications/promotions/deal.service';
+import { DealController } from './direct-publications/promotions/deal.controller';
 import { StockService } from './direct-publications/stock/stock.service';
 import { SkuService } from './direct-publications/sku/sku.service';
 import { PicturesService } from './direct-publications/pictures/pictures.service';
