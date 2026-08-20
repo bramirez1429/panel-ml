@@ -493,7 +493,7 @@ export class PromotionManagerService {
   ): Promise<ManagedActivePromotion | null> {
     for (
       let attempt = 0;
-      attempt < 10;
+      attempt < 20;
       attempt++
     ) {
       const detail =
