@@ -78,6 +78,7 @@ import { ShippingController } from './direct-publications/shipping/shipping.cont
     DealController,
     SellerCampaignController,
     SmartPromotionController,
+    PromotionManagerController,
   ],
   providers: [
     SupabaseService,
@@ -119,6 +120,7 @@ import { ShippingController } from './direct-publications/shipping/shipping.cont
     DealService,
     SellerCampaignService,
     SmartPromotionService,
+    PromotionManagerService,
   ],
 })
 export class MercadolibreModule { }
