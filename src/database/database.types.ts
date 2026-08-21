@@ -22,6 +22,44 @@ type TokenRow = {
   updated_at: string;
 };
 
+type UserRow = {
+  id: string;
+  email: string;
+  password_hash: string;
+  name: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+type UserInsert = {
+  id?: string;
+  email: string;
+  password_hash: string;
+  name?: string | null;
+  is_active?: boolean;
+  created_at?: string;
+  updated_at?: string;
+};
+
+type UserSessionRow = {
+  id: string;
+  user_id: string;
+  token_hash: string;
+  expires_at: string;
+  revoked_at: string | null;
+  created_at: string;
+};
+
+type UserSessionInsert = {
+  id?: string;
+  user_id: string;
+  token_hash: string;
+  expires_at: string;
+  revoked_at?: string | null;
+  created_at?: string;
+};
+
 type ProductRow = {
   id: string;
   seller_id: number;
@@ -163,6 +201,20 @@ type SyncJobInsert = {
 export type Database = {
   public: {
     Tables: {
+      users: Table<UserRow, UserInsert>;
+      user_sessions: Table<
+        UserSessionRow,
+        UserSessionInsert,
+        [
+          {
+            foreignKeyName: 'user_sessions_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+        ]
+      >;
       mercadolibre_tokens: Table<TokenRow, TokenRow>;
       mercadolibre_products: Table<ProductRow, ProductInsert>;
       mercadolibre_product_children: Table<
