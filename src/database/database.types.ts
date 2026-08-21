@@ -42,23 +42,30 @@ type UserInsert = {
   updated_at?: string;
 };
 
-type UserSessionRow = {
+type UserRefreshSessionRow = {
   id: string;
   user_id: string;
-  token_hash: string;
+  refresh_token_hash: string;
   expires_at: string;
   revoked_at: string | null;
   created_at: string;
+  rotated_at: string;
 };
 
-type UserSessionInsert = {
+type UserRefreshSessionInsert = {
   id?: string;
   user_id: string;
-  token_hash: string;
+  refresh_token_hash: string;
   expires_at: string;
   revoked_at?: string | null;
   created_at?: string;
+  rotated_at?: string;
 };
+
+type UserRefreshSessionMetadataRow = Omit<
+  UserRefreshSessionRow,
+  'refresh_token_hash'
+>;
 
 type ProductRow = {
   id: string;
@@ -202,12 +209,12 @@ export type Database = {
   public: {
     Tables: {
       users: Table<UserRow, UserInsert>;
-      user_sessions: Table<
-        UserSessionRow,
-        UserSessionInsert,
+      user_refresh_sessions: Table<
+        UserRefreshSessionRow,
+        UserRefreshSessionInsert,
         [
           {
-            foreignKeyName: 'user_sessions_user_id_fkey';
+            foreignKeyName: 'user_refresh_sessions_user_id_fkey';
             columns: ['user_id'];
             isOneToOne: false;
             referencedRelation: 'users';
@@ -233,6 +240,22 @@ export type Database = {
       mercadolibre_sync_jobs: Table<SyncJobRow, SyncJobInsert>;
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      create_user_refresh_session: {
+        Args: {
+          p_user_id: string;
+          p_refresh_token_hash: string;
+          p_ttl_milliseconds: number;
+        };
+        Returns: UserRefreshSessionMetadataRow[];
+      };
+      rotate_user_refresh_session: {
+        Args: {
+          p_current_refresh_token_hash: string;
+          p_next_refresh_token_hash: string;
+        };
+        Returns: UserRefreshSessionMetadataRow[];
+      };
+    };
   };
 };

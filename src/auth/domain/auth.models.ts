@@ -10,13 +10,13 @@ export type User = {
 
 export type SafeUser = Omit<User, 'passwordHash'>;
 
-export type UserSession = {
+export type RefreshSession = {
   id: string;
   userId: string;
-  tokenHash: string;
   expiresAt: Date;
   revokedAt: Date | null;
   createdAt: Date;
+  rotatedAt: Date;
 };
 
 export function normalizeEmail(email: string): string {

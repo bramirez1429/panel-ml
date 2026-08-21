@@ -1,6 +1,6 @@
-import { Request } from 'express';
-import { AuthenticatedSession } from '../application/auth.service';
+import type { Request } from 'express';
+import type { AuthenticatedAccess } from '../application/auth.service';
 
 export interface AuthenticatedRequest extends Request {
-  auth: AuthenticatedSession;
+  auth: AuthenticatedAccess;
 }

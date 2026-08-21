@@ -1,6 +1,7 @@
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { LoginDto } from './login.dto';
+import { RefreshTokenDto } from './refresh-token.dto';
 import { RegisterDto } from './register.dto';
 
 describe('Auth DTOs', () => {
@@ -49,4 +50,21 @@ describe('Auth DTOs', () => {
 
     await expect(validate(input)).resolves.not.toHaveLength(0);
   });
+
+  it('acepta un refresh token criptográfico en base64url', async () => {
+    const input = plainToInstance(RefreshTokenDto, {
+      refreshToken: 'a'.repeat(43),
+    });
+
+    await expect(validate(input)).resolves.toHaveLength(0);
+  });
+
+  it.each(['short', `${'a'.repeat(42)}+`, 'a'.repeat(44)])(
+    'rechaza el refresh token malformado %p',
+    async (refreshToken) => {
+      const input = plainToInstance(RefreshTokenDto, { refreshToken });
+
+      await expect(validate(input)).resolves.not.toHaveLength(0);
+    },
+  );
 });

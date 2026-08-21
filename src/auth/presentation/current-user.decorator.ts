@@ -3,8 +3,8 @@ import {
   ExecutionContext,
   UnauthorizedException,
 } from '@nestjs/common';
-import { SafeUser } from '../domain/auth.models';
-import { AuthenticatedRequest } from './authenticated-request';
+import type { SafeUser } from '../domain/auth.models';
+import type { AuthenticatedRequest } from './authenticated-request';
 
 export const CurrentUser = createParamDecorator(
   (_data: unknown, context: ExecutionContext): SafeUser => {

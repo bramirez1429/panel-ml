@@ -5,18 +5,15 @@ import {
 } from '@nestjs/common';
 import { createHash, randomBytes } from 'node:crypto';
 import { EmailAlreadyExistsError } from '../domain/auth.errors';
-import {
-  normalizeEmail,
-  SafeUser,
-  User,
-  UserSession,
-} from '../domain/auth.models';
+import { normalizeEmail } from '../domain/auth.models';
+import type { RefreshSession, SafeUser, User } from '../domain/auth.models';
+import { AccessTokenProvider } from './ports/access-token-provider.port';
+import { AuthConfiguration } from './ports/auth-configuration.port';
 import { PasswordHasher } from './ports/password-hasher.port';
-import { SessionRepository } from './ports/session-repository.port';
+import { RefreshSessionRepository } from './ports/refresh-session-repository.port';
 import { UserRepository } from './ports/user-repository.port';
 
-const SESSION_TTL_MS = 86_400_000;
-const SESSION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+const REFRESH_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
 export type RegisterInput = {
   email: string;
@@ -29,23 +26,36 @@ export type LoginInput = {
   password: string;
 };
 
-export type LoginResult = {
-  user: SafeUser;
-  token: string;
-  expiresAt: Date;
+export type RefreshInput = {
+  refreshToken: string;
 };
 
-export type AuthenticatedSession = {
+export type AuthTokenPair = {
+  accessToken: string;
+  accessTokenExpiresAt: Date;
+  refreshToken: string;
+  refreshTokenExpiresAt: Date;
+};
+
+export type LoginResult = AuthTokenPair & {
   user: SafeUser;
-  sessionId: string;
+};
+
+export type RefreshResult = LoginResult;
+
+export type AuthenticatedAccess = {
+  user: SafeUser;
+  refreshSessionId: string;
 };
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly users: UserRepository,
-    private readonly sessions: SessionRepository,
+    private readonly refreshSessions: RefreshSessionRepository,
     private readonly passwordHasher: PasswordHasher,
+    private readonly accessTokens: AccessTokenProvider,
+    private readonly configuration: AuthConfiguration,
   ) {}
 
   async register(input: RegisterInput): Promise<SafeUser> {
@@ -80,49 +90,93 @@ export class AuthService {
     );
     if (!user.isActive || !passwordIsValid) this.invalidCredentials();
 
-    const token = randomBytes(32).toString('base64url');
-    const createdAt = new Date();
-    const session = await this.sessions.create({
+    const refreshToken = this.generateRefreshToken();
+    const session = await this.refreshSessions.create({
       userId: user.id,
-      tokenHash: this.hashSessionToken(token),
-      createdAt,
-      expiresAt: new Date(createdAt.getTime() + SESSION_TTL_MS),
+      refreshTokenHash: this.hashRefreshToken(refreshToken),
+      sessionTtlMs: this.configuration.refreshSessionTtlMs,
+    });
+
+    return this.buildLoginResult(user, session, refreshToken, new Date());
+  }
+
+  async refresh(input: RefreshInput): Promise<RefreshResult> {
+    if (!REFRESH_TOKEN_PATTERN.test(input.refreshToken)) {
+      this.invalidRefreshToken();
+    }
+
+    const nextRefreshToken = this.generateRefreshToken();
+    const session = await this.refreshSessions.rotate({
+      currentRefreshTokenHash: this.hashRefreshToken(input.refreshToken),
+      nextRefreshTokenHash: this.hashRefreshToken(nextRefreshToken),
+    });
+    if (!session) this.invalidRefreshToken();
+
+    const user = await this.users.findById(session.userId);
+    const issuedAt = new Date();
+    if (!user?.isActive || !this.canIssueAccessToken(session, issuedAt)) {
+      await this.refreshSessions.revoke(session.id, issuedAt);
+      this.invalidRefreshToken();
+    }
+
+    return this.buildLoginResult(user, session, nextRefreshToken, issuedAt);
+  }
+
+  async authenticateAccessToken(token: string): Promise<AuthenticatedAccess> {
+    const verified = await this.accessTokens.verify(token);
+    if (!verified) this.invalidAccessToken();
+
+    const user = await this.users.findById(verified.userId);
+    if (!user?.isActive) this.invalidAccessToken();
+
+    return {
+      user: this.toSafeUser(user),
+      refreshSessionId: verified.refreshSessionId,
+    };
+  }
+
+  async logout(refreshSessionId: string): Promise<void> {
+    await this.refreshSessions.revoke(refreshSessionId, new Date());
+  }
+
+  private async buildLoginResult(
+    user: User,
+    session: RefreshSession,
+    refreshToken: string,
+    issuedAt: Date,
+  ): Promise<LoginResult> {
+    const accessToken = await this.accessTokens.issue({
+      userId: user.id,
+      refreshSessionId: session.id,
+      issuedAt,
+      maximumExpiresAt: session.expiresAt,
     });
 
     return {
       user: this.toSafeUser(user),
-      token,
-      expiresAt: session.expiresAt,
+      accessToken: accessToken.token,
+      accessTokenExpiresAt: accessToken.expiresAt,
+      refreshToken,
+      refreshTokenExpiresAt: session.expiresAt,
     };
   }
 
-  async authenticateSession(token: string): Promise<AuthenticatedSession> {
-    if (!SESSION_TOKEN_PATTERN.test(token)) this.invalidSession();
-
-    const session = await this.sessions.findByTokenHash(
-      this.hashSessionToken(token),
-    );
-    if (!this.isUsableSession(session)) this.invalidSession();
-
-    const user = await this.users.findById(session.userId);
-    if (!user?.isActive) this.invalidSession();
-
-    return { user: this.toSafeUser(user), sessionId: session.id };
+  private generateRefreshToken(): string {
+    return randomBytes(32).toString('base64url');
   }
 
-  async logout(sessionId: string): Promise<void> {
-    await this.sessions.revoke(sessionId, new Date());
-  }
-
-  private hashSessionToken(token: string): string {
+  private hashRefreshToken(token: string): string {
     return createHash('sha256').update(token).digest('hex');
   }
 
-  private isUsableSession(session: UserSession | null): session is UserSession {
+  private canIssueAccessToken(
+    session: RefreshSession,
+    issuedAt: Date,
+  ): boolean {
     return (
-      session !== null &&
       session.revokedAt === null &&
-      session.expiresAt.getTime() > Date.now()
+      Math.floor(session.expiresAt.getTime() / 1000) >
+        Math.floor(issuedAt.getTime() / 1000)
     );
   }
 
@@ -141,7 +195,11 @@ export class AuthService {
     throw new UnauthorizedException('Credenciales inv\u00e1lidas');
   }
 
-  private invalidSession(): never {
-    throw new UnauthorizedException('Sesi\u00f3n inv\u00e1lida o vencida');
+  private invalidAccessToken(): never {
+    throw new UnauthorizedException('Access token inv\u00e1lido o vencido');
+  }
+
+  private invalidRefreshToken(): never {
+    throw new UnauthorizedException('Refresh token inv\u00e1lido o vencido');
   }
 }

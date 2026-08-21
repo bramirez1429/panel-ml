@@ -4,15 +4,16 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { Request } from 'express';
-import { AuthenticatedSession, AuthService } from '../application/auth.service';
+import type { Request } from 'express';
+import { AuthService } from '../application/auth.service';
+import type { AuthenticatedAccess } from '../application/auth.service';
 
 type RequestWithOptionalAuth = Request & {
-  auth?: AuthenticatedSession;
+  auth?: AuthenticatedAccess;
 };
 
 @Injectable()
-export class SessionAuthGuard implements CanActivate {
+export class AccessTokenGuard implements CanActivate {
   constructor(private readonly authService: AuthService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -20,14 +21,15 @@ export class SessionAuthGuard implements CanActivate {
       .switchToHttp()
       .getRequest<RequestWithOptionalAuth>();
     const token = this.extractBearerToken(request.headers.authorization);
-    request.auth = await this.authService.authenticateSession(token);
+    request.auth = await this.authService.authenticateAccessToken(token);
     return true;
   }
 
   private extractBearerToken(authorization?: string): string {
-    const match = /^Bearer ([A-Za-z0-9_-]{43})$/i.exec(authorization ?? '');
-    if (!match)
-      throw new UnauthorizedException('Sesi\u00f3n inv\u00e1lida o vencida');
+    const match = /^Bearer ([^\s]+)$/i.exec(authorization ?? '');
+    if (!match || match[1].length > 4096) {
+      throw new UnauthorizedException('Access token inv\u00e1lido o vencido');
+    }
     return match[1];
   }
 }
