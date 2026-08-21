@@ -1,9 +1,4 @@
-import {
-  Body,
-  Controller,
-  Param,
-  Patch,
-} from '@nestjs/common';
+import { Body, Controller, Param, Patch } from '@nestjs/common';
 
 import { ItemUpdateService } from './item-update.service';
 
@@ -14,10 +9,7 @@ import type {
 
 @Controller('mercadolibre/direct/edicion')
 export class ItemController {
-  constructor(
-    private readonly itemUpdateService:
-      ItemUpdateService,
-  ) {}
+  constructor(private readonly itemUpdateService: ItemUpdateService) {}
 
   /** Edita una publicación clásica. */
   @Patch('clasica/:itemId')
@@ -25,10 +17,7 @@ export class ItemController {
     @Param('itemId') itemId: string,
     @Body() changes: ClassicItemUpdate,
   ) {
-    return this.itemUpdateService.updateClassic(
-      itemId,
-      changes,
-    );
+    return this.itemUpdateService.updateClassic(itemId, changes);
   }
 
   /** Edita un MLA de una publicación nueva. */

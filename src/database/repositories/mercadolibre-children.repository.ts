@@ -121,42 +121,41 @@ export class MercadolibreChildrenRepository {
     );
   }
 
-
   /** Actualiza el precio de un hijo por MLA. */
-async updatePrice(itemId: string, price: number): Promise<void> {
-  const { error } = await this.supabaseService
-    .getClient()
-    .from('mercadolibre_product_children')
-    .update({
-      price,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('item_id', itemId);
+  async updatePrice(itemId: string, price: number): Promise<void> {
+    const { error } = await this.supabaseService
+      .getClient()
+      .from('mercadolibre_product_children')
+      .update({
+        price,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('item_id', itemId);
 
-  if (error) {
-    throw new ServiceUnavailableException(
-      'No se pudo actualizar el precio de la variante',
-    );
+    if (error) {
+      throw new ServiceUnavailableException(
+        'No se pudo actualizar el precio de la variante',
+      );
+    }
   }
-}
 
-/** Actualiza el stock de un hijo por MLA. */
-async updateStock(itemId: string, stock: number): Promise<void> {
-  const { error } = await this.supabaseService
-    .getClient()
-    .from('mercadolibre_product_children')
-    .update({
-      available_quantity: stock,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('item_id', itemId);
+  /** Actualiza el stock de un hijo por MLA. */
+  async updateStock(itemId: string, stock: number): Promise<void> {
+    const { error } = await this.supabaseService
+      .getClient()
+      .from('mercadolibre_product_children')
+      .update({
+        available_quantity: stock,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('item_id', itemId);
 
-  if (error) {
-    throw new ServiceUnavailableException(
-      'No se pudo actualizar el stock de la variante',
-    );
+    if (error) {
+      throw new ServiceUnavailableException(
+        'No se pudo actualizar el stock de la variante',
+      );
+    }
   }
-}
 }
 
 /** Divide una lista para limitar cada escritura. */

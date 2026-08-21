@@ -1,7 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 
 import { MercadolibreTokenService } from '../../auth/mercadolibre-token.service';
 
@@ -20,28 +17,22 @@ export class PublicationsService {
   ) {}
 
   /** Listado directo sin agrupar. */
-  async getPage(
-    limit = 20,
-    offset = 0,
-  ) {
+  async getPage(limit = 20, offset = 0) {
     this.validatePage(limit, offset);
 
-    const connection =
-      await this.tokenService.getStoredConnection();
+    const connection = await this.tokenService.getStoredConnection();
 
-    const search =
-      await this.searchService.searchPage(
-        connection.seller_id,
-        connection.access_token,
-        limit,
-        offset,
-      );
+    const search = await this.searchService.searchPage(
+      connection.seller_id,
+      connection.access_token,
+      limit,
+      offset,
+    );
 
-    const items =
-      await this.itemsService.getMany(
-        search.results,
-        connection.access_token,
-      );
+    const items = await this.itemsService.getMany(
+      search.results,
+      connection.access_token,
+    );
 
     return {
       paging: search.paging,
@@ -53,22 +44,17 @@ export class PublicationsService {
   }
 
   /** Listado agrupado para el frontend. */
-  async getGrouped(
-    limit = 20,
-    cursor?: string,
-  ) {
+  async getGrouped(limit = 20, cursor?: string) {
     this.validateLimit(limit);
 
-    const connection =
-      await this.tokenService.getStoredConnection();
+    const connection = await this.tokenService.getStoredConnection();
 
-    const scan =
-      await this.searchService.scanPage(
-        connection.seller_id,
-        connection.access_token,
-        limit,
-        cursor,
-      );
+    const scan = await this.searchService.scanPage(
+      connection.seller_id,
+      connection.access_token,
+      limit,
+      cursor,
+    );
 
     const ids = scan.results ?? [];
 
@@ -82,74 +68,40 @@ export class PublicationsService {
       };
     }
 
-    const items =
-      await this.itemsService.getMany(
-        ids,
-        connection.access_token,
-      );
+    const items = await this.itemsService.getMany(ids, connection.access_token);
 
     const shared = items
-      .filter(
-        (item) =>
-          PublicationsMapper.getModel(item) ===
-          'SHARED',
-      )
-      .map((item) =>
-        PublicationsMapper.toSharedProduct(item),
-      );
+      .filter((item) => PublicationsMapper.getModel(item) === 'SHARED')
+      .map((item) => PublicationsMapper.toSharedProduct(item));
 
-    const familyIds =
-      PublicationsMapper.getFamilyIds(items);
+    const familyIds = PublicationsMapper.getFamilyIds(items);
 
     const families = [];
 
     for (const familyId of familyIds) {
-      families.push(
-        await this.familiesService.getSummary(
-          familyId,
-        ),
-      );
+      families.push(await this.familiesService.getSummary(familyId));
     }
 
     return {
       done: false,
-      nextCursor:
-        scan.scroll_id ?? cursor ?? null,
+      nextCursor: scan.scroll_id ?? cursor ?? null,
       rawItemsCount: items.length,
-      productsCount:
-        shared.length + families.length,
-      products: [
-        ...shared,
-        ...families,
-      ],
+      productsCount: shared.length + families.length,
+      products: [...shared, ...families],
     };
   }
 
   private validateLimit(limit: number) {
-    if (
-      !Number.isInteger(limit) ||
-      limit < 1 ||
-      limit > 20
-    ) {
-      throw new BadRequestException(
-        'limit debe estar entre 1 y 20',
-      );
+    if (!Number.isInteger(limit) || limit < 1 || limit > 20) {
+      throw new BadRequestException('limit debe estar entre 1 y 20');
     }
   }
 
-  private validatePage(
-    limit: number,
-    offset: number,
-  ) {
+  private validatePage(limit: number, offset: number) {
     this.validateLimit(limit);
 
-    if (
-      !Number.isInteger(offset) ||
-      offset < 0
-    ) {
-      throw new BadRequestException(
-        'offset inválido',
-      );
+    if (!Number.isInteger(offset) || offset < 0) {
+      throw new BadRequestException('offset inválido');
     }
   }
 }

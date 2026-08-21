@@ -1,7 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 
 import { MercadolibreTokenService } from '../../auth/mercadolibre-token.service';
 import { MercadolibreApiService } from '../../shared/mercadolibre-api.service';
@@ -9,10 +6,7 @@ import { MercadolibreApiService } from '../../shared/mercadolibre-api.service';
 import { ItemsService } from '../items/items.service';
 import { PublicationsMapper } from '../publications/publications.mapper';
 
-import type {
-  DescriptionUpdate,
-  MlDescription,
-} from './description.types';
+import type { DescriptionUpdate, MlDescription } from './description.types';
 
 @Injectable()
 export class DescriptionService {
@@ -22,96 +16,52 @@ export class DescriptionService {
     private readonly itemsService: ItemsService,
   ) {}
 
-  async getClassic(
-    itemId: string,
-  ): Promise<MlDescription> {
-    const accessToken =
-      await this.tokenService.getValidAccessToken();
+  async getClassic(itemId: string): Promise<MlDescription> {
+    const accessToken = await this.tokenService.getValidAccessToken();
 
-    const item = await this.itemsService.getOne(
-      itemId,
-      accessToken,
-    );
+    const item = await this.itemsService.getOne(itemId, accessToken);
 
-    if (
-      PublicationsMapper.getModel(item) !== 'SHARED'
-    ) {
-      throw new BadRequestException(
-        'La publicación no es versión clásica',
-      );
+    if (PublicationsMapper.getModel(item) !== 'SHARED') {
+      throw new BadRequestException('La publicación no es versión clásica');
     }
 
-    return this.getDescription(
-      item.id,
-      accessToken,
-    );
+    return this.getDescription(item.id, accessToken);
   }
 
   async createClassic(
     itemId: string,
     changes: DescriptionUpdate,
   ): Promise<MlDescription> {
-    const accessToken =
-      await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken();
 
-    const item = await this.itemsService.getOne(
-      itemId,
-      accessToken,
-    );
+    const item = await this.itemsService.getOne(itemId, accessToken);
 
-    if (
-      PublicationsMapper.getModel(item) !== 'SHARED'
-    ) {
-      throw new BadRequestException(
-        'La publicación no es versión clásica',
-      );
+    if (PublicationsMapper.getModel(item) !== 'SHARED') {
+      throw new BadRequestException('La publicación no es versión clásica');
     }
 
-    return this.createDescription(
-      item.id,
-      changes,
-      accessToken,
-    );
+    return this.createDescription(item.id, changes, accessToken);
   }
 
   async updateClassic(
     itemId: string,
     changes: DescriptionUpdate,
   ): Promise<MlDescription> {
-    const accessToken =
-      await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken();
 
-    const item = await this.itemsService.getOne(
-      itemId,
-      accessToken,
-    );
+    const item = await this.itemsService.getOne(itemId, accessToken);
 
-    if (
-      PublicationsMapper.getModel(item) !== 'SHARED'
-    ) {
-      throw new BadRequestException(
-        'La publicación no es versión clásica',
-      );
+    if (PublicationsMapper.getModel(item) !== 'SHARED') {
+      throw new BadRequestException('La publicación no es versión clásica');
     }
 
-    return this.updateDescription(
-      item.id,
-      changes,
-      accessToken,
-    );
+    return this.updateDescription(item.id, changes, accessToken);
   }
 
-  async getNew(
-    familyId: string,
-    itemId: string,
-  ): Promise<MlDescription> {
-    const accessToken =
-      await this.tokenService.getValidAccessToken();
+  async getNew(familyId: string, itemId: string): Promise<MlDescription> {
+    const accessToken = await this.tokenService.getValidAccessToken();
 
-    const item = await this.itemsService.getOne(
-      itemId,
-      accessToken,
-    );
+    const item = await this.itemsService.getOne(itemId, accessToken);
 
     this.validateNewItem(
       familyId,
@@ -119,10 +69,7 @@ export class DescriptionService {
       PublicationsMapper.getModel(item),
     );
 
-    return this.getDescription(
-      item.id,
-      accessToken,
-    );
+    return this.getDescription(item.id, accessToken);
   }
 
   async createNew(
@@ -130,13 +77,9 @@ export class DescriptionService {
     itemId: string,
     changes: DescriptionUpdate,
   ): Promise<MlDescription> {
-    const accessToken =
-      await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken();
 
-    const item = await this.itemsService.getOne(
-      itemId,
-      accessToken,
-    );
+    const item = await this.itemsService.getOne(itemId, accessToken);
 
     this.validateNewItem(
       familyId,
@@ -144,11 +87,7 @@ export class DescriptionService {
       PublicationsMapper.getModel(item),
     );
 
-    return this.createDescription(
-      item.id,
-      changes,
-      accessToken,
-    );
+    return this.createDescription(item.id, changes, accessToken);
   }
 
   async updateNew(
@@ -156,13 +95,9 @@ export class DescriptionService {
     itemId: string,
     changes: DescriptionUpdate,
   ): Promise<MlDescription> {
-    const accessToken =
-      await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken();
 
-    const item = await this.itemsService.getOne(
-      itemId,
-      accessToken,
-    );
+    const item = await this.itemsService.getOne(itemId, accessToken);
 
     this.validateNewItem(
       familyId,
@@ -170,11 +105,7 @@ export class DescriptionService {
       PublicationsMapper.getModel(item),
     );
 
-    return this.updateDescription(
-      item.id,
-      changes,
-      accessToken,
-    );
+    return this.updateDescription(item.id, changes, accessToken);
   }
 
   private getDescription(
@@ -192,8 +123,7 @@ export class DescriptionService {
     changes: DescriptionUpdate,
     accessToken: string,
   ): Promise<MlDescription> {
-    const plainText =
-      this.validatePlainText(changes.plainText);
+    const plainText = this.validatePlainText(changes.plainText);
 
     return this.apiService.post<MlDescription>(
       `/items/${itemId}/description`,
@@ -209,8 +139,7 @@ export class DescriptionService {
     changes: DescriptionUpdate,
     accessToken: string,
   ): Promise<MlDescription> {
-    const plainText =
-      this.validatePlainText(changes.plainText);
+    const plainText = this.validatePlainText(changes.plainText);
 
     return this.apiService.put<MlDescription>(
       `/items/${itemId}/description?api_version=2`,
@@ -221,16 +150,9 @@ export class DescriptionService {
     );
   }
 
-  private validatePlainText(
-    plainText: string,
-  ): string {
-    if (
-      typeof plainText !== 'string' ||
-      !plainText.trim()
-    ) {
-      throw new BadRequestException(
-        'La descripción no puede estar vacía',
-      );
+  private validatePlainText(plainText: string): string {
+    if (typeof plainText !== 'string' || !plainText.trim()) {
+      throw new BadRequestException('La descripción no puede estar vacía');
     }
 
     return plainText.trim();
@@ -238,22 +160,14 @@ export class DescriptionService {
 
   private validateNewItem(
     familyId: string,
-    itemFamilyId:
-      | string
-      | number
-      | null
-      | undefined,
+    itemFamilyId: string | number | null | undefined,
     model: string,
   ): void {
     if (model !== 'VARIANT_PRICING') {
-      throw new BadRequestException(
-        'La publicación no es versión nueva',
-      );
+      throw new BadRequestException('La publicación no es versión nueva');
     }
 
-    if (
-      String(itemFamilyId ?? '') !== familyId
-    ) {
+    if (String(itemFamilyId ?? '') !== familyId) {
       throw new BadRequestException(
         'El MLA no pertenece a la familia indicada',
       );

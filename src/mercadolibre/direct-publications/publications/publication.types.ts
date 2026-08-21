@@ -1,8 +1,6 @@
-import { FamilySummary } from "../families/family.types";
+import { FamilySummary } from '../families/family.types';
 
-export type PublicationModel =
-  | 'SHARED'
-  | 'VARIANT_PRICING';
+export type PublicationModel = 'SHARED' | 'VARIANT_PRICING';
 
 export type SharedProduct = {
   key: string;
@@ -22,9 +20,7 @@ export type SharedProduct = {
   variations: unknown[];
 };
 
-export type GroupedProduct =
-  | SharedProduct
-  | FamilySummary;
+export type GroupedProduct = SharedProduct | FamilySummary;
 
 export type GroupedPublicationsResponse = {
   done: boolean;

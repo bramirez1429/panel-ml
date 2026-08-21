@@ -6,15 +6,10 @@ import { MlPromotion } from './promotions.types';
 
 @Injectable()
 export class PromotionsService {
-  constructor(
-    private readonly apiService: MercadolibreApiService,
-  ) {}
+  constructor(private readonly apiService: MercadolibreApiService) {}
 
   /** Obtiene todas las promociones de un MLA. */
-  async getPromotions(
-    itemId: string,
-    accessToken: string,
-  ) {
+  async getPromotions(itemId: string, accessToken: string) {
     const promotions = await this.safeGet<MlPromotion[]>(
       `/seller-promotions/items/${itemId}?app_version=v2`,
       accessToken,
@@ -22,20 +17,13 @@ export class PromotionsService {
     );
 
     return {
-      active: promotions.filter(
-        (promotion) =>
-          promotion.status === 'started',
-      ),
+      active: promotions.filter((promotion) => promotion.status === 'started'),
 
       candidates: promotions.filter(
-        (promotion) =>
-          promotion.status === 'candidate',
+        (promotion) => promotion.status === 'candidate',
       ),
 
-      pending: promotions.filter(
-        (promotion) =>
-          promotion.status === 'pending',
-      ),
+      pending: promotions.filter((promotion) => promotion.status === 'pending'),
 
       all: promotions,
     };
@@ -48,10 +36,7 @@ export class PromotionsService {
     fallback: T,
   ): Promise<T> {
     try {
-      return await this.apiService.get<T>(
-        path,
-        accessToken,
-      );
+      return await this.apiService.get<T>(path, accessToken);
     } catch {
       return fallback;
     }

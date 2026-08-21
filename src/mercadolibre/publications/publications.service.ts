@@ -15,7 +15,7 @@ export class PublicationsService {
     private readonly tokenService: MercadolibreTokenService,
     private readonly productsRepository: MercadolibreProductsRepository,
     private readonly childrenRepository: MercadolibreChildrenRepository,
-      private readonly apiService: MercadolibreApiService,
+    private readonly apiService: MercadolibreApiService,
   ) {}
 
   /** Lista resúmenes paginados desde Supabase. */
@@ -76,291 +76,254 @@ export class PublicationsService {
   }
 
   /** Modifica el precio real de una publicación en Mercado Libre. */
-async updatePrice(
-  productId: string,
-  price: number,
-  itemId?: string,
-) {
-  this.validateProductId(productId);
+  async updatePrice(productId: string, price: number, itemId?: string) {
+    this.validateProductId(productId);
 
-  if (!Number.isFinite(price) || price <= 0) {
-    throw new BadRequestException(
-      'El precio debe ser mayor que cero',
-    );
-  }
-
-  const connection = await this.tokenService.getStoredConnection();
-
-  const product = await this.productsRepository.findById(
-    connection.seller_id,
-    productId,
-  );
-
-  if (!product) {
-    throw new NotFoundException('Publicación no encontrada');
-  }
-
-  if (product.model === 'SHARED') {
-    if (!product.parent_item_id) {
-      throw new BadRequestException(
-        'La publicación no tiene MLA asociado',
-      );
+    if (!Number.isFinite(price) || price <= 0) {
+      throw new BadRequestException('El precio debe ser mayor que cero');
     }
 
-    await this.apiService.put(
-      `/items/${product.parent_item_id}`,
-      { price },
-      connection.access_token,
+    const connection = await this.tokenService.getStoredConnection();
+
+    const product = await this.productsRepository.findById(
+      connection.seller_id,
+      productId,
     );
 
-    await this.productsRepository.updatePrice(
-  product.id,
-  price,
-); // 2 Supabase
+    if (!product) {
+      throw new NotFoundException('Publicación no encontrada');
+    }
 
-    return {
-      ok: true,
-      itemId: product.parent_item_id,
-      price,
-    };
-  }
+    if (product.model === 'SHARED') {
+      if (!product.parent_item_id) {
+        throw new BadRequestException('La publicación no tiene MLA asociado');
+      }
 
-  if (!itemId) {
-    throw new BadRequestException(
-      'itemId es obligatorio para publicaciones con variantes',
-    );
-  }
+      await this.apiService.put(
+        `/items/${product.parent_item_id}`,
+        { price },
+        connection.access_token,
+      );
 
-  const children = await this.childrenRepository.findByProductId(
-    product.id,
-  );
+      await this.productsRepository.updatePrice(product.id, price); // 2 Supabase
 
-  const child = children.find(
-    (publication) => publication.item_id === itemId,
-  );
+      return {
+        ok: true,
+        itemId: product.parent_item_id,
+        price,
+      };
+    }
 
-  if (!child) {
-    throw new BadRequestException(
-      'El MLA no pertenece a esta publicación',
-    );
-  }
-
-  await this.apiService.put(
-    `/items/${child.item_id}`,
-    { price },
-    connection.access_token,
-  );
-  // Mercado Libre respondió OK → actualizar Supabase
-await this.childrenRepository.updatePrice(
-  child.item_id,
-  price,
-);
-
-  return {
-    ok: true,
-    itemId: child.item_id,
-    price,
-  };
-}
-
-
-/** Modifica el stock real en Mercado Libre. */
-async updateStock(
-  productId: string,
-  stock: number,
-  itemId?: string,
-  variationId?: number,
-) {
-  this.validateProductId(productId);
-
-  if (!Number.isInteger(stock) || stock < 0) {
-    throw new BadRequestException(
-      'El stock debe ser un entero mayor o igual a cero',
-    );
-  }
-
-  const connection = await this.tokenService.getStoredConnection();
-
-  const product = await this.productsRepository.findById(
-    connection.seller_id,
-    productId,
-  );
-
-  if (!product) {
-    throw new NotFoundException('Publicación no encontrada');
-  }
-
-  // Publicación nueva: cada hijo tiene su propio MLA.
-  if (product.model === 'VARIANT_PRICING') {
     if (!itemId) {
       throw new BadRequestException(
         'itemId es obligatorio para publicaciones con variantes',
       );
     }
 
-    const children = await this.childrenRepository.findByProductId(
-      product.id,
-    );
+    const children = await this.childrenRepository.findByProductId(product.id);
 
     const child = children.find(
       (publication) => publication.item_id === itemId,
     );
 
     if (!child) {
-      throw new BadRequestException(
-        'El MLA no pertenece a esta publicación',
-      );
+      throw new BadRequestException('El MLA no pertenece a esta publicación');
     }
 
     await this.apiService.put(
       `/items/${child.item_id}`,
-      { available_quantity: stock },
+      { price },
       connection.access_token,
     );
-
-    await this.childrenRepository.updateStock(
-      child.item_id,
-      stock,
-    );
+    // Mercado Libre respondió OK → actualizar Supabase
+    await this.childrenRepository.updatePrice(child.item_id, price);
 
     return {
       ok: true,
       itemId: child.item_id,
-      stock,
+      price,
     };
   }
 
-  // Publicación vieja SHARED.
-  if (!product.parent_item_id) {
-    throw new BadRequestException(
-      'La publicación no tiene MLA asociado',
-    );
-  }
+  /** Modifica el stock real en Mercado Libre. */
+  async updateStock(
+    productId: string,
+    stock: number,
+    itemId?: string,
+    variationId?: number,
+  ) {
+    this.validateProductId(productId);
 
-  // SHARED sin variación.
-  if (!variationId) {
+    if (!Number.isInteger(stock) || stock < 0) {
+      throw new BadRequestException(
+        'El stock debe ser un entero mayor o igual a cero',
+      );
+    }
+
+    const connection = await this.tokenService.getStoredConnection();
+
+    const product = await this.productsRepository.findById(
+      connection.seller_id,
+      productId,
+    );
+
+    if (!product) {
+      throw new NotFoundException('Publicación no encontrada');
+    }
+
+    // Publicación nueva: cada hijo tiene su propio MLA.
+    if (product.model === 'VARIANT_PRICING') {
+      if (!itemId) {
+        throw new BadRequestException(
+          'itemId es obligatorio para publicaciones con variantes',
+        );
+      }
+
+      const children = await this.childrenRepository.findByProductId(
+        product.id,
+      );
+
+      const child = children.find(
+        (publication) => publication.item_id === itemId,
+      );
+
+      if (!child) {
+        throw new BadRequestException('El MLA no pertenece a esta publicación');
+      }
+
+      await this.apiService.put(
+        `/items/${child.item_id}`,
+        { available_quantity: stock },
+        connection.access_token,
+      );
+
+      await this.childrenRepository.updateStock(child.item_id, stock);
+
+      return {
+        ok: true,
+        itemId: child.item_id,
+        stock,
+      };
+    }
+
+    // Publicación vieja SHARED.
+    if (!product.parent_item_id) {
+      throw new BadRequestException('La publicación no tiene MLA asociado');
+    }
+
+    // SHARED sin variación.
+    if (!variationId) {
+      await this.apiService.put(
+        `/items/${product.parent_item_id}`,
+        { available_quantity: stock },
+        connection.access_token,
+      );
+
+      await this.productsRepository.updateStock(product.id, stock);
+
+      return {
+        ok: true,
+        itemId: product.parent_item_id,
+        stock,
+      };
+    }
+
+    // SHARED con variaciones: traerlas para conservar todos los IDs.
+    const item = await this.apiService.get<{
+      variations?: Array<{ id: number }>;
+    }>(`/items/${product.parent_item_id}`, connection.access_token);
+
+    const variations = item.variations ?? [];
+
+    const exists = variations.some((variation) => variation.id === variationId);
+
+    if (!exists) {
+      throw new BadRequestException(
+        'La variación no pertenece a esta publicación',
+      );
+    }
+
     await this.apiService.put(
       `/items/${product.parent_item_id}`,
-      { available_quantity: stock },
+      {
+        variations: variations.map((variation) =>
+          variation.id === variationId
+            ? {
+                id: variation.id,
+                available_quantity: stock,
+              }
+            : {
+                id: variation.id,
+              },
+        ),
+      },
       connection.access_token,
     );
 
-    await this.productsRepository.updateStock(
+    await this.productsRepository.updateVariationStock(
       product.id,
+      variationId,
       stock,
     );
 
     return {
       ok: true,
       itemId: product.parent_item_id,
+      variationId,
       stock,
     };
   }
 
-  // SHARED con variaciones: traerlas para conservar todos los IDs.
-  const item = await this.apiService.get<{
-    variations?: Array<{ id: number }>;
-  }>(
-    `/items/${product.parent_item_id}`,
-    connection.access_token,
-  );
+  /** Obtiene las promociones de todos los MLA de una publicación. */
+  async getPromotions(productId: string) {
+    this.validateProductId(productId);
 
-  const variations = item.variations ?? [];
+    const connection = await this.tokenService.getStoredConnection();
 
-  const exists = variations.some(
-    (variation) => variation.id === variationId,
-  );
-
-  if (!exists) {
-    throw new BadRequestException(
-      'La variación no pertenece a esta publicación',
+    const product = await this.productsRepository.findById(
+      connection.seller_id,
+      productId,
     );
-  }
 
-  await this.apiService.put(
-    `/items/${product.parent_item_id}`,
-    {
-      variations: variations.map((variation) =>
-        variation.id === variationId
-          ? {
-              id: variation.id,
-              available_quantity: stock,
-            }
-          : {
-              id: variation.id,
-            },
-      ),
-    },
-    connection.access_token,
-  );
-
-  await this.productsRepository.updateVariationStock(
-    product.id,
-    variationId,
-    stock,
-  );
-
-  return {
-    ok: true,
-    itemId: product.parent_item_id,
-    variationId,
-    stock,
-  };
-}
-
-
-/** Obtiene las promociones de todos los MLA de una publicación. */
-async getPromotions(productId: string) {
-  this.validateProductId(productId);
-
-  const connection = await this.tokenService.getStoredConnection();
-
-  const product = await this.productsRepository.findById(
-    connection.seller_id,
-    productId,
-  );
-
-  if (!product) {
-    throw new NotFoundException('Publicación no encontrada');
-  }
-
-  let itemIds: string[] = [];
-
-  if (product.model === 'SHARED') {
-    if (!product.parent_item_id) {
-      throw new BadRequestException(
-        'La publicación no tiene MLA asociado',
-      );
+    if (!product) {
+      throw new NotFoundException('Publicación no encontrada');
     }
 
-    itemIds = [product.parent_item_id];
-  } else {
-    const children = await this.childrenRepository.findByProductId(
-      product.id,
-    );
+    let itemIds: string[] = [];
 
-    itemIds = children.map((child) => child.item_id);
+    if (product.model === 'SHARED') {
+      if (!product.parent_item_id) {
+        throw new BadRequestException('La publicación no tiene MLA asociado');
+      }
+
+      itemIds = [product.parent_item_id];
+    } else {
+      const children = await this.childrenRepository.findByProductId(
+        product.id,
+      );
+
+      itemIds = children.map((child) => child.item_id);
+    }
+
+    const items = [];
+
+    for (const itemId of itemIds) {
+      const promotions = await this.apiService.get<unknown[]>(
+        `/seller-promotions/items/${itemId}?app_version=v2`,
+        connection.access_token,
+      );
+
+      items.push({
+        itemId,
+        promotions,
+      });
+    }
+
+    return {
+      productId,
+      items,
+    };
   }
-
-  const items = [];
-
-  for (const itemId of itemIds) {
-    const promotions = await this.apiService.get<unknown[]>(
-      `/seller-promotions/items/${itemId}?app_version=v2`,
-      connection.access_token,
-    );
-
-    items.push({
-      itemId,
-      promotions,
-    });
-  }
-
-  return {
-    productId,
-    items,
-  };
-}
 }
 
 const UUID_PATTERN =

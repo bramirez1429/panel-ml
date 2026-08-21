@@ -1,32 +1,22 @@
-
 import { MlItem } from '../items/items.types';
 import { MlFamilyResponse } from './families-ml.types';
 import { FamilySummary, FamilyVariantSummary } from './family.types';
 
-
 export class FamiliesMapper {
-  static toSummary(
-    family: MlFamilyResponse,
-    items: MlItem[],
-  ): FamilySummary {
-    const variants = new Map<
-      string,
-      FamilyVariantSummary
-    >();
+  static toSummary(family: MlFamilyResponse, items: MlItem[]): FamilySummary {
+    const variants = new Map<string, FamilyVariantSummary>();
 
     for (const item of items) {
-      const userProductId =
-        item.user_product_id;
+      const userProductId = item.user_product_id;
 
       if (!userProductId) {
         continue;
       }
 
-      const variant =
-        variants.get(userProductId) ?? {
-          userProductId,
-          items: [],
-        };
+      const variant = variants.get(userProductId) ?? {
+        userProductId,
+        items: [],
+      };
 
       variant.items.push({
         itemId: item.id,
@@ -34,32 +24,22 @@ export class FamiliesMapper {
 
         price: item.price ?? null,
 
-        stock:
-          item.available_quantity ?? 0,
+        stock: item.available_quantity ?? 0,
 
-        sold:
-          item.sold_quantity ?? 0,
+        sold: item.sold_quantity ?? 0,
 
-        status:
-          item.status ?? null,
+        status: item.status ?? null,
 
-        inventoryId:
-          item.inventory_id ?? null,
+        inventoryId: item.inventory_id ?? null,
 
-        thumbnail:
-          item.thumbnail ?? null,
+        thumbnail: item.thumbnail ?? null,
 
-        pictures:
-          item.pictures ?? [],
+        pictures: item.pictures ?? [],
 
-        attributes:
-          item.attributes ?? [],
+        attributes: item.attributes ?? [],
       });
 
-      variants.set(
-        userProductId,
-        variant,
-      );
+      variants.set(userProductId, variant);
     }
 
     return {
@@ -67,22 +47,15 @@ export class FamiliesMapper {
 
       model: 'VARIANT_PRICING',
 
-      familyId:
-        String(family.family_id),
+      familyId: String(family.family_id),
 
-      familyName:
-        items.find(
-          (item) => item.family_name,
-        )?.family_name ?? null,
+      familyName: items.find((item) => item.family_name)?.family_name ?? null,
 
-      variantsCount:
-        family.user_products_ids.length,
+      variantsCount: family.user_products_ids.length,
 
-      itemsCount:
-        items.length,
+      itemsCount: items.length,
 
-      variants:
-        [...variants.values()],
+      variants: [...variants.values()],
     };
   }
 }

@@ -15,13 +15,8 @@ export class FamiliesDetailService {
 
   /** Devuelve una familia completa con precio y promociones. */
   async getDetail(familyId: string) {
-    const {
-      family,
-      items,
-      accessToken,
-    } = await this.familiesService.getFamilyItems(
-      familyId,
-    );
+    const { family, items, accessToken } =
+      await this.familiesService.getFamilyItems(familyId);
 
     const variants = [];
 
@@ -31,47 +26,29 @@ export class FamiliesDetailService {
 
       const enriched = await Promise.all(
         batch.map(async (item) => {
-          const [price, promotions] =
-            await Promise.all([
-              this.pricingService.getPrice(
-                item,
-                accessToken,
-              ),
+          const [price, promotions] = await Promise.all([
+            this.pricingService.getPrice(item, accessToken),
 
-              this.promotionsService.getPromotions(
-                item.id,
-                accessToken,
-              ),
-            ]);
+            this.promotionsService.getPromotions(item.id, accessToken),
+          ]);
 
-          const friendlyStatus =
-            PublicationDetailMapper.getStatus(
-              item.status,
-            );
+          const friendlyStatus = PublicationDetailMapper.getStatus(item.status);
 
-          const friendlyPricing =
-            PublicationDetailMapper.getPricing(
-              price,
-            );
+          const friendlyPricing = PublicationDetailMapper.getPricing(price);
 
           const friendlyPromotion =
-            PublicationDetailMapper.getPromotion(
-              promotions,
-            );
+            PublicationDetailMapper.getPromotion(promotions);
 
-          const friendlyShipping =
-            PublicationDetailMapper.getShipping(
-              item.shipping,
-            );
+          const friendlyShipping = PublicationDetailMapper.getShipping(
+            item.shipping,
+          );
 
           return {
             itemId: item.id,
 
-            userProductId:
-              item.user_product_id ?? null,
+            userProductId: item.user_product_id ?? null,
 
-            title:
-              item.title ?? null,
+            title: item.title ?? null,
 
             friendly: {
               status: friendlyStatus,
@@ -80,55 +57,41 @@ export class FamiliesDetailService {
               shipping: friendlyShipping,
             },
 
-            status:
-              item.status ?? null,
+            status: item.status ?? null,
 
-            subStatus:
-              item.sub_status ?? [],
+            subStatus: item.sub_status ?? [],
 
             stock: {
-              available:
-                item.available_quantity ?? 0,
+              available: item.available_quantity ?? 0,
 
-              initial:
-                item.initial_quantity ?? 0,
+              initial: item.initial_quantity ?? 0,
 
-              sold:
-                item.sold_quantity ?? 0,
+              sold: item.sold_quantity ?? 0,
             },
 
             sku: {
-              sellerCustomField:
-                item.seller_custom_field ?? null,
+              sellerCustomField: item.seller_custom_field ?? null,
 
-              inventoryId:
-                item.inventory_id ?? null,
+              inventoryId: item.inventory_id ?? null,
             },
 
             price,
 
             promotions,
 
-            thumbnail:
-              item.thumbnail ?? null,
+            thumbnail: item.thumbnail ?? null,
 
-            pictures:
-              item.pictures ?? [],
+            pictures: item.pictures ?? [],
 
-            attributes:
-              item.attributes ?? [],
+            attributes: item.attributes ?? [],
 
-            shipping:
-              item.shipping ?? null,
+            shipping: item.shipping ?? null,
 
-            listingTypeId:
-              item.listing_type_id ?? null,
+            listingTypeId: item.listing_type_id ?? null,
 
-            permalink:
-              item.permalink ?? null,
+            permalink: item.permalink ?? null,
 
-            updatedAt:
-              item.last_updated ?? null,
+            updatedAt: item.last_updated ?? null,
           };
         }),
       );
@@ -141,22 +104,15 @@ export class FamiliesDetailService {
       version: 'NEW',
       versionLabel: 'Versión nueva',
 
-      familyId:
-        String(family.family_id),
+      familyId: String(family.family_id),
 
-      familyName:
-        items.find(
-          (item) => item.family_name,
-        )?.family_name ?? null,
+      familyName: items.find((item) => item.family_name)?.family_name ?? null,
 
-      userProductsCount:
-        family.user_products_ids.length,
+      userProductsCount: family.user_products_ids.length,
 
-      itemsCount:
-        items.length,
+      itemsCount: items.length,
 
-      userProductIds:
-        family.user_products_ids,
+      userProductIds: family.user_products_ids,
 
       variants,
     };

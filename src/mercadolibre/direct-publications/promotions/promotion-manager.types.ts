@@ -1,8 +1,5 @@
 export type ManagedPromotionType =
-  | 'PRICE_DISCOUNT'
-  | 'DEAL'
-  | 'SELLER_CAMPAIGN'
-  | 'SMART';
+  'PRICE_DISCOUNT' | 'DEAL' | 'SELLER_CAMPAIGN' | 'SMART';
 
 export type PriceDiscountPromotionRequest = {
   type: 'PRICE_DISCOUNT';
@@ -49,17 +46,13 @@ export type ManagedActivePromotion = {
 export type PromotionManagerResult = {
   success: boolean;
 
-  previousPromotion:
-    | ManagedActivePromotion
-    | null;
+  previousPromotion: ManagedActivePromotion | null;
 
   removedPreviousPromotion: boolean;
 
   requestedPromotion: ManagedPromotionType;
 
-  activePromotion:
-    | ManagedActivePromotion
-    | null;
+  activePromotion: ManagedActivePromotion | null;
 
   verified: boolean;
 };

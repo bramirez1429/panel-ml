@@ -1,7 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 
 import { MercadolibreTokenService } from '../../auth/mercadolibre-token.service';
 import { MercadolibreApiService } from '../../shared/mercadolibre-api.service';
@@ -47,11 +44,7 @@ const NEW_ALLOWED_FIELDS = new Set([
   'official_store_id',
 ]);
 
-const ALLOWED_STATUSES = new Set([
-  'active',
-  'paused',
-  'closed',
-]);
+const ALLOWED_STATUSES = new Set(['active', 'paused', 'closed']);
 
 @Injectable()
 export class ItemUpdateService {
@@ -62,57 +55,37 @@ export class ItemUpdateService {
   ) {}
 
   /** Edita una publicación versión clásica. */
- async updateClassic(
-  itemId: string,
-  changes: ClassicItemUpdate,
-): Promise<MlItem> {
-  this.validateItemId(itemId);
-  this.validateChanges(changes);
+  async updateClassic(
+    itemId: string,
+    changes: ClassicItemUpdate,
+  ): Promise<MlItem> {
+    this.validateItemId(itemId);
+    this.validateChanges(changes);
 
-  this.validateAllowedFields(
-    changes,
-    CLASSIC_ALLOWED_FIELDS,
-  );
+    this.validateAllowedFields(changes, CLASSIC_ALLOWED_FIELDS);
 
-  const accessToken =
-    await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken();
 
-  const item =
-    await this.itemsService.getOne(
-      itemId,
-      accessToken,
-    );
+    const item = await this.itemsService.getOne(itemId, accessToken);
 
-  const model =
-    PublicationsMapper.getModel(item);
+    const model = PublicationsMapper.getModel(item);
 
-  if (model !== 'SHARED') {
-    throw new BadRequestException(
-      'La publicación no es versión clásica',
-    );
-  }
+    if (model !== 'SHARED') {
+      throw new BadRequestException('La publicación no es versión clásica');
+    }
 
-  this.validateClassicUpdate(
-    item,
-    changes,
-  );
+    this.validateClassicUpdate(item, changes);
 
-  const body: Record<string, unknown> = {
-    ...changes,
-  };
+    const body: Record<string, unknown> = {
+      ...changes,
+    };
 
-  const variations = Array.isArray(item.variations)
-    ? item.variations
-    : [];
+    const variations = Array.isArray(item.variations) ? item.variations : [];
 
-  if (
-    changes.price !== undefined &&
-    variations.length > 0
-  ) {
-    delete body.price;
+    if (changes.price !== undefined && variations.length > 0) {
+      delete body.price;
 
-    body.variations = variations.map(
-      (variation) => {
+      body.variations = variations.map((variation) => {
         const current = variation as {
           id?: number | string;
         };
@@ -121,71 +94,52 @@ export class ItemUpdateService {
           id: current.id,
           price: changes.price,
         };
-      },
-    );
-  }
+      });
+    }
 
-  return this.apiService.put<MlItem>(
-    `/items/${item.id}`,
-    body,
-    accessToken,
-  );
-}
+    return this.apiService.put<MlItem>(`/items/${item.id}`, body, accessToken);
+  }
 
   /** Edita un MLA perteneciente a una publicación nueva. */
-async updateVariantPricingItem(
-  familyId: string,
-  itemId: string,
-  changes: VariantPricingItemUpdate,
-): Promise<MlItem> {
-  this.validateItemId(itemId);
-  this.validateChanges(changes);
+  async updateVariantPricingItem(
+    familyId: string,
+    itemId: string,
+    changes: VariantPricingItemUpdate,
+  ): Promise<MlItem> {
+    this.validateItemId(itemId);
+    this.validateChanges(changes);
 
-  this.validateAllowedFields(
-    changes,
-    NEW_ALLOWED_FIELDS,
-  );
+    this.validateAllowedFields(changes, NEW_ALLOWED_FIELDS);
 
-  const accessToken =
-    await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken();
 
-  const item =
-    await this.itemsService.getOne(
-      itemId,
+    const item = await this.itemsService.getOne(itemId, accessToken);
+
+    const model = PublicationsMapper.getModel(item);
+
+    if (model !== 'VARIANT_PRICING') {
+      throw new BadRequestException('La publicación no es versión nueva');
+    }
+
+    const itemFamilyId =
+      item.family_id !== null && item.family_id !== undefined
+        ? String(item.family_id)
+        : null;
+
+    if (itemFamilyId !== familyId) {
+      throw new BadRequestException(
+        'El MLA no pertenece a la familia indicada',
+      );
+    }
+
+    this.validateVariantPricingUpdate(changes);
+
+    return this.apiService.put<MlItem>(
+      `/items/${item.id}`,
+      changes,
       accessToken,
     );
-
-  const model =
-    PublicationsMapper.getModel(item);
-
-  if (model !== 'VARIANT_PRICING') {
-    throw new BadRequestException(
-      'La publicación no es versión nueva',
-    );
   }
-
-  const itemFamilyId =
-    item.family_id !== null &&
-    item.family_id !== undefined
-      ? String(item.family_id)
-      : null;
-
-  if (itemFamilyId !== familyId) {
-    throw new BadRequestException(
-      'El MLA no pertenece a la familia indicada',
-    );
-  }
-
-  this.validateVariantPricingUpdate(
-    changes,
-  );
-
-  return this.apiService.put<MlItem>(
-    `/items/${item.id}`,
-    changes,
-    accessToken,
-  );
-}
 
   private validateClassicUpdate(
     item: MlItem,
@@ -201,18 +155,14 @@ async updateVariantPricingItem(
       }
 
       if (!changes.title.trim()) {
-        throw new BadRequestException(
-          'El título no puede estar vacío',
-        );
+        throw new BadRequestException('El título no puede estar vacío');
       }
     }
 
     if (
       changes.available_quantity !== undefined &&
-      (
-        !Number.isInteger(changes.available_quantity) ||
-        changes.available_quantity < 0
-      )
+      (!Number.isInteger(changes.available_quantity) ||
+        changes.available_quantity < 0)
     ) {
       throw new BadRequestException(
         'El stock debe ser un número entero mayor o igual a 0',
@@ -227,29 +177,17 @@ async updateVariantPricingItem(
   }
 
   private validateCommonValues(
-    changes:
-      | ClassicItemUpdate
-      | VariantPricingItemUpdate,
+    changes: ClassicItemUpdate | VariantPricingItemUpdate,
   ): void {
     if (
       changes.price !== undefined &&
-      (
-        !Number.isFinite(changes.price) ||
-        changes.price <= 0
-      )
+      (!Number.isFinite(changes.price) || changes.price <= 0)
     ) {
-      throw new BadRequestException(
-        'El precio debe ser mayor a 0',
-      );
+      throw new BadRequestException('El precio debe ser mayor a 0');
     }
 
-    if (
-      changes.status !== undefined &&
-      !ALLOWED_STATUSES.has(changes.status)
-    ) {
-      throw new BadRequestException(
-        'Estado inválido',
-      );
+    if (changes.status !== undefined && !ALLOWED_STATUSES.has(changes.status)) {
+      throw new BadRequestException('Estado inválido');
     }
   }
 
@@ -257,10 +195,9 @@ async updateVariantPricingItem(
     changes: object,
     allowedFields: Set<string>,
   ): void {
-    const invalidFields =
-      Object.keys(changes).filter(
-        (field) => !allowedFields.has(field),
-      );
+    const invalidFields = Object.keys(changes).filter(
+      (field) => !allowedFields.has(field),
+    );
 
     if (invalidFields.length > 0) {
       throw new BadRequestException({
@@ -271,28 +208,20 @@ async updateVariantPricingItem(
     }
   }
 
-  private validateItemId(
-    itemId: string,
-  ): void {
+  private validateItemId(itemId: string): void {
     if (!/^MLA\d+$/.test(itemId)) {
-      throw new BadRequestException(
-        'itemId inválido',
-      );
+      throw new BadRequestException('itemId inválido');
     }
   }
 
-  private validateChanges(
-    changes: object,
-  ): void {
+  private validateChanges(changes: object): void {
     if (
       !changes ||
       typeof changes !== 'object' ||
       Array.isArray(changes) ||
       Object.keys(changes).length === 0
     ) {
-      throw new BadRequestException(
-        'No se enviaron cambios',
-      );
+      throw new BadRequestException('No se enviaron cambios');
     }
   }
 }

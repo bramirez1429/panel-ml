@@ -78,10 +78,7 @@ export class MercadolibreApiService {
       path,
       {
         method: 'POST',
-        headers: this.headers(
-          accessToken,
-          true,
-        ),
+        headers: this.headers(accessToken, true),
         body: JSON.stringify(body),
       },
       kind,
@@ -99,10 +96,7 @@ export class MercadolibreApiService {
       path,
       {
         method: 'PUT',
-        headers: this.headers(
-          accessToken,
-          true,
-        ),
+        headers: this.headers(accessToken, true),
         body: JSON.stringify(body),
       },
       kind,
@@ -121,11 +115,7 @@ export class MercadolibreApiService {
       path,
       {
         method: 'PUT',
-        headers: this.headers(
-          accessToken,
-          true,
-          extraHeaders,
-        ),
+        headers: this.headers(accessToken, true, extraHeaders),
         body: JSON.stringify(body),
       },
       kind,
@@ -156,8 +146,7 @@ export class MercadolibreApiService {
   ): Promise<T> {
     const headers = new Headers({
       Accept: 'application/json',
-      'Content-Type':
-        'application/x-www-form-urlencoded',
+      'Content-Type': 'application/x-www-form-urlencoded',
     });
 
     return this.requestJson<T>(
@@ -177,12 +166,7 @@ export class MercadolibreApiService {
     init: RequestInit,
     kind?: MercadoLibreRequestKind,
   ): Promise<T> {
-    const response =
-      await this.requestJsonWithMeta<T>(
-        path,
-        init,
-        kind,
-      );
+    const response = await this.requestJsonWithMeta<T>(path, init, kind);
 
     return response.data;
   }
@@ -200,15 +184,10 @@ export class MercadolibreApiService {
     let response: Response;
 
     try {
-      response = await fetch(
-        this.buildUrl(path),
-        {
-          ...init,
-          signal: AbortSignal.timeout(
-            MERCADOLIBRE_REQUEST_TIMEOUT_MS,
-          ),
-        },
-      );
+      response = await fetch(this.buildUrl(path), {
+        ...init,
+        signal: AbortSignal.timeout(MERCADOLIBRE_REQUEST_TIMEOUT_MS),
+      });
     } catch (error) {
       if (isTimeoutError(error)) {
         throw new GatewayTimeoutException(
@@ -216,9 +195,7 @@ export class MercadolibreApiService {
         );
       }
 
-      throw new BadGatewayException(
-        'No se pudo conectar con Mercado Libre',
-      );
+      throw new BadGatewayException('No se pudo conectar con Mercado Libre');
     }
 
     if (response.status === 204) {
@@ -231,25 +208,18 @@ export class MercadolibreApiService {
     const data = await readJson(response);
 
     if (data === INVALID_JSON) {
-  if (!response.ok) {
-    this.throwApiError(
-      response.status,
-      kind,
-    );
-  }
+      if (!response.ok) {
+        this.throwApiError(response.status, kind);
+      }
 
-  return {
-    data: undefined as T,
-    headers: response.headers,
-  };
-}
+      return {
+        data: undefined as T,
+        headers: response.headers,
+      };
+    }
 
     if (!response.ok) {
-      this.throwApiError(
-        response.status,
-        kind,
-        data,
-      );
+      this.throwApiError(response.status, kind, data);
     }
 
     return {
@@ -259,18 +229,11 @@ export class MercadolibreApiService {
   }
 
   /** Construye una URL limitada al dominio de la API. */
-  private buildUrl(
-    path: string,
-  ): string {
-    const url = new URL(
-      path,
-      `${MERCADOLIBRE_API_URL}/`,
-    );
+  private buildUrl(path: string): string {
+    const url = new URL(path, `${MERCADOLIBRE_API_URL}/`);
 
     if (url.origin !== MERCADOLIBRE_API_URL) {
-      throw new BadRequestException(
-        'Ruta de Mercado Libre inválida',
-      );
+      throw new BadRequestException('Ruta de Mercado Libre inválida');
     }
 
     return url.toString();
@@ -288,29 +251,18 @@ export class MercadolibreApiService {
 
     if (accessToken !== undefined) {
       if (!isNonEmptyString(accessToken)) {
-        throw new BadRequestException(
-          'Token inválido',
-        );
+        throw new BadRequestException('Token inválido');
       }
 
-      headers.set(
-        'Authorization',
-        `Bearer ${accessToken}`,
-      );
+      headers.set('Authorization', `Bearer ${accessToken}`);
     }
 
     if (json) {
-      headers.set(
-        'Content-Type',
-        'application/json',
-      );
+      headers.set('Content-Type', 'application/json');
     }
 
     if (extraHeaders) {
-      for (const [
-        key,
-        value,
-      ] of Object.entries(extraHeaders)) {
+      for (const [key, value] of Object.entries(extraHeaders)) {
         headers.set(key, value);
       }
     }
@@ -324,46 +276,30 @@ export class MercadolibreApiService {
     kind?: MercadoLibreRequestKind,
     data?: unknown,
   ): never {
-    const safeData =
-      sanitizeMercadoLibreData(data);
+    const safeData = sanitizeMercadoLibreData(data);
 
-    if (
-      kind === 'tokenExchange' &&
-      (status === 400 || status === 401)
-    ) {
-      const error = isJsonObject(safeData)
-        ? safeData.error
-        : undefined;
+    if (kind === 'tokenExchange' && (status === 400 || status === 401)) {
+      const error = isJsonObject(safeData) ? safeData.error : undefined;
 
-      const message = isJsonObject(safeData)
-        ? safeData.message
-        : undefined;
+      const message = isJsonObject(safeData) ? safeData.message : undefined;
 
       throw new BadRequestException({
-        message:
-          'Mercado Libre rechazó el intercambio OAuth',
+        message: 'Mercado Libre rechazó el intercambio OAuth',
 
-        mercadoLibreError:
-          isNonEmptyString(error)
-            ? error.slice(0, 100)
-            : 'unknown_error',
+        mercadoLibreError: isNonEmptyString(error)
+          ? error.slice(0, 100)
+          : 'unknown_error',
 
-        mercadoLibreMessage:
-          isNonEmptyString(message)
-            ? message.slice(0, 500)
-            : 'Mercado Libre no informó el motivo',
+        mercadoLibreMessage: isNonEmptyString(message)
+          ? message.slice(0, 500)
+          : 'Mercado Libre no informó el motivo',
 
         status: 400,
       });
     }
 
-    if (
-      kind === 'scroll' &&
-      (status === 400 || status === 404)
-    ) {
-      throw new BadGatewayException(
-        'El scroll_id está ausente o venció',
-      );
+    if (kind === 'scroll' && (status === 400 || status === 404)) {
+      throw new BadGatewayException('El scroll_id está ausente o venció');
     }
 
     if (status === 400) {
@@ -375,33 +311,23 @@ export class MercadolibreApiService {
     }
 
     if (status === 401) {
-      throw new UnauthorizedException(
-        'Acceso inválido o vencido',
-      );
+      throw new UnauthorizedException('Acceso inválido o vencido');
     }
 
     if (status === 403) {
-      throw new ForbiddenException(
-        'Permisos insuficientes',
-      );
+      throw new ForbiddenException('Permisos insuficientes');
     }
 
     if (status === 429) {
-      throw new ServiceUnavailableException(
-        'Demasiadas solicitudes',
-      );
+      throw new ServiceUnavailableException('Demasiadas solicitudes');
     }
 
-    throw new BadGatewayException(
-      'Mercado Libre no completó la solicitud',
-    );
+    throw new BadGatewayException('Mercado Libre no completó la solicitud');
   }
 }
 
 /** Lee JSON sin ocultar errores de parseo. */
-async function readJson(
-  response: Response,
-): Promise<unknown> {
+async function readJson(response: Response): Promise<unknown> {
   try {
     return (await response.json()) as unknown;
   } catch {
@@ -410,26 +336,17 @@ async function readJson(
 }
 
 /** Indica si una solicitud agotó el tiempo. */
-function isTimeoutError(
-  error: unknown,
-): boolean {
+function isTimeoutError(error: unknown): boolean {
   return (
     isJsonObject(error) &&
-    (
-      error.name === 'TimeoutError' ||
-      error.name === 'AbortError'
-    )
+    (error.name === 'TimeoutError' || error.name === 'AbortError')
   );
 }
 
 /** Elimina credenciales de una respuesta externa. */
-export function sanitizeMercadoLibreData<T>(
-  value: T,
-): T {
+export function sanitizeMercadoLibreData<T>(value: T): T {
   if (Array.isArray(value)) {
-    return value.map(
-      sanitizeMercadoLibreData,
-    ) as T;
+    return value.map(sanitizeMercadoLibreData) as T;
   }
 
   if (!isJsonObject(value)) {
@@ -440,17 +357,8 @@ export function sanitizeMercadoLibreData<T>(
     Object.entries(value)
       .filter(
         ([key]) =>
-          !PRIVATE_FIELDS.has(
-            key
-              .toLowerCase()
-              .replaceAll(/[_-]/g, ''),
-          ),
+          !PRIVATE_FIELDS.has(key.toLowerCase().replaceAll(/[_-]/g, '')),
       )
-      .map(
-        ([key, nested]) => [
-          key,
-          sanitizeMercadoLibreData(nested),
-        ],
-      ),
+      .map(([key, nested]) => [key, sanitizeMercadoLibreData(nested)]),
   ) as T;
 }

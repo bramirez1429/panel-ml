@@ -1,24 +1,15 @@
-import {
-  PublicationModel,
-  SharedProduct,
-} from './publication.types';
+import { PublicationModel, SharedProduct } from './publication.types';
 
 import { MlItem } from '../items/items.types';
 
 export class PublicationsMapper {
-  static getModel(
-    item: MlItem,
-  ): PublicationModel {
+  static getModel(item: MlItem): PublicationModel {
     const hasFamily =
       Boolean(item.family_name) ||
-      (
-        item.family_id !== null &&
-        item.family_id !== undefined
-      );
+      (item.family_id !== null && item.family_id !== undefined);
 
     const hasVariations =
-      Array.isArray(item.variations) &&
-      item.variations.length > 0;
+      Array.isArray(item.variations) && item.variations.length > 0;
 
     /**
      * Si tiene family_id o family_name,
@@ -45,29 +36,21 @@ export class PublicationsMapper {
      * user_product_listing,
      * es Versión nueva.
      */
-    if (
-      item.tags?.includes(
-        'user_product_listing',
-      )
-    ) {
+    if (item.tags?.includes('user_product_listing')) {
       return 'VARIANT_PRICING';
     }
 
     return 'SHARED';
   }
 
-  static toDirectPublication(
-    item: MlItem,
-  ) {
+  static toDirectPublication(item: MlItem) {
     return {
       ...item,
       model: this.getModel(item),
     };
   }
 
-  static toSharedProduct(
-    item: MlItem,
-  ): SharedProduct {
+  static toSharedProduct(item: MlItem): SharedProduct {
     return {
       key: `item:${item.id}`,
 
@@ -75,44 +58,31 @@ export class PublicationsMapper {
 
       itemId: item.id,
 
-      title:
-        item.title ?? null,
+      title: item.title ?? null,
 
-      price:
-        item.price ?? null,
+      price: item.price ?? null,
 
-      stock:
-        item.available_quantity ?? 0,
+      stock: item.available_quantity ?? 0,
 
-      sold:
-        item.sold_quantity ?? 0,
+      sold: item.sold_quantity ?? 0,
 
-      status:
-        item.status ?? null,
+      status: item.status ?? null,
 
-      thumbnail:
-        item.thumbnail ?? null,
+      thumbnail: item.thumbnail ?? null,
 
-      variations:
-        item.variations ?? [],
+      variations: item.variations ?? [],
     };
   }
 
-  static getFamilyIds(
-    items: MlItem[],
-  ): string[] {
+  static getFamilyIds(items: MlItem[]): string[] {
     return [
       ...new Set(
         items
           .filter(
             (item) =>
-              this.getModel(item) ===
-                'VARIANT_PRICING' &&
-              item.family_id,
+              this.getModel(item) === 'VARIANT_PRICING' && item.family_id,
           )
-          .map((item) =>
-            String(item.family_id),
-          ),
+          .map((item) => String(item.family_id)),
       ),
     ];
   }

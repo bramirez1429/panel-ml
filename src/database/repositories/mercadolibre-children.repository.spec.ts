@@ -30,14 +30,9 @@ describe('MercadolibreChildrenRepository updatePrice', () => {
   });
 
   it('actualiza el precio de la variante', async () => {
-    await repository.updatePrice(
-      'MLA123456789',
-      50000,
-    );
+    await repository.updatePrice('MLA123456789', 50000);
 
-    expect(from).toHaveBeenCalledWith(
-      'mercadolibre_product_children',
-    );
+    expect(from).toHaveBeenCalledWith('mercadolibre_product_children');
 
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -46,10 +41,7 @@ describe('MercadolibreChildrenRepository updatePrice', () => {
       }),
     );
 
-    expect(eq).toHaveBeenCalledWith(
-      'item_id',
-      'MLA123456789',
-    );
+    expect(eq).toHaveBeenCalledWith('item_id', 'MLA123456789');
   });
 
   it('lanza error si Supabase falla', async () => {
@@ -58,12 +50,7 @@ describe('MercadolibreChildrenRepository updatePrice', () => {
     });
 
     await expect(
-      repository.updatePrice(
-        'MLA123456789',
-        50000,
-      ),
-    ).rejects.toBeInstanceOf(
-      ServiceUnavailableException,
-    );
+      repository.updatePrice('MLA123456789', 50000),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 });

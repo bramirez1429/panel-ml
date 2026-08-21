@@ -54,7 +54,7 @@ export class PublicationsController {
     return this.publicationsService.findOne(productId);
   }
 
-    /** Modifica el precio de una publicación. */
+  /** Modifica el precio de una publicación. */
   @Patch(':productId/precio')
   updatePrice(
     @Param('productId', ParseUUIDPipe) productId: string,
@@ -68,32 +68,30 @@ export class PublicationsController {
   }
 
   /** Modifica el stock de una publicación. */
-@Patch(':productId/stock')
-updateStock(
-  @Param('productId', ParseUUIDPipe) productId: string,
-  @Body()
-  body: {
-    stock: number;
-    itemId?: string;
-    variationId?: number;
-  },
-) {
-  return this.publicationsService.updateStock(
-    productId,
-    body.stock,
-    body.itemId,
-    body.variationId,
-  );
-}
+  @Patch(':productId/stock')
+  updateStock(
+    @Param('productId', ParseUUIDPipe) productId: string,
+    @Body()
+    body: {
+      stock: number;
+      itemId?: string;
+      variationId?: number;
+    },
+  ) {
+    return this.publicationsService.updateStock(
+      productId,
+      body.stock,
+      body.itemId,
+      body.variationId,
+    );
+  }
 
-/** Obtiene las promociones de una publicación. */
-@Get(':productId/promociones')
-getPromotions(
-  @Param('productId', ParseUUIDPipe) productId: string,
-  @Query('itemId') itemId?: string,
-) {
-  return this.publicationsService.getPromotions(
-    productId,
-  );
-}
+  /** Obtiene las promociones de una publicación. */
+  @Get(':productId/promociones')
+  getPromotions(
+    @Param('productId', ParseUUIDPipe) productId: string,
+    @Query('itemId') itemId?: string,
+  ) {
+    return this.publicationsService.getPromotions(productId);
+  }
 }

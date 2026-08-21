@@ -12,51 +12,33 @@ export class PublicationDetailService {
     private readonly itemsService: ItemsService,
     private readonly pricingService: PricingService,
     private readonly promotionsService: PromotionsService,
-  ) { }
+  ) {}
 
   async getDetail(itemId: string) {
-    const accessToken =
-      await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken();
 
-    const item = await this.itemsService.getOne(
-      itemId,
-      accessToken,
-    );
+    const item = await this.itemsService.getOne(itemId, accessToken);
 
     const [price, promotions] = await Promise.all([
-      this.pricingService.getPrice(
-        item,
-        accessToken,
-      ),
-      this.promotionsService.getPromotions(
-        itemId,
-        accessToken,
-      ),
+      this.pricingService.getPrice(item, accessToken),
+      this.promotionsService.getPromotions(itemId, accessToken),
     ]);
 
-    const version =
-      PublicationDetailMapper.getVersion(item);
+    const version = PublicationDetailMapper.getVersion(item);
 
-    const friendlyStatus =
-      PublicationDetailMapper.getStatus(item.status);
+    const friendlyStatus = PublicationDetailMapper.getStatus(item.status);
 
-    const friendlyPricing =
-      PublicationDetailMapper.getPricing(price);
+    const friendlyPricing = PublicationDetailMapper.getPricing(price);
 
-const effectivePromotions =
-  PublicationDetailMapper.reconcilePromotions(
-    price,
-    promotions,
-  );
+    const effectivePromotions = PublicationDetailMapper.reconcilePromotions(
+      price,
+      promotions,
+    );
 
-const friendlyPromotion =
-  PublicationDetailMapper.getPromotion(
-    effectivePromotions,
-  );
+    const friendlyPromotion =
+      PublicationDetailMapper.getPromotion(effectivePromotions);
 
-    const friendlyShipping =
-      PublicationDetailMapper.getShipping(item.shipping);
-
+    const friendlyShipping = PublicationDetailMapper.getShipping(item.shipping);
 
     return {
       version: version.version,
@@ -64,9 +46,7 @@ const friendlyPromotion =
 
       identifiers: {
         itemId: item.id,
-        familyId: item.family_id
-          ? String(item.family_id)
-          : null,
+        familyId: item.family_id ? String(item.family_id) : null,
         userProductId: item.user_product_id ?? null,
       },
 
@@ -82,9 +62,7 @@ const friendlyPromotion =
       itemId: item.id,
       title: item.title ?? null,
 
-      familyId: item.family_id
-        ? String(item.family_id)
-        : null,
+      familyId: item.family_id ? String(item.family_id) : null,
 
       familyName: item.family_name ?? null,
       userProductId: item.user_product_id ?? null,
@@ -99,8 +77,8 @@ const friendlyPromotion =
         sold: item.sold_quantity ?? 0,
       },
 
-  price,
-promotions: effectivePromotions,
+      price,
+      promotions: effectivePromotions,
 
       sku: item.seller_custom_field ?? null,
       inventoryId: item.inventory_id ?? null,
@@ -127,11 +105,6 @@ promotions: effectivePromotions,
 
       dateCreated: item.date_created ?? null,
       lastUpdated: item.last_updated ?? null,
-
-
-
-
-
     };
   }
 }

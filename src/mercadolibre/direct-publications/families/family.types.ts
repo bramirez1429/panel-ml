@@ -1,7 +1,4 @@
-import {
-  MlAttribute,
-  MlPicture,
-} from '../items/items.types';
+import { MlAttribute, MlPicture } from '../items/items.types';
 
 export type FamilyItemSummary = {
   itemId: string;

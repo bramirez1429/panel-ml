@@ -42,8 +42,7 @@ export class PublicationDetailMapper {
     version: PublicationVersion;
     versionLabel: PublicationVersionLabel;
   } {
-    const model =
-      PublicationsMapper.getModel(item);
+    const model = PublicationsMapper.getModel(item);
 
     if (model === 'VARIANT_PRICING') {
       return {
@@ -58,9 +57,7 @@ export class PublicationDetailMapper {
     };
   }
 
-  static getStatus(
-    status?: string | null,
-  ): FriendlyStatus {
+  static getStatus(status?: string | null): FriendlyStatus {
     const labels: Record<string, string> = {
       active: 'Activa',
       paused: 'Pausada',
@@ -72,42 +69,28 @@ export class PublicationDetailMapper {
     return {
       code: status ?? null,
 
-      label: status
-        ? labels[status] ?? status
-        : 'Sin estado',
+      label: status ? (labels[status] ?? status) : 'Sin estado',
     };
   }
 
-  static getPricing(
-    price: PriceLike,
-  ): FriendlyPricing {
-    const current =
-      price.current ?? null;
+  static getPricing(price: PriceLike): FriendlyPricing {
+    const current = price.current ?? null;
 
-    const regular =
-      price.regular ?? null;
+    const regular = price.regular ?? null;
 
     const hasDiscount =
-      current !== null &&
-      regular !== null &&
-      regular > current;
+      current !== null && regular !== null && regular > current;
 
     const discountPercent =
       hasDiscount && regular
-        ? Math.round(
-            ((regular - current!) /
-              regular) *
-              100,
-          )
+        ? Math.round(((regular - current) / regular) * 100)
         : 0;
 
     return {
       current,
       regular,
-      standard:
-        price.standard ?? null,
-      currency:
-        price.currency ?? null,
+      standard: price.standard ?? null,
+      currency: price.currency ?? null,
       hasDiscount,
       discountPercent,
     };
@@ -122,9 +105,7 @@ export class PublicationDetailMapper {
    * confirmación final de que la promoción
    * realmente está aplicada.
    */
-  static reconcilePromotions<
-    T extends PromotionLike,
-  >(
+  static reconcilePromotions<T extends PromotionLike>(
     price: PriceLike,
     promotions: {
       active?: T[];
@@ -133,27 +114,17 @@ export class PublicationDetailMapper {
       all?: T[];
     },
   ) {
-    const current =
-      price.current ?? null;
+    const current = price.current ?? null;
 
-    const regular =
-      price.regular ?? null;
+    const regular = price.regular ?? null;
 
     const hasPromotionPrice =
-      price.all?.some(
-        (entry) =>
-          entry.type === 'promotion',
-      ) ??
-      false;
+      price.all?.some((entry) => entry.type === 'promotion') ?? false;
 
     const hasDiscount =
-      current !== null &&
-      regular !== null &&
-      regular > current;
+      current !== null && regular !== null && regular > current;
 
-    const promotionIsEffective =
-      hasPromotionPrice ||
-      hasDiscount;
+    const promotionIsEffective = hasPromotionPrice || hasDiscount;
 
     if (!promotionIsEffective) {
       return {
@@ -162,31 +133,25 @@ export class PublicationDetailMapper {
       };
     }
 
-    const campaignId =
-      price.metadata?.campaign_id ??
-      null;
+    const campaignId = price.metadata?.campaign_id ?? null;
 
-    const active =
-      (promotions.active ?? [])
-        .filter((promotion) => {
-          if (!campaignId) {
-            return true;
-          }
+    const active = (promotions.active ?? [])
+      .filter((promotion) => {
+        if (!campaignId) {
+          return true;
+        }
 
-          return (
-            promotion.id ===
-            campaignId
-          );
-        })
-        .map((promotion) => ({
-          ...promotion,
+        return promotion.id === campaignId;
+      })
+      .map((promotion) => ({
+        ...promotion,
 
-          ...(current !== null
-            ? {
-                price: current,
-              }
-            : {}),
-        }));
+        ...(current !== null
+          ? {
+              price: current,
+            }
+          : {}),
+      }));
 
     return {
       ...promotions,
@@ -194,26 +159,19 @@ export class PublicationDetailMapper {
     };
   }
 
-  static getPromotion(
-    promotions: {
-      active?: unknown[];
-      candidates?: unknown[];
-      pending?: unknown[];
-    },
-  ): FriendlyPromotion {
-    const activeCount =
-      promotions.active?.length ?? 0;
+  static getPromotion(promotions: {
+    active?: unknown[];
+    candidates?: unknown[];
+    pending?: unknown[];
+  }): FriendlyPromotion {
+    const activeCount = promotions.active?.length ?? 0;
 
-    const candidateCount =
-      promotions.candidates?.length ??
-      0;
+    const candidateCount = promotions.candidates?.length ?? 0;
 
-    const pendingCount =
-      promotions.pending?.length ?? 0;
+    const pendingCount = promotions.pending?.length ?? 0;
 
     return {
-      hasActivePromotion:
-        activeCount > 0,
+      hasActivePromotion: activeCount > 0,
 
       activeCount,
       candidateCount,
@@ -221,45 +179,30 @@ export class PublicationDetailMapper {
     };
   }
 
-  static getShipping(
-    shipping?: MlItem['shipping'],
-  ): FriendlyShipping {
-    const logisticType =
-      shipping?.logistic_type ?? null;
+  static getShipping(shipping?: MlItem['shipping']): FriendlyShipping {
+    const logisticType = shipping?.logistic_type ?? null;
 
-    const isFlex =
-      logisticType ===
-      'self_service';
+    const isFlex = logisticType === 'self_service';
 
-    const isFull =
-      logisticType ===
-      'fulfillment';
+    const isFull = logisticType === 'fulfillment';
 
-    let label =
-      'Envío estándar';
+    let label = 'Envío estándar';
 
     if (isFlex) {
-      label =
-        'Mercado Envíos Flex';
+      label = 'Mercado Envíos Flex';
     } else if (isFull) {
-      label =
-        'Mercado Libre Full';
-    } else if (
-      logisticType === 'drop_off'
-    ) {
+      label = 'Mercado Libre Full';
+    } else if (logisticType === 'drop_off') {
       label = 'Drop off';
     } else if (logisticType) {
       label = logisticType;
     }
 
     return {
-      freeShipping:
-        shipping?.free_shipping ??
-        false,
+      freeShipping: shipping?.free_shipping ?? false,
 
       logisticType,
-      mode:
-        shipping?.mode ?? null,
+      mode: shipping?.mode ?? null,
 
       isFlex,
       isFull,

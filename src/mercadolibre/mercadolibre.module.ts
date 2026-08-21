@@ -59,7 +59,6 @@ import { AttributesController } from './direct-publications/attributes/attribute
 import { ShippingService } from './direct-publications/shipping/shipping.service';
 import { ShippingController } from './direct-publications/shipping/shipping.controller';
 
-
 @Module({
   controllers: [
     MercadolibreController,
@@ -123,4 +122,4 @@ import { ShippingController } from './direct-publications/shipping/shipping.cont
     PromotionManagerService,
   ],
 })
-export class MercadolibreModule { }
+export class MercadolibreModule {}

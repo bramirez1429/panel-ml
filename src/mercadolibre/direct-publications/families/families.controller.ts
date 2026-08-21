@@ -1,8 +1,4 @@
-import {
-  Controller,
-  Get,
-  Param,
-} from '@nestjs/common';
+import { Controller, Get, Param } from '@nestjs/common';
 
 import { FamiliesService } from './families.service';
 import { FamiliesDetailService } from './families-detail.service';
@@ -20,9 +16,7 @@ export class FamiliesController {
     @Param('familyId')
     familyId: string,
   ) {
-    return this.familiesService.getSummary(
-      familyId,
-    );
+    return this.familiesService.getSummary(familyId);
   }
 
   /** Familia completa con precios y promociones. */
@@ -31,8 +25,6 @@ export class FamiliesController {
     @Param('familyId')
     familyId: string,
   ) {
-    return this.familiesDetailService.getDetail(
-      familyId,
-    );
+    return this.familiesDetailService.getDetail(familyId);
   }
 }

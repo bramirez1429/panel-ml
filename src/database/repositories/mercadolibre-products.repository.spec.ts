@@ -30,14 +30,9 @@ describe('MercadolibreProductsRepository updatePrice', () => {
   });
 
   it('actualiza el precio del producto', async () => {
-    await repository.updatePrice(
-      '123e4567-e89b-42d3-a456-426614174000',
-      45000,
-    );
+    await repository.updatePrice('123e4567-e89b-42d3-a456-426614174000', 45000);
 
-    expect(from).toHaveBeenCalledWith(
-      'mercadolibre_products',
-    );
+    expect(from).toHaveBeenCalledWith('mercadolibre_products');
 
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -59,12 +54,7 @@ describe('MercadolibreProductsRepository updatePrice', () => {
     });
 
     await expect(
-      repository.updatePrice(
-        '123e4567-e89b-42d3-a456-426614174000',
-        45000,
-      ),
-    ).rejects.toBeInstanceOf(
-      ServiceUnavailableException,
-    );
+      repository.updatePrice('123e4567-e89b-42d3-a456-426614174000', 45000),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 });

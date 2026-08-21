@@ -1,10 +1,6 @@
-export type PublicationVersion =
-  | 'CLASSIC'
-  | 'NEW';
+export type PublicationVersion = 'CLASSIC' | 'NEW';
 
-export type PublicationVersionLabel =
-  | 'Versión clásica'
-  | 'Versión nueva';
+export type PublicationVersionLabel = 'Versión clásica' | 'Versión nueva';
 
 export type FriendlyStatus = {
   code: string | null;

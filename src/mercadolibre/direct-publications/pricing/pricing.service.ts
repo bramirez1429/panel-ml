@@ -4,63 +4,31 @@ import { MercadolibreApiService } from '../../shared/mercadolibre-api.service';
 
 import { MlItem } from '../items/items.types';
 
-import {
-  MlPricesResponse,
-  MlSalePriceResponse,
-} from './pricing.types';
-
+import { MlPricesResponse, MlSalePriceResponse } from './pricing.types';
 
 @Injectable()
 export class PricingService {
-  constructor(
-    private readonly apiService: MercadolibreApiService,
-  ) {}
+  constructor(private readonly apiService: MercadolibreApiService) {}
 
   /** Obtiene todos los datos de precio de un MLA. */
-  async getPrice(
-    item: MlItem,
-    accessToken: string,
-  ) {
-    const [prices, salePrice] =
-      await Promise.all([
-        this.getPrices(
-          item.id,
-          accessToken,
-        ),
-        this.getSalePrice(
-          item.id,
-          accessToken,
-        ),
-      ]);
+  async getPrice(item: MlItem, accessToken: string) {
+    const [prices, salePrice] = await Promise.all([
+      this.getPrices(item.id, accessToken),
+      this.getSalePrice(item.id, accessToken),
+    ]);
 
-    const standard =
-      prices?.prices?.find(
-        (price) =>
-          price.type === 'standard',
-      );
+    const standard = prices?.prices?.find((price) => price.type === 'standard');
 
-    const promotion =
-      prices?.prices?.find(
-        (price) =>
-          price.type === 'promotion',
-      );
+    const promotion = prices?.prices?.find(
+      (price) => price.type === 'promotion',
+    );
 
     return {
-      standard:
-        standard?.amount ??
-        item.price ??
-        null,
+      standard: standard?.amount ?? item.price ?? null,
 
-      current:
-        salePrice?.amount ??
-        promotion?.amount ??
-        item.price ??
-        null,
+      current: salePrice?.amount ?? promotion?.amount ?? item.price ?? null,
 
-      regular:
-        salePrice?.regular_amount ??
-        promotion?.regular_amount ??
-        null,
+      regular: salePrice?.regular_amount ?? promotion?.regular_amount ?? null,
 
       currency:
         salePrice?.currency_id ??
@@ -68,19 +36,14 @@ export class PricingService {
         item.currency_id ??
         null,
 
-      all:
-        prices?.prices ?? [],
+      all: prices?.prices ?? [],
 
-      metadata:
-        salePrice?.metadata ?? {},
+      metadata: salePrice?.metadata ?? {},
     };
   }
 
   /** Consulta precios registrados del MLA. */
-  private async getPrices(
-    itemId: string,
-    accessToken: string,
-  ) {
+  private async getPrices(itemId: string, accessToken: string) {
     return this.safeGet<MlPricesResponse | null>(
       `/items/${itemId}/prices`,
       accessToken,
@@ -89,10 +52,7 @@ export class PricingService {
   }
 
   /** Consulta el precio actual visible en marketplace. */
-  private async getSalePrice(
-    itemId: string,
-    accessToken: string,
-  ) {
+  private async getSalePrice(itemId: string, accessToken: string) {
     return this.safeGet<MlSalePriceResponse | null>(
       `/items/${itemId}/sale_price?context=channel_marketplace`,
       accessToken,
@@ -107,10 +67,7 @@ export class PricingService {
     fallback: T,
   ): Promise<T> {
     try {
-      return await this.apiService.get<T>(
-        path,
-        accessToken,
-      );
+      return await this.apiService.get<T>(path, accessToken);
     } catch {
       return fallback;
     }

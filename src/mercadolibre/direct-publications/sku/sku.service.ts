@@ -1,7 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 
 import { MercadolibreTokenService } from '../../auth/mercadolibre-token.service';
 import { MercadolibreApiService } from '../../shared/mercadolibre-api.service';
@@ -10,10 +7,7 @@ import { ItemsService } from '../items/items.service';
 import { PublicationsMapper } from '../publications/publications.mapper';
 import type { MlItem } from '../items/items.types';
 
-import type {
-  ClassicSkuUpdate,
-  NewSkuUpdate,
-} from './sku.types';
+import type { ClassicSkuUpdate, NewSkuUpdate } from './sku.types';
 
 type VariationAttribute = {
   id?: string;
@@ -34,31 +28,21 @@ export class SkuService {
     private readonly tokenService: MercadolibreTokenService,
     private readonly apiService: MercadolibreApiService,
     private readonly itemsService: ItemsService,
-  ) { }
+  ) {}
 
   /**
    * Consulta SKU de una publicación clásica.
    */
   async getClassicSku(itemId: string) {
-    const accessToken =
-      await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken();
 
-    const item =
-      await this.getClassicItemWithAttributes(
-        itemId,
-        accessToken,
-      );
+    const item = await this.getClassicItemWithAttributes(itemId, accessToken);
 
-    if (
-      PublicationsMapper.getModel(item) !== 'SHARED'
-    ) {
-      throw new BadRequestException(
-        'La publicación no es versión clásica',
-      );
+    if (PublicationsMapper.getModel(item) !== 'SHARED') {
+      throw new BadRequestException('La publicación no es versión clásica');
     }
 
-    const variations =
-      this.getVariations(item.variations);
+    const variations = this.getVariations(item.variations);
 
     if (variations.length > 0) {
       return {
@@ -66,14 +50,10 @@ export class SkuService {
         itemId: item.id,
         hasVariations: true,
 
-        variations: variations.map(
-          (variation) => ({
-            variationId: variation.id ?? null,
-            sku: this.findSku(
-              variation.attributes,
-            ),
-          }),
-        ),
+        variations: variations.map((variation) => ({
+          variationId: variation.id ?? null,
+          sku: this.findSku(variation.attributes),
+        })),
       };
     }
 
@@ -90,31 +70,18 @@ export class SkuService {
    *
    * Si tiene variaciones, variationId es obligatorio.
    */
-  async updateClassicSku(
-    itemId: string,
-    changes: ClassicSkuUpdate,
-  ) {
+  async updateClassicSku(itemId: string, changes: ClassicSkuUpdate) {
     const sku = this.validateSku(changes.sku);
 
-    const accessToken =
-      await this.tokenService.getValidAccessToken();
-      
-    const item =
-      await this.getClassicItemWithAttributes(
-        itemId,
-        accessToken,
-      );
+    const accessToken = await this.tokenService.getValidAccessToken();
 
-    if (
-      PublicationsMapper.getModel(item) !== 'SHARED'
-    ) {
-      throw new BadRequestException(
-        'La publicación no es versión clásica',
-      );
+    const item = await this.getClassicItemWithAttributes(itemId, accessToken);
+
+    if (PublicationsMapper.getModel(item) !== 'SHARED') {
+      throw new BadRequestException('La publicación no es versión clásica');
     }
 
-    const variations =
-      this.getVariations(item.variations);
+    const variations = this.getVariations(item.variations);
 
     /*
      * CLÁSICA CON VARIACIONES
@@ -126,12 +93,9 @@ export class SkuService {
         );
       }
 
-      const targetVariation =
-        variations.find(
-          (variation) =>
-            String(variation.id) ===
-            String(changes.variationId),
-        );
+      const targetVariation = variations.find(
+        (variation) => String(variation.id) === String(changes.variationId),
+      );
 
       if (!targetVariation) {
         throw new BadRequestException(
@@ -139,26 +103,18 @@ export class SkuService {
         );
       }
 
-      const payloadVariations =
-        variations.map((variation) => {
-          if (
-            String(variation.id) !==
-            String(changes.variationId)
-          ) {
-            return {
-              id: variation.id,
-            };
-          }
-
+      const payloadVariations = variations.map((variation) => {
+        if (String(variation.id) !== String(changes.variationId)) {
           return {
             id: variation.id,
-            attributes:
-              this.mergeSkuAttribute(
-                variation.attributes,
-                sku,
-              ),
           };
-        });
+        }
+
+        return {
+          id: variation.id,
+          attributes: this.mergeSkuAttribute(variation.attributes, sku),
+        };
+      });
 
       return this.apiService.put(
         `/items/${item.id}`,
@@ -175,11 +131,7 @@ export class SkuService {
     return this.apiService.put(
       `/items/${item.id}`,
       {
-        attributes:
-          this.mergeSkuAttribute(
-            item.attributes,
-            sku,
-          ),
+        attributes: this.mergeSkuAttribute(item.attributes, sku),
       },
       accessToken,
     );
@@ -188,38 +140,22 @@ export class SkuService {
   /**
    * Consulta SKU de un MLA del modelo nuevo.
    */
-  async getNewSku(
-    familyId: string,
-    itemId: string,
-  ) {
-    const accessToken =
-      await this.tokenService.getValidAccessToken();
+  async getNewSku(familyId: string, itemId: string) {
+    const accessToken = await this.tokenService.getValidAccessToken();
 
-    const item = await this.itemsService.getOne(
-      itemId,
-      accessToken,
-    );
+    const item = await this.itemsService.getOne(itemId, accessToken);
 
-    if (
-      PublicationsMapper.getModel(item) !==
-      'VARIANT_PRICING'
-    ) {
-      throw new BadRequestException(
-        'La publicación no es versión nueva',
-      );
+    if (PublicationsMapper.getModel(item) !== 'VARIANT_PRICING') {
+      throw new BadRequestException('La publicación no es versión nueva');
     }
 
-    this.validateFamily(
-      familyId,
-      item.family_id,
-    );
+    this.validateFamily(familyId, item.family_id);
 
     return {
       model: 'VARIANT_PRICING',
       familyId,
       itemId: item.id,
-      userProductId:
-        item.user_product_id ?? null,
+      userProductId: item.user_product_id ?? null,
       sku: this.findSku(item.attributes),
     };
   }
@@ -227,49 +163,27 @@ export class SkuService {
   /**
    * Modifica SKU de un User Product mediante su MLA.
    */
-  async updateNewSku(
-    familyId: string,
-    itemId: string,
-    changes: NewSkuUpdate,
-  ) {
+  async updateNewSku(familyId: string, itemId: string, changes: NewSkuUpdate) {
     const sku = this.validateSku(changes.sku);
 
-    const accessToken =
-      await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken();
 
-    const item = await this.itemsService.getOne(
-      itemId,
-      accessToken,
-    );
+    const item = await this.itemsService.getOne(itemId, accessToken);
 
-    if (
-      PublicationsMapper.getModel(item) !==
-      'VARIANT_PRICING'
-    ) {
-      throw new BadRequestException(
-        'La publicación no es versión nueva',
-      );
+    if (PublicationsMapper.getModel(item) !== 'VARIANT_PRICING') {
+      throw new BadRequestException('La publicación no es versión nueva');
     }
 
-    this.validateFamily(
-      familyId,
-      item.family_id,
-    );
+    this.validateFamily(familyId, item.family_id);
 
     if (!item.user_product_id) {
-      throw new BadRequestException(
-        'La publicación no tiene userProductId',
-      );
+      throw new BadRequestException('La publicación no tiene userProductId');
     }
 
     return this.apiService.put(
       `/items/${item.id}`,
       {
-        attributes:
-          this.mergeSkuAttribute(
-            item.attributes,
-            sku,
-          ),
+        attributes: this.mergeSkuAttribute(item.attributes, sku),
       },
       accessToken,
     );
@@ -280,21 +194,14 @@ export class SkuService {
    * conservando los demás atributos.
    */
   private mergeSkuAttribute(
-    attributes:
-      | VariationAttribute[]
-      | undefined,
+    attributes: VariationAttribute[] | undefined,
     sku: string,
   ): VariationAttribute[] {
-    const current =
-      Array.isArray(attributes)
-        ? [...attributes]
-        : [];
+    const current = Array.isArray(attributes) ? [...attributes] : [];
 
-    const existingIndex =
-      current.findIndex(
-        (attribute) =>
-          attribute.id === 'SELLER_SKU',
-      );
+    const existingIndex = current.findIndex(
+      (attribute) => attribute.id === 'SELLER_SKU',
+    );
 
     const sellerSku: VariationAttribute = {
       id: 'SELLER_SKU',
@@ -310,67 +217,42 @@ export class SkuService {
       return current;
     }
 
-    return [
-      ...current,
-      sellerSku,
-    ];
+    return [...current, sellerSku];
   }
 
   /**
    * Obtiene SELLER_SKU.
    */
-  private findSku(
-    attributes:
-      | VariationAttribute[]
-      | undefined,
-  ): string | null {
+  private findSku(attributes: VariationAttribute[] | undefined): string | null {
     if (!Array.isArray(attributes)) {
       return null;
     }
 
-    const attribute =
-      attributes.find(
-        (item) =>
-          item.id === 'SELLER_SKU',
-      );
+    const attribute = attributes.find((item) => item.id === 'SELLER_SKU');
 
-    if (
-      !attribute ||
-      typeof attribute.value_name !== 'string'
-    ) {
+    if (!attribute || typeof attribute.value_name !== 'string') {
       return null;
     }
 
     return attribute.value_name;
   }
 
-  private getVariations(
-    variations: unknown[] | undefined,
-  ): ClassicVariation[] {
+  private getVariations(variations: unknown[] | undefined): ClassicVariation[] {
     if (!Array.isArray(variations)) {
       return [];
     }
 
     return variations.filter(
-      (
-        variation,
-      ): variation is ClassicVariation =>
+      (variation): variation is ClassicVariation =>
         typeof variation === 'object' &&
         variation !== null &&
         'id' in variation,
     );
   }
 
-  private validateSku(
-    sku: string,
-  ): string {
-    if (
-      typeof sku !== 'string' ||
-      !sku.trim()
-    ) {
-      throw new BadRequestException(
-        'SKU inválido',
-      );
+  private validateSku(sku: string): string {
+    if (typeof sku !== 'string' || !sku.trim()) {
+      throw new BadRequestException('SKU inválido');
     }
 
     return sku.trim();
@@ -378,16 +260,9 @@ export class SkuService {
 
   private validateFamily(
     familyId: string,
-    itemFamilyId:
-      | string
-      | number
-      | null
-      | undefined,
+    itemFamilyId: string | number | null | undefined,
   ): void {
-    if (
-      String(itemFamilyId ?? '') !==
-      familyId
-    ) {
+    if (String(itemFamilyId ?? '') !== familyId) {
       throw new BadRequestException(
         'El MLA no pertenece a la familia indicada',
       );

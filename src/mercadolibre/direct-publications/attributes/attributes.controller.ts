@@ -1,31 +1,16 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  Patch,
-} from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch } from '@nestjs/common';
 
 import { AttributesService } from './attributes.service';
 
-import type {
-  AttributeUpdate,
-} from './attributes.types';
+import type { AttributeUpdate } from './attributes.types';
 
 @Controller('mercadolibre/direct/edicion')
 export class AttributesController {
-  constructor(
-    private readonly attributesService:
-      AttributesService,
-  ) {}
+  constructor(private readonly attributesService: AttributesService) {}
 
   @Get('clasica/:itemId/atributos')
-  getClassic(
-    @Param('itemId') itemId: string,
-  ) {
-    return this.attributesService.getClassic(
-      itemId,
-    );
+  getClassic(@Param('itemId') itemId: string) {
+    return this.attributesService.getClassic(itemId);
   }
 
   @Patch('clasica/:itemId/atributos')
@@ -33,15 +18,10 @@ export class AttributesController {
     @Param('itemId') itemId: string,
     @Body() changes: AttributeUpdate,
   ) {
-    return this.attributesService.updateClassicItemAttribute(
-      itemId,
-      changes,
-    );
+    return this.attributesService.updateClassicItemAttribute(itemId, changes);
   }
 
-  @Patch(
-    'clasica/:itemId/variaciones/:variationId/atributos',
-  )
+  @Patch('clasica/:itemId/variaciones/:variationId/atributos')
   updateClassicVariationAttribute(
     @Param('itemId') itemId: string,
     @Param('variationId')
@@ -55,9 +35,7 @@ export class AttributesController {
     );
   }
 
-  @Patch(
-    'clasica/:itemId/variaciones/:variationId/combinacion',
-  )
+  @Patch('clasica/:itemId/variaciones/:variationId/combinacion')
   updateClassicCombination(
     @Param('itemId') itemId: string,
     @Param('variationId')
@@ -71,31 +49,17 @@ export class AttributesController {
     );
   }
 
-  @Get(
-    'nueva/:familyId/items/:itemId/atributos',
-  )
-  getNew(
-    @Param('familyId') familyId: string,
-    @Param('itemId') itemId: string,
-  ) {
-    return this.attributesService.getNew(
-      familyId,
-      itemId,
-    );
+  @Get('nueva/:familyId/items/:itemId/atributos')
+  getNew(@Param('familyId') familyId: string, @Param('itemId') itemId: string) {
+    return this.attributesService.getNew(familyId, itemId);
   }
 
-  @Patch(
-    'nueva/:familyId/items/:itemId/atributos',
-  )
+  @Patch('nueva/:familyId/items/:itemId/atributos')
   updateNew(
     @Param('familyId') familyId: string,
     @Param('itemId') itemId: string,
     @Body() changes: AttributeUpdate,
   ) {
-    return this.attributesService.updateNewAttribute(
-      familyId,
-      itemId,
-      changes,
-    );
+    return this.attributesService.updateNewAttribute(familyId, itemId, changes);
   }
 }

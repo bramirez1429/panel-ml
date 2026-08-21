@@ -1,7 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 
 import { PublicationDetailService } from '../publications/publication-detail.service';
 
@@ -31,20 +28,15 @@ type PublicationKind =
 @Injectable()
 export class PromotionManagerService {
   constructor(
-    private readonly publicationDetailService:
-      PublicationDetailService,
+    private readonly publicationDetailService: PublicationDetailService,
 
-    private readonly priceDiscountService:
-      PriceDiscountService,
+    private readonly priceDiscountService: PriceDiscountService,
 
-    private readonly dealService:
-      DealService,
+    private readonly dealService: DealService,
 
-    private readonly sellerCampaignService:
-      SellerCampaignService,
+    private readonly sellerCampaignService: SellerCampaignService,
 
-    private readonly smartPromotionService:
-      SmartPromotionService,
+    private readonly smartPromotionService: SmartPromotionService,
   ) {}
 
   async switchClassic(
@@ -79,50 +71,34 @@ export class PromotionManagerService {
     publication: PublicationKind,
     request: PromotionSwitchRequest,
   ): Promise<PromotionManagerResult> {
-    const before =
-      await this.publicationDetailService.getDetail(
-        publication.itemId,
-      );
+    const before = await this.publicationDetailService.getDetail(
+      publication.itemId,
+    );
 
-    const previousPromotion =
-      this.getFirstActivePromotion(
-        before.promotions?.active,
-      );
+    const previousPromotion = this.getFirstActivePromotion(
+      before.promotions?.active,
+    );
 
     let removedPreviousPromotion = false;
 
     if (previousPromotion) {
-      await this.removePromotion(
-        publication,
-        previousPromotion,
-      );
+      await this.removePromotion(publication, previousPromotion);
 
       removedPreviousPromotion = true;
 
-      await this.waitForNoActivePromotion(
-        publication.itemId,
-      );
+      await this.waitForNoActivePromotion(publication.itemId);
     }
 
-    await this.waitForCandidate(
+    await this.waitForCandidate(publication.itemId, request);
+
+    await this.activatePromotionWithRetry(publication, request);
+
+    const activePromotion = await this.waitForPromotion(
       publication.itemId,
-      request,
+      request.type,
     );
 
-    await this.activatePromotionWithRetry(
-      publication,
-      request,
-    );
-
-    const activePromotion =
-      await this.waitForPromotion(
-        publication.itemId,
-        request.type,
-      );
-
-    const verified =
-      activePromotion?.type ===
-      request.type;
+    const verified = activePromotion?.type === request.type;
 
     return {
       success: verified,
@@ -131,8 +107,7 @@ export class PromotionManagerService {
 
       removedPreviousPromotion,
 
-      requestedPromotion:
-        request.type,
+      requestedPromotion: request.type,
 
       activePromotion,
 
@@ -146,26 +121,15 @@ export class PromotionManagerService {
   ): Promise<void> {
     let lastError: unknown = null;
 
-    for (
-      let attempt = 0;
-      attempt < 10;
-      attempt++
-    ) {
+    for (let attempt = 0; attempt < 10; attempt++) {
       try {
-        await this.activatePromotion(
-          publication,
-          request,
-        );
+        await this.activatePromotion(publication, request);
 
         return;
       } catch (error) {
         lastError = error;
 
-        if (
-          !this.isNoCandidatesError(
-            error,
-          )
-        ) {
+        if (!this.isNoCandidatesError(error)) {
           throw error;
         }
 
@@ -176,40 +140,29 @@ export class PromotionManagerService {
     throw lastError;
   }
 
-  private isNoCandidatesError(
-    error: unknown,
-  ): boolean {
-    const httpError =
-      error as {
-        message?: unknown;
-        response?: unknown;
-        getResponse?: () => unknown;
-      };
+  private isNoCandidatesError(error: unknown): boolean {
+    const httpError = error as {
+      message?: unknown;
+      response?: unknown;
+      getResponse?: () => unknown;
+    };
 
-    let response:
-      | unknown
-      | undefined;
+    let response: unknown | undefined;
 
     try {
       response =
-        typeof httpError?.getResponse ===
-        'function'
+        typeof httpError?.getResponse === 'function'
           ? httpError.getResponse()
           : httpError?.response;
     } catch {
       response = undefined;
     }
 
-    const content =
-      JSON.stringify(
-        response ??
-          httpError?.message ??
-          error,
-      ).toLowerCase();
+    const content = JSON.stringify(
+      response ?? httpError?.message ?? error,
+    ).toLowerCase();
 
-    return content.includes(
-      'no candidates found',
-    );
+    return content.includes('no candidates found');
   }
 
   private async activatePromotion(
@@ -219,23 +172,16 @@ export class PromotionManagerService {
     switch (request.type) {
       case 'PRICE_DISCOUNT': {
         const changes = {
-          dealPrice:
-            request.dealPrice,
+          dealPrice: request.dealPrice,
 
-          topDealPrice:
-            request.topDealPrice,
+          topDealPrice: request.topDealPrice,
 
-          startDate:
-            request.startDate,
+          startDate: request.startDate,
 
-          finishDate:
-            request.finishDate,
+          finishDate: request.finishDate,
         };
 
-        if (
-          publication.type ===
-          'CLASSIC'
-        ) {
+        if (publication.type === 'CLASSIC') {
           await this.priceDiscountService.createClassicPriceDiscount(
             publication.itemId,
             changes,
@@ -255,24 +201,15 @@ export class PromotionManagerService {
 
       case 'DEAL': {
         const changes = {
-          promotionId:
-            request.promotionId,
+          promotionId: request.promotionId,
 
-          dealPrice:
-            request.dealPrice,
+          dealPrice: request.dealPrice,
 
-          topDealPrice:
-            request.topDealPrice,
+          topDealPrice: request.topDealPrice,
         };
 
-        if (
-          publication.type ===
-          'CLASSIC'
-        ) {
-          await this.dealService.createClassic(
-            publication.itemId,
-            changes,
-          );
+        if (publication.type === 'CLASSIC') {
+          await this.dealService.createClassic(publication.itemId, changes);
 
           return;
         }
@@ -288,17 +225,12 @@ export class PromotionManagerService {
 
       case 'SELLER_CAMPAIGN': {
         const changes = {
-          promotionId:
-            request.promotionId,
+          promotionId: request.promotionId,
 
-          dealPrice:
-            request.dealPrice,
+          dealPrice: request.dealPrice,
         };
 
-        if (
-          publication.type ===
-          'CLASSIC'
-        ) {
+        if (publication.type === 'CLASSIC') {
           await this.sellerCampaignService.createClassic(
             publication.itemId,
             changes,
@@ -318,17 +250,12 @@ export class PromotionManagerService {
 
       case 'SMART': {
         const changes = {
-          promotionId:
-            request.promotionId,
+          promotionId: request.promotionId,
 
-          offerId:
-            request.offerId,
+          offerId: request.offerId,
         };
 
-        if (
-          publication.type ===
-          'CLASSIC'
-        ) {
+        if (publication.type === 'CLASSIC') {
           await this.smartPromotionService.createClassic(
             publication.itemId,
             changes,
@@ -347,13 +274,10 @@ export class PromotionManagerService {
       }
 
       default: {
-        const exhaustiveCheck: never =
-          request;
+        const exhaustiveCheck: never = request;
 
         throw new BadRequestException(
-          `Tipo de promoción no soportado: ${String(
-            exhaustiveCheck,
-          )}`,
+          `Tipo de promoción no soportado: ${String(exhaustiveCheck)}`,
         );
       }
     }
@@ -363,18 +287,11 @@ export class PromotionManagerService {
     publication: PublicationKind,
     promotion: ManagedActivePromotion,
   ): Promise<void> {
-    const type =
-      promotion.type as
-        | ManagedPromotionType
-        | null
-        | undefined;
+    const type = promotion.type as ManagedPromotionType | null | undefined;
 
     switch (type) {
       case 'PRICE_DISCOUNT': {
-        if (
-          publication.type ===
-          'CLASSIC'
-        ) {
+        if (publication.type === 'CLASSIC') {
           await this.priceDiscountService.deleteClassicPriceDiscount(
             publication.itemId,
           );
@@ -391,19 +308,10 @@ export class PromotionManagerService {
       }
 
       case 'DEAL': {
-        const promotionId =
-          this.requirePromotionId(
-            promotion,
-          );
+        const promotionId = this.requirePromotionId(promotion);
 
-        if (
-          publication.type ===
-          'CLASSIC'
-        ) {
-          await this.dealService.deleteClassic(
-            publication.itemId,
-            promotionId,
-          );
+        if (publication.type === 'CLASSIC') {
+          await this.dealService.deleteClassic(publication.itemId, promotionId);
 
           return;
         }
@@ -418,15 +326,9 @@ export class PromotionManagerService {
       }
 
       case 'SELLER_CAMPAIGN': {
-        const promotionId =
-          this.requirePromotionId(
-            promotion,
-          );
+        const promotionId = this.requirePromotionId(promotion);
 
-        if (
-          publication.type ===
-          'CLASSIC'
-        ) {
+        if (publication.type === 'CLASSIC') {
           await this.sellerCampaignService.deleteClassic(
             publication.itemId,
             promotionId,
@@ -445,20 +347,11 @@ export class PromotionManagerService {
       }
 
       case 'SMART': {
-        const promotionId =
-          this.requirePromotionId(
-            promotion,
-          );
+        const promotionId = this.requirePromotionId(promotion);
 
-        const offerId =
-          this.requireOfferId(
-            promotion,
-          );
+        const offerId = this.requireOfferId(promotion);
 
-        if (
-          publication.type ===
-          'CLASSIC'
-        ) {
+        if (publication.type === 'CLASSIC') {
           await this.smartPromotionService.deleteClassic(
             publication.itemId,
             promotionId,
@@ -480,9 +373,7 @@ export class PromotionManagerService {
 
       default:
         throw new BadRequestException(
-          `No sabemos eliminar la promoción activa de tipo ${String(
-            type,
-          )}`,
+          `No sabemos eliminar la promoción activa de tipo ${String(type)}`,
         );
     }
   }
@@ -491,25 +382,12 @@ export class PromotionManagerService {
     itemId: string,
     expectedType: ManagedPromotionType,
   ): Promise<ManagedActivePromotion | null> {
-    for (
-      let attempt = 0;
-      attempt < 20;
-      attempt++
-    ) {
-      const detail =
-        await this.publicationDetailService.getDetail(
-          itemId,
-        );
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const detail = await this.publicationDetailService.getDetail(itemId);
 
-      const active =
-        this.getFirstActivePromotion(
-          detail.promotions?.active,
-        );
+      const active = this.getFirstActivePromotion(detail.promotions?.active);
 
-      if (
-        active?.type ===
-        expectedType
-      ) {
+      if (active?.type === expectedType) {
         return active;
       }
 
@@ -519,23 +397,11 @@ export class PromotionManagerService {
     return null;
   }
 
-  private async waitForNoActivePromotion(
-    itemId: string,
-  ): Promise<void> {
-    for (
-      let attempt = 0;
-      attempt < 10;
-      attempt++
-    ) {
-      const detail =
-        await this.publicationDetailService.getDetail(
-          itemId,
-        );
+  private async waitForNoActivePromotion(itemId: string): Promise<void> {
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const detail = await this.publicationDetailService.getDetail(itemId);
 
-      const active =
-        this.getFirstActivePromotion(
-          detail.promotions?.active,
-        );
+      const active = this.getFirstActivePromotion(detail.promotions?.active);
 
       if (!active) {
         return;
@@ -546,44 +412,25 @@ export class PromotionManagerService {
   }
 
   private getFirstActivePromotion(
-    promotions:
-      | ManagedActivePromotion[]
-      | undefined,
+    promotions: ManagedActivePromotion[] | undefined,
   ): ManagedActivePromotion | null {
-    if (
-      !Array.isArray(promotions) ||
-      promotions.length === 0
-    ) {
+    if (!Array.isArray(promotions) || promotions.length === 0) {
       return null;
     }
 
     return promotions[0] ?? null;
   }
 
-  private requirePromotionId(
-    promotion: ManagedActivePromotion,
-  ): string {
-    if (
-      typeof promotion.id !==
-        'string' ||
-      !promotion.id
-    ) {
-      throw new BadRequestException(
-        'La promoción activa no tiene promotionId',
-      );
+  private requirePromotionId(promotion: ManagedActivePromotion): string {
+    if (typeof promotion.id !== 'string' || !promotion.id) {
+      throw new BadRequestException('La promoción activa no tiene promotionId');
     }
 
     return promotion.id;
   }
 
-  private requireOfferId(
-    promotion: ManagedActivePromotion,
-  ): string {
-    if (
-      typeof promotion.ref_id !==
-        'string' ||
-      !promotion.ref_id
-    ) {
+  private requireOfferId(promotion: ManagedActivePromotion): string {
+    if (typeof promotion.ref_id !== 'string' || !promotion.ref_id) {
       throw new BadRequestException(
         'La promoción SMART activa no tiene offerId',
       );
@@ -596,57 +443,31 @@ export class PromotionManagerService {
     itemId: string,
     request: PromotionSwitchRequest,
   ): Promise<void> {
-    for (
-      let attempt = 0;
-      attempt < 10;
-      attempt++
-    ) {
-      const detail =
-        await this.publicationDetailService.getDetail(
-          itemId,
-        );
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const detail = await this.publicationDetailService.getDetail(itemId);
 
-      const candidates =
-        (detail.promotions?.candidates ??
-          []) as ManagedActivePromotion[];
+      const candidates = (detail.promotions?.candidates ??
+        []) as ManagedActivePromotion[];
 
-      const candidate =
-        candidates.find(
-          (promotion) => {
-            if (
-              promotion.type !==
-              request.type
-            ) {
-              return false;
-            }
+      const candidate = candidates.find((promotion) => {
+        if (promotion.type !== request.type) {
+          return false;
+        }
 
-            if (
-              request.type ===
-              'PRICE_DISCOUNT'
-            ) {
-              return true;
-            }
+        if (request.type === 'PRICE_DISCOUNT') {
+          return true;
+        }
 
-            if (
-              promotion.id !==
-              request.promotionId
-            ) {
-              return false;
-            }
+        if (promotion.id !== request.promotionId) {
+          return false;
+        }
 
-            if (
-              request.type ===
-              'SMART'
-            ) {
-              return (
-                promotion.ref_id ===
-                request.offerId
-              );
-            }
+        if (request.type === 'SMART') {
+          return promotion.ref_id === request.offerId;
+        }
 
-            return true;
-          },
-        );
+        return true;
+      });
 
       if (candidate) {
         return;
@@ -660,15 +481,7 @@ export class PromotionManagerService {
     );
   }
 
-  private delay(
-    milliseconds: number,
-  ): Promise<void> {
-    return new Promise(
-      (resolve) =>
-        setTimeout(
-          resolve,
-          milliseconds,
-        ),
-    );
+  private delay(milliseconds: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, milliseconds));
   }
 }

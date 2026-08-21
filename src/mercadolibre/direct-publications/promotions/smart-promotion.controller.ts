@@ -1,40 +1,22 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Param,
-  Post,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Param, Post } from '@nestjs/common';
 
 import { SmartPromotionService } from './smart-promotion.service';
 
-import type {
-  SmartPromotionUpdate,
-} from './smart-promotion.types';
+import type { SmartPromotionUpdate } from './smart-promotion.types';
 
 @Controller('mercadolibre/direct/edicion')
 export class SmartPromotionController {
-  constructor(
-    private readonly smartPromotionService:
-      SmartPromotionService,
-  ) {}
+  constructor(private readonly smartPromotionService: SmartPromotionService) {}
 
-  @Post(
-    'clasica/:itemId/promociones/smart',
-  )
+  @Post('clasica/:itemId/promociones/smart')
   createClassic(
     @Param('itemId') itemId: string,
     @Body() changes: SmartPromotionUpdate,
   ) {
-    return this.smartPromotionService.createClassic(
-      itemId,
-      changes,
-    );
+    return this.smartPromotionService.createClassic(itemId, changes);
   }
 
-  @Delete(
-    'clasica/:itemId/promociones/smart/:promotionId/:offerId',
-  )
+  @Delete('clasica/:itemId/promociones/smart/:promotionId/:offerId')
   deleteClassic(
     @Param('itemId') itemId: string,
     @Param('promotionId') promotionId: string,
@@ -47,19 +29,13 @@ export class SmartPromotionController {
     );
   }
 
-  @Post(
-    'nueva/:familyId/items/:itemId/promociones/smart',
-  )
+  @Post('nueva/:familyId/items/:itemId/promociones/smart')
   createNew(
     @Param('familyId') familyId: string,
     @Param('itemId') itemId: string,
     @Body() changes: SmartPromotionUpdate,
   ) {
-    return this.smartPromotionService.createNew(
-      familyId,
-      itemId,
-      changes,
-    );
+    return this.smartPromotionService.createNew(familyId, itemId, changes);
   }
 
   @Delete(

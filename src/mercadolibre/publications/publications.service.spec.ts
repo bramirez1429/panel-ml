@@ -1,7 +1,4 @@
-import {
-  BadRequestException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { MercadolibreChildrenRepository } from '../../database/repositories/mercadolibre-children.repository';
 import { MercadolibreProductsRepository } from '../../database/repositories/mercadolibre-products.repository';
 import { MercadolibreTokenService } from '../auth/mercadolibre-token.service';
@@ -85,13 +82,13 @@ describe('PublicationsService', () => {
   });
 
   it('rechaza paginación inválida antes de consultar Supabase', async () => {
-    await expect(
-      service.list(0, 20),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.list(0, 20)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
 
-    await expect(
-      service.list(1, 101),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.list(1, 101)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
 
     expect(getStoredConnection).not.toHaveBeenCalled();
   });
@@ -104,9 +101,7 @@ describe('PublicationsService', () => {
 
     findById.mockResolvedValue(product);
 
-    await expect(
-      service.findOne(PRODUCT_ID),
-    ).resolves.toEqual({
+    await expect(service.findOne(PRODUCT_ID)).resolves.toEqual({
       product,
     });
 
@@ -128,24 +123,22 @@ describe('PublicationsService', () => {
     findById.mockResolvedValue(product);
     findByProductId.mockResolvedValue(children);
 
-    await expect(
-      service.findOne(PRODUCT_ID),
-    ).resolves.toEqual({
+    await expect(service.findOne(PRODUCT_ID)).resolves.toEqual({
       product,
       children,
     });
   });
 
   it('valida UUID y devuelve 404 cuando no existe', async () => {
-    await expect(
-      service.findOne('MLA123'),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.findOne('MLA123')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
 
     findById.mockResolvedValue(null);
 
-    await expect(
-      service.findOne(PRODUCT_ID),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.findOne(PRODUCT_ID)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 
   it('actualiza precio SHARED en Mercado Libre y Supabase', async () => {
@@ -163,10 +156,7 @@ describe('PublicationsService', () => {
       'token-test',
     );
 
-    expect(updateProductPrice).toHaveBeenCalledWith(
-      PRODUCT_ID,
-      45000,
-    );
+    expect(updateProductPrice).toHaveBeenCalledWith(PRODUCT_ID, 45000);
   });
 
   it('actualiza precio VARIANT_PRICING en Mercado Libre y Supabase', async () => {
@@ -181,11 +171,7 @@ describe('PublicationsService', () => {
       },
     ]);
 
-    await service.updatePrice(
-      PRODUCT_ID,
-      50000,
-      'MLA222222222',
-    );
+    await service.updatePrice(PRODUCT_ID, 50000, 'MLA222222222');
 
     expect(apiPut).toHaveBeenCalledWith(
       '/items/MLA222222222',
@@ -193,16 +179,13 @@ describe('PublicationsService', () => {
       'token-test',
     );
 
-    expect(updateChildPrice).toHaveBeenCalledWith(
-      'MLA222222222',
-      50000,
-    );
+    expect(updateChildPrice).toHaveBeenCalledWith('MLA222222222', 50000);
   });
 
   it('rechaza precio menor o igual a cero', async () => {
-    await expect(
-      service.updatePrice(PRODUCT_ID, 0),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.updatePrice(PRODUCT_ID, 0)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
 
     expect(apiPut).not.toHaveBeenCalled();
   });
@@ -214,13 +197,11 @@ describe('PublicationsService', () => {
       parent_item_id: 'MLA111111111',
     });
 
-    apiPut.mockRejectedValue(
-      new Error('Mercado Libre falló'),
-    );
+    apiPut.mockRejectedValue(new Error('Mercado Libre falló'));
 
-    await expect(
-      service.updatePrice(PRODUCT_ID, 45000),
-    ).rejects.toThrow('Mercado Libre falló');
+    await expect(service.updatePrice(PRODUCT_ID, 45000)).rejects.toThrow(
+      'Mercado Libre falló',
+    );
 
     expect(updateProductPrice).not.toHaveBeenCalled();
     expect(updateChildPrice).not.toHaveBeenCalled();

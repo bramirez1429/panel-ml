@@ -1,7 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 
 import { MercadolibreTokenService } from '../../auth/mercadolibre-token.service';
 import { MercadolibreApiService } from '../../shared/mercadolibre-api.service';
@@ -15,7 +12,6 @@ import type {
   UserProductStockResponse,
 } from './stock.types';
 
-
 @Injectable()
 export class StockService {
   constructor(
@@ -24,118 +20,75 @@ export class StockService {
     private readonly itemsService: ItemsService,
   ) {}
 
-/** Consulta stock actual de una publicación clásica. */
-async getClassicStock(itemId: string) {
-  const accessToken =
-    await this.tokenService.getValidAccessToken();
+  /** Consulta stock actual de una publicación clásica. */
+  async getClassicStock(itemId: string) {
+    const accessToken = await this.tokenService.getValidAccessToken();
 
-  const item = await this.itemsService.getOne(
-    itemId,
-    accessToken,
-  );
+    const item = await this.itemsService.getOne(itemId, accessToken);
 
-  if (
-    PublicationsMapper.getModel(item) !== 'SHARED'
-  ) {
-    throw new BadRequestException(
-      'La publicación no es versión clásica',
-    );
+    if (PublicationsMapper.getModel(item) !== 'SHARED') {
+      throw new BadRequestException('La publicación no es versión clásica');
+    }
+
+    return {
+      model: 'SHARED',
+      itemId: item.id,
+      availableQuantity: item.available_quantity ?? null,
+      variations: item.variations ?? [],
+    };
   }
 
-  return {
-    model: 'SHARED',
-    itemId: item.id,
-    availableQuantity:
-      item.available_quantity ?? null,
-    variations: item.variations ?? [],
-  };
-}
+  /** Consulta stock real de un User Product de versión nueva. */
+  async getNewStock(familyId: string, itemId: string) {
+    const accessToken = await this.tokenService.getValidAccessToken();
 
-/** Consulta stock real de un User Product de versión nueva. */
-async getNewStock(
-  familyId: string,
-  itemId: string,
-) {
-  const accessToken =
-    await this.tokenService.getValidAccessToken();
+    const item = await this.itemsService.getOne(itemId, accessToken);
 
-  const item = await this.itemsService.getOne(
-    itemId,
-    accessToken,
-  );
+    if (PublicationsMapper.getModel(item) !== 'VARIANT_PRICING') {
+      throw new BadRequestException('La publicación no es versión nueva');
+    }
 
-  if (
-    PublicationsMapper.getModel(item) !==
-    'VARIANT_PRICING'
-  ) {
-    throw new BadRequestException(
-      'La publicación no es versión nueva',
-    );
-  }
+    if (String(item.family_id ?? '') !== familyId) {
+      throw new BadRequestException(
+        'El MLA no pertenece a la familia indicada',
+      );
+    }
 
-  if (
-    String(item.family_id ?? '') !== familyId
-  ) {
-    throw new BadRequestException(
-      'El MLA no pertenece a la familia indicada',
-    );
-  }
+    const userProductId = item.user_product_id;
 
-  const userProductId =
-    item.user_product_id;
+    if (!userProductId) {
+      throw new BadRequestException('La publicación no tiene userProductId');
+    }
 
-  if (!userProductId) {
-    throw new BadRequestException(
-      'La publicación no tiene userProductId',
-    );
-  }
-
-  const stock =
-    await this.apiService.getWithMeta<UserProductStockResponse>(
+    const stock = await this.apiService.getWithMeta<UserProductStockResponse>(
       `/user-products/${userProductId}/stock`,
       accessToken,
     );
 
-  return {
-    model: 'VARIANT_PRICING',
-    itemId: item.id,
-    familyId,
-    userProductId,
+    return {
+      model: 'VARIANT_PRICING',
+      itemId: item.id,
+      familyId,
+      userProductId,
 
-    itemAvailableQuantity:
-      item.available_quantity ?? null,
+      itemAvailableQuantity: item.available_quantity ?? null,
 
-    xVersion:
-      stock.headers.get('x-version'),
+      xVersion: stock.headers.get('x-version'),
 
-    locations:
-      stock.data.locations ?? [],
-  };
-}
-
-
+      locations: stock.data.locations ?? [],
+    };
+  }
 
   /** Stock de publicación clásica. */
-  async updateClassic(
-    itemId: string,
-    changes: ClassicStockUpdate,
-  ) {
+  async updateClassic(itemId: string, changes: ClassicStockUpdate) {
     this.validateQuantity(changes.quantity);
 
-    const accessToken =
-      await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken();
 
-    const item = await this.itemsService.getOne(
-      itemId,
-      accessToken,
-    );
+    const item = await this.itemsService.getOne(itemId, accessToken);
 
-    if (
-      PublicationsMapper.getModel(item) !== 'SHARED'
-    ) {
-      throw new BadRequestException(
-        'La publicación no es versión clásica',
-      );
+    if (PublicationsMapper.getModel(item) !== 'SHARED') {
+      throw new BadRequestException('La publicación no es versión clásica');
     }
 
     if (changes.variationId !== undefined) {
@@ -163,76 +116,49 @@ async getNewStock(
   }
 
   /** Stock de una variante de publicación nueva. */
-  async updateNew(
-    familyId: string,
-    itemId: string,
-    changes: NewStockUpdate,
-  ) {
+  async updateNew(familyId: string, itemId: string, changes: NewStockUpdate) {
     this.validateQuantity(changes.quantity);
 
-    const accessToken =
-      await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken();
 
-    const item = await this.itemsService.getOne(
-      itemId,
-      accessToken,
-    );
+    const item = await this.itemsService.getOne(itemId, accessToken);
 
-    if (
-      PublicationsMapper.getModel(item) !==
-      'VARIANT_PRICING'
-    ) {
-      throw new BadRequestException(
-        'La publicación no es versión nueva',
-      );
+    if (PublicationsMapper.getModel(item) !== 'VARIANT_PRICING') {
+      throw new BadRequestException('La publicación no es versión nueva');
     }
 
-    if (
-      String(item.family_id ?? '') !== familyId
-    ) {
+    if (String(item.family_id ?? '') !== familyId) {
       throw new BadRequestException(
         'El MLA no pertenece a la familia indicada',
       );
     }
 
-    const userProductId =
-      item.user_product_id;
+    const userProductId = item.user_product_id;
 
     if (!userProductId) {
-      throw new BadRequestException(
-        'La publicación no tiene userProductId',
-      );
+      throw new BadRequestException('La publicación no tiene userProductId');
     }
 
-    const stock =
-      await this.apiService.getWithMeta<UserProductStockResponse>(
-        `/user-products/${userProductId}/stock`,
-        accessToken,
-      );
+    const stock = await this.apiService.getWithMeta<UserProductStockResponse>(
+      `/user-products/${userProductId}/stock`,
+      accessToken,
+    );
 
-    const xVersion =
-      stock.headers.get('x-version');
+    const xVersion = stock.headers.get('x-version');
 
-    const sellerWarehouses =
-      stock.data.locations.filter(
-        (location) =>
-          location.type === 'seller_warehouse',
-      );
+    const sellerWarehouses = stock.data.locations.filter(
+      (location) => location.type === 'seller_warehouse',
+    );
 
     if (sellerWarehouses.length > 0) {
-      if (
-        !changes.storeId ||
-        !changes.networkNodeId
-      ) {
+      if (!changes.storeId || !changes.networkNodeId) {
         throw new BadRequestException(
           'Este producto usa stock multiorigen: faltan storeId y networkNodeId',
         );
       }
 
       if (!xVersion) {
-        throw new BadRequestException(
-          'Mercado Libre no devolvió x-version',
-        );
+        throw new BadRequestException('Mercado Libre no devolvió x-version');
       }
 
       return this.apiService.putWithHeaders(
@@ -241,8 +167,7 @@ async getNewStock(
           locations: [
             {
               store_id: changes.storeId,
-              network_node_id:
-                changes.networkNodeId,
+              network_node_id: changes.networkNodeId,
               quantity: changes.quantity,
             },
           ],
@@ -254,17 +179,13 @@ async getNewStock(
       );
     }
 
-    const sellingAddress =
-      stock.data.locations.some(
-        (location) =>
-          location.type === 'selling_address',
-      );
+    const sellingAddress = stock.data.locations.some(
+      (location) => location.type === 'selling_address',
+    );
 
     if (sellingAddress) {
       if (!xVersion) {
-        throw new BadRequestException(
-          'Mercado Libre no devolvió x-version',
-        );
+        throw new BadRequestException('Mercado Libre no devolvió x-version');
       }
 
       return this.apiService.putWithHeaders(
@@ -284,20 +205,14 @@ async getNewStock(
     return this.apiService.put(
       `/items/${itemId}`,
       {
-        available_quantity:
-          changes.quantity,
+        available_quantity: changes.quantity,
       },
       accessToken,
     );
   }
 
-  private validateQuantity(
-    quantity: number,
-  ): void {
-    if (
-      !Number.isInteger(quantity) ||
-      quantity < 0
-    ) {
+  private validateQuantity(quantity: number): void {
+    if (!Number.isInteger(quantity) || quantity < 0) {
       throw new BadRequestException(
         'El stock debe ser un entero mayor o igual a 0',
       );

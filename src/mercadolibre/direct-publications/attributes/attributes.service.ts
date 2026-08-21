@@ -1,22 +1,13 @@
-import {
-  BadRequestException,
-  Injectable,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 
 import { MercadolibreTokenService } from '../../auth/mercadolibre-token.service';
 import { MercadolibreApiService } from '../../shared/mercadolibre-api.service';
 
-import type {
-  MlAttribute,
-  MlItem,
-} from '../items/items.types';
+import type { MlAttribute, MlItem } from '../items/items.types';
 
 import { PublicationsMapper } from '../publications/publications.mapper';
 
-import type {
-  AttributeInput,
-  AttributeUpdate,
-} from './attributes.types';
+import type { AttributeInput, AttributeUpdate } from './attributes.types';
 
 type MlVariationAttribute = {
   id: string;
@@ -42,35 +33,21 @@ type MlVariation = {
 @Injectable()
 export class AttributesService {
   constructor(
-    private readonly tokenService:
-      MercadolibreTokenService,
+    private readonly tokenService: MercadolibreTokenService,
 
-    private readonly apiService:
-      MercadolibreApiService,
+    private readonly apiService: MercadolibreApiService,
   ) {}
 
   /**
    * Lee atributos de publicación clásica.
    */
-  async getClassic(
-    itemId: string,
-  ) {
-    const accessToken =
-      await this.tokenService.getValidAccessToken();
+  async getClassic(itemId: string) {
+    const accessToken = await this.tokenService.getValidAccessToken();
 
-    const item =
-      await this.getItemWithAttributes(
-        itemId,
-        accessToken,
-      );
+    const item = await this.getItemWithAttributes(itemId, accessToken);
 
-    if (
-      PublicationsMapper.getModel(item) !==
-      'SHARED'
-    ) {
-      throw new BadRequestException(
-        'La publicación no es versión clásica',
-      );
+    if (PublicationsMapper.getModel(item) !== 'SHARED') {
+      throw new BadRequestException('La publicación no es versión clásica');
     }
 
     return {
@@ -78,66 +55,37 @@ export class AttributesService {
 
       itemId: item.id,
 
-      categoryId:
-        item.category_id ?? null,
+      categoryId: item.category_id ?? null,
 
-      attributes:
-        item.attributes ?? [],
+      attributes: item.attributes ?? [],
 
-      variations:
-        this.getVariations(
-          item.variations,
-        ).map((variation) => ({
-          id: variation.id,
+      variations: this.getVariations(item.variations).map((variation) => ({
+        id: variation.id,
 
-          soldQuantity:
-            variation.sold_quantity ?? 0,
+        soldQuantity: variation.sold_quantity ?? 0,
 
-          attributeCombinations:
-            variation.attribute_combinations ??
-            [],
+        attributeCombinations: variation.attribute_combinations ?? [],
 
-          attributes:
-            variation.attributes ?? [],
-        })),
+        attributes: variation.attributes ?? [],
+      })),
     };
   }
 
   /**
    * Edita atributo general de clásica.
    */
-  async updateClassicItemAttribute(
-    itemId: string,
-    changes: AttributeUpdate,
-  ) {
-    const accessToken =
-      await this.tokenService.getValidAccessToken();
+  async updateClassicItemAttribute(itemId: string, changes: AttributeUpdate) {
+    const accessToken = await this.tokenService.getValidAccessToken();
 
-    const item =
-      await this.getItemWithAttributes(
-        itemId,
-        accessToken,
-      );
+    const item = await this.getItemWithAttributes(itemId, accessToken);
 
-    if (
-      PublicationsMapper.getModel(item) !==
-      'SHARED'
-    ) {
-      throw new BadRequestException(
-        'La publicación no es versión clásica',
-      );
+    if (PublicationsMapper.getModel(item) !== 'SHARED') {
+      throw new BadRequestException('La publicación no es versión clásica');
     }
 
-    const attribute =
-      this.normalizeAttribute(
-        changes.attribute,
-      );
+    const attribute = this.normalizeAttribute(changes.attribute);
 
-    const attributes =
-      this.mergeAttribute(
-        item.attributes ?? [],
-        attribute,
-      );
+    const attributes = this.mergeAttribute(item.attributes ?? [], attribute);
 
     return this.apiService.put<MlItem>(
       `/items/${item.id}`,
@@ -157,62 +105,34 @@ export class AttributesService {
     variationId: string,
     changes: AttributeUpdate,
   ) {
-    const accessToken =
-      await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken();
 
-    const item =
-      await this.getItemWithAttributes(
-        itemId,
-        accessToken,
-      );
+    const item = await this.getItemWithAttributes(itemId, accessToken);
 
-    if (
-      PublicationsMapper.getModel(item) !==
-      'SHARED'
-    ) {
-      throw new BadRequestException(
-        'La publicación no es versión clásica',
-      );
+    if (PublicationsMapper.getModel(item) !== 'SHARED') {
+      throw new BadRequestException('La publicación no es versión clásica');
     }
 
-    const variations =
-      this.getVariations(
-        item.variations,
-      );
+    const variations = this.getVariations(item.variations);
 
-    const target =
-      this.findVariation(
-        variations,
-        variationId,
-      );
+    const target = this.findVariation(variations, variationId);
 
-    const attribute =
-      this.normalizeAttribute(
-        changes.attribute,
-      );
+    const attribute = this.normalizeAttribute(changes.attribute);
 
-    const attributes =
-      this.mergeAttribute(
-        target.attributes ?? [],
-        attribute,
-      );
+    const attributes = this.mergeAttribute(target.attributes ?? [], attribute);
 
-    const payload =
-      variations.map((variation) => {
-        if (
-          String(variation.id) !==
-          variationId
-        ) {
-          return {
-            id: variation.id,
-          };
-        }
-
+    const payload = variations.map((variation) => {
+      if (String(variation.id) !== variationId) {
         return {
           id: variation.id,
-          attributes,
         };
-      });
+      }
+
+      return {
+        id: variation.id,
+        attributes,
+      };
+    });
 
     return this.apiService.put<MlItem>(
       `/items/${item.id}`,
@@ -232,73 +152,44 @@ export class AttributesService {
     variationId: string,
     changes: AttributeUpdate,
   ) {
-    const accessToken =
-      await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken();
 
-    const item =
-      await this.getItemWithAttributes(
-        itemId,
-        accessToken,
-      );
+    const item = await this.getItemWithAttributes(itemId, accessToken);
 
-    if (
-      PublicationsMapper.getModel(item) !==
-      'SHARED'
-    ) {
-      throw new BadRequestException(
-        'La publicación no es versión clásica',
-      );
+    if (PublicationsMapper.getModel(item) !== 'SHARED') {
+      throw new BadRequestException('La publicación no es versión clásica');
     }
 
-    const variations =
-      this.getVariations(
-        item.variations,
-      );
+    const variations = this.getVariations(item.variations);
 
-    const target =
-      this.findVariation(
-        variations,
-        variationId,
-      );
+    const target = this.findVariation(variations, variationId);
 
-    if (
-      (target.sold_quantity ?? 0) > 0
-    ) {
+    if ((target.sold_quantity ?? 0) > 0) {
       throw new BadRequestException(
         'No modificamos atributos de combinación de una variación que ya tiene ventas',
       );
     }
 
-    const attribute =
-      this.normalizeAttribute(
-        changes.attribute,
-      );
+    const attribute = this.normalizeAttribute(changes.attribute);
 
-    const combinations =
-      this.mergeAttribute(
-        target.attribute_combinations ??
-          [],
-        attribute,
-      );
+    const combinations = this.mergeAttribute(
+      target.attribute_combinations ?? [],
+      attribute,
+    );
 
-    const payload =
-      variations.map((variation) => {
-        if (
-          String(variation.id) !==
-          variationId
-        ) {
-          return {
-            id: variation.id,
-          };
-        }
-
+    const payload = variations.map((variation) => {
+      if (String(variation.id) !== variationId) {
         return {
           id: variation.id,
-
-          attribute_combinations:
-            combinations,
         };
-      });
+      }
+
+      return {
+        id: variation.id,
+
+        attribute_combinations: combinations,
+      };
+    });
 
     return this.apiService.put<MlItem>(
       `/items/${item.id}`,
@@ -312,23 +203,12 @@ export class AttributesService {
   /**
    * Lee atributos de publicación nueva.
    */
-  async getNew(
-    familyId: string,
-    itemId: string,
-  ) {
-    const accessToken =
-      await this.tokenService.getValidAccessToken();
+  async getNew(familyId: string, itemId: string) {
+    const accessToken = await this.tokenService.getValidAccessToken();
 
-    const item =
-      await this.getItemWithAttributes(
-        itemId,
-        accessToken,
-      );
+    const item = await this.getItemWithAttributes(itemId, accessToken);
 
-    this.validateNew(
-      familyId,
-      item,
-    );
+    this.validateNew(familyId, item);
 
     return {
       model: 'VARIANT_PRICING',
@@ -337,14 +217,11 @@ export class AttributesService {
 
       itemId: item.id,
 
-      userProductId:
-        item.user_product_id ?? null,
+      userProductId: item.user_product_id ?? null,
 
-      categoryId:
-        item.category_id ?? null,
+      categoryId: item.category_id ?? null,
 
-      attributes:
-        item.attributes ?? [],
+      attributes: item.attributes ?? [],
     };
   }
 
@@ -356,30 +233,15 @@ export class AttributesService {
     itemId: string,
     changes: AttributeUpdate,
   ) {
-    const accessToken =
-      await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken();
 
-    const item =
-      await this.getItemWithAttributes(
-        itemId,
-        accessToken,
-      );
+    const item = await this.getItemWithAttributes(itemId, accessToken);
 
-    this.validateNew(
-      familyId,
-      item,
-    );
+    this.validateNew(familyId, item);
 
-    const attribute =
-      this.normalizeAttribute(
-        changes.attribute,
-      );
+    const attribute = this.normalizeAttribute(changes.attribute);
 
-    const attributes =
-      this.mergeAttribute(
-        item.attributes ?? [],
-        attribute,
-      );
+    const attributes = this.mergeAttribute(item.attributes ?? [], attribute);
 
     return this.apiService.put<MlItem>(
       `/items/${item.id}`,
@@ -400,44 +262,29 @@ export class AttributesService {
     );
   }
 
-  private normalizeAttribute(
-    attribute: AttributeInput,
-  ): MlAttribute {
+  private normalizeAttribute(attribute: AttributeInput): MlAttribute {
     if (
       !attribute ||
       typeof attribute.id !== 'string' ||
       !attribute.id.trim()
     ) {
-      throw new BadRequestException(
-        'Atributo inválido',
-      );
+      throw new BadRequestException('Atributo inválido');
     }
 
-    const hasValueId =
-      Object.prototype.hasOwnProperty.call(
-        attribute,
-        'valueId',
-      );
+    const hasValueId = Object.prototype.hasOwnProperty.call(
+      attribute,
+      'valueId',
+    );
 
-    const hasValueName =
-      Object.prototype.hasOwnProperty.call(
-        attribute,
-        'valueName',
-      );
+    const hasValueName = Object.prototype.hasOwnProperty.call(
+      attribute,
+      'valueName',
+    );
 
-    const hasValues =
-      Array.isArray(
-        attribute.values,
-      );
+    const hasValues = Array.isArray(attribute.values);
 
-    if (
-      !hasValueId &&
-      !hasValueName &&
-      !hasValues
-    ) {
-      throw new BadRequestException(
-        'Debes enviar valueId, valueName o values',
-      );
+    if (!hasValueId && !hasValueName && !hasValues) {
+      throw new BadRequestException('Debes enviar valueId, valueName o values');
     }
 
     return {
@@ -445,22 +292,19 @@ export class AttributesService {
 
       ...(hasValueId
         ? {
-            value_id:
-              attribute.valueId ?? null,
+            value_id: attribute.valueId ?? null,
           }
         : {}),
 
       ...(hasValueName
         ? {
-            value_name:
-              attribute.valueName ?? null,
+            value_name: attribute.valueName ?? null,
           }
         : {}),
 
       ...(hasValues
         ? {
-            values:
-              attribute.values,
+            values: attribute.values,
           }
         : {}),
     };
@@ -470,45 +314,30 @@ export class AttributesService {
     T extends {
       id: string;
     },
-  >(
-    current: T[],
-    attribute: MlAttribute,
-  ): Array<T | MlAttribute> {
-    const index =
-      current.findIndex(
-        (item) =>
-          item.id === attribute.id,
-      );
+  >(current: T[], attribute: MlAttribute): Array<T | MlAttribute> {
+    const index = current.findIndex((item) => item.id === attribute.id);
 
     if (index < 0) {
-      return [
-        ...current,
-        attribute,
-      ];
+      return [...current, attribute];
     }
 
-    return current.map(
-      (item, itemIndex) =>
-        itemIndex === index
-          ? {
-              ...item,
-              ...attribute,
-            }
-          : item,
+    return current.map((item, itemIndex) =>
+      itemIndex === index
+        ? {
+            ...item,
+            ...attribute,
+          }
+        : item,
     );
   }
 
-  private getVariations(
-    variations: unknown[] | undefined,
-  ): MlVariation[] {
+  private getVariations(variations: unknown[] | undefined): MlVariation[] {
     if (!Array.isArray(variations)) {
       return [];
     }
 
     return variations.filter(
-      (
-        variation,
-      ): variation is MlVariation =>
+      (variation): variation is MlVariation =>
         typeof variation === 'object' &&
         variation !== null &&
         'id' in variation,
@@ -519,48 +348,30 @@ export class AttributesService {
     variations: MlVariation[],
     variationId: string,
   ): MlVariation {
-    const variation =
-      variations.find(
-        (item) =>
-          String(item.id) ===
-          variationId,
-      );
+    const variation = variations.find(
+      (item) => String(item.id) === variationId,
+    );
 
     if (!variation) {
-      throw new BadRequestException(
-        'La variación indicada no existe',
-      );
+      throw new BadRequestException('La variación indicada no existe');
     }
 
     return variation;
   }
 
-  private validateNew(
-    familyId: string,
-    item: MlItem,
-  ): void {
-    if (
-      PublicationsMapper.getModel(item) !==
-      'VARIANT_PRICING'
-    ) {
-      throw new BadRequestException(
-        'La publicación no es versión nueva',
-      );
+  private validateNew(familyId: string, item: MlItem): void {
+    if (PublicationsMapper.getModel(item) !== 'VARIANT_PRICING') {
+      throw new BadRequestException('La publicación no es versión nueva');
     }
 
-    if (
-      String(item.family_id ?? '') !==
-      familyId
-    ) {
+    if (String(item.family_id ?? '') !== familyId) {
       throw new BadRequestException(
         'El MLA no pertenece a la familia indicada',
       );
     }
 
     if (!item.user_product_id) {
-      throw new BadRequestException(
-        'La publicación no tiene userProductId',
-      );
+      throw new BadRequestException('La publicación no tiene userProductId');
     }
   }
 }

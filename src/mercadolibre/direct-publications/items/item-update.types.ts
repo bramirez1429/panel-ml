@@ -1,7 +1,4 @@
-export type EditableItemStatus =
-  | 'active'
-  | 'paused'
-  | 'closed';
+export type EditableItemStatus = 'active' | 'paused' | 'closed';
 
 export type EditableAttributeValue = {
   id?: string | null;

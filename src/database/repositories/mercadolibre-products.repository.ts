@@ -195,62 +195,57 @@ export class MercadolibreProductsRepository {
   }
 
   /** Actualiza el precio guardado de un producto. */
-async updatePrice(id: string, price: number): Promise<void> {
-  const { error } = await this.supabaseService
-    .getClient()
-    .from('mercadolibre_products')
-    .update({
-      price_from: price,
-      price_to: price,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', id);
+  async updatePrice(id: string, price: number): Promise<void> {
+    const { error } = await this.supabaseService
+      .getClient()
+      .from('mercadolibre_products')
+      .update({
+        price_from: price,
+        price_to: price,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id);
 
-  if (error) this.writeError();
-}
+    if (error) this.writeError();
+  }
 
-/** Actualiza el stock total de una publicación SHARED. */
-async updateStock(id: string, stock: number): Promise<void> {
-  const { error } = await this.supabaseService
-    .getClient()
-    .from('mercadolibre_products')
-    .update({
-      stock_total: stock,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', id);
+  /** Actualiza el stock total de una publicación SHARED. */
+  async updateStock(id: string, stock: number): Promise<void> {
+    const { error } = await this.supabaseService
+      .getClient()
+      .from('mercadolibre_products')
+      .update({
+        stock_total: stock,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id);
 
-  if (error) this.writeError();
-}
+    if (error) this.writeError();
+  }
 
+  /** Actualiza el stock de una variación SHARED y recalcula el total. */
+  async updateVariationStock(
+    id: string,
+    variationId: number,
+    stock: number,
+  ): Promise<void> {
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('mercadolibre_products')
+      .select('shared_variations')
+      .eq('id', id)
+      .maybeSingle();
 
+    if (error || !data) this.readError();
 
-/** Actualiza el stock de una variación SHARED y recalcula el total. */
-async updateVariationStock(
-  id: string,
-  variationId: number,
-  stock: number,
-): Promise<void> {
-  const { data, error } = await this.supabaseService
-    .getClient()
-    .from('mercadolibre_products')
-    .select('shared_variations')
-    .eq('id', id)
-    .maybeSingle();
+    const variations: Json[] = Array.isArray(data.shared_variations)
+      ? data.shared_variations
+      : [];
 
-  if (error || !data) this.readError();
-
-  const variations: Json[] = Array.isArray(data.shared_variations)
-    ? data.shared_variations
-    : [];
-
-  const updatedVariations: Json[] = variations.map(
-    (variation): Json => {
+    const updatedVariations: Json[] = variations.map((variation): Json => {
       if (!isJsonObject(variation)) return variation;
 
-      const currentId = Number(
-        variation.id ?? variation.variation_id,
-      );
+      const currentId = Number(variation.id ?? variation.variation_id);
 
       if (currentId !== variationId) {
         return variation;
@@ -260,47 +255,33 @@ async updateVariationStock(
         ...variation,
         available_quantity: stock,
       };
-    },
-  );
+    });
 
-  const stockTotal = updatedVariations.reduce<number>(
-    (total, variation) => {
+    const stockTotal = updatedVariations.reduce<number>((total, variation) => {
       if (!isJsonObject(variation)) return total;
 
-      const quantity = Number(
-        variation.available_quantity ?? 0,
-      );
+      const quantity = Number(variation.available_quantity ?? 0);
 
-      return total + (
-        Number.isFinite(quantity) ? quantity : 0
-      );
-    },
-    0,
-  );
+      return total + (Number.isFinite(quantity) ? quantity : 0);
+    }, 0);
 
-  const { error: updateError } = await this.supabaseService
-    .getClient()
-    .from('mercadolibre_products')
-    .update({
-      shared_variations: updatedVariations,
-      stock_total: stockTotal,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', id);
+    const { error: updateError } = await this.supabaseService
+      .getClient()
+      .from('mercadolibre_products')
+      .update({
+        shared_variations: updatedVariations,
+        stock_total: stockTotal,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id);
 
-  if (updateError) this.writeError();
-}
-
-
+    if (updateError) this.writeError();
+  }
 }
 function isJsonObject(
   value: Json,
 ): value is { [key: string]: Json | undefined } {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    !Array.isArray(value)
-  );
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 /** Divide una lista para limitar cada escritura. */
 function chunk<T>(values: T[], size: number): T[][] {
@@ -310,5 +291,3 @@ function chunk<T>(values: T[], size: number): T[][] {
   }
   return result;
 }
-
-
