@@ -20,8 +20,8 @@ export class ShippingService {
     private readonly itemsService: ItemsService,
   ) {}
 
-  async getClassic(itemId: string) {
-    const accessToken = await this.tokenService.getValidAccessToken();
+  async getClassic(userId: string, itemId: string) {
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 
@@ -36,8 +36,8 @@ export class ShippingService {
     };
   }
 
-  async updateClassic(itemId: string, changes: ShippingUpdate) {
-    const accessToken = await this.tokenService.getValidAccessToken();
+  async updateClassic(userId: string, itemId: string, changes: ShippingUpdate) {
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 
@@ -56,8 +56,8 @@ export class ShippingService {
     );
   }
 
-  async getNew(familyId: string, itemId: string) {
-    const accessToken = await this.tokenService.getValidAccessToken();
+  async getNew(userId: string, familyId: string, itemId: string) {
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 
@@ -72,8 +72,13 @@ export class ShippingService {
     };
   }
 
-  async updateNew(familyId: string, itemId: string, changes: ShippingUpdate) {
-    const accessToken = await this.tokenService.getValidAccessToken();
+  async updateNew(
+    userId: string,
+    familyId: string,
+    itemId: string,
+    changes: ShippingUpdate,
+  ) {
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 

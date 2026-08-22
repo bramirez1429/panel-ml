@@ -8,6 +8,7 @@ const NEXT_BATCH_DELAY_SECONDS = 15;
 const RATE_LIMIT_BACKOFF_SECONDS = [60, 120, 240] as const;
 
 export interface PublicationSyncQueueMessage {
+  userId: string;
   syncId: string;
 }
 
@@ -31,8 +32,12 @@ export class PublicationSyncQueueService {
   constructor(private readonly syncJobService: PublicationSyncJobService) {}
 
   /** Publica una invocación durable del siguiente batch. */
-  async enqueue(syncId: string, delaySeconds?: number): Promise<void> {
-    const message: PublicationSyncQueueMessage = { syncId };
+  async enqueue(
+    userId: string,
+    syncId: string,
+    delaySeconds?: number,
+  ): Promise<void> {
+    const message: PublicationSyncQueueMessage = { userId, syncId };
     if (delaySeconds === undefined) {
       await send(PUBLICATION_SYNC_QUEUE_TOPIC, message);
       return;
@@ -43,10 +48,17 @@ export class PublicationSyncQueueService {
   /** Procesa un mensaje y publica el siguiente cuando corresponde. */
   async consume(message: PublicationSyncQueueMessage): Promise<void> {
     try {
-      const result = await this.syncJobService.processNext(message.syncId);
+      const result = await this.syncJobService.processNext(
+        message.userId,
+        message.syncId,
+      );
 
       if (result.hasMore) {
-        await this.enqueue(message.syncId, NEXT_BATCH_DELAY_SECONDS);
+        await this.enqueue(
+          message.userId,
+          message.syncId,
+          NEXT_BATCH_DELAY_SECONDS,
+        );
       }
     } catch (error) {
       if (error instanceof ConflictException) return;

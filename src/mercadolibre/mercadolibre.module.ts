@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AuthModule } from '../auth/auth.module';
 import { MercadolibreChildrenRepository } from '../database/repositories/mercadolibre-children.repository';
 import { MercadolibreProductsRepository } from '../database/repositories/mercadolibre-products.repository';
 import { MercadolibreSyncJobsRepository } from '../database/repositories/mercadolibre-sync-jobs.repository';
@@ -60,6 +61,7 @@ import { ShippingService } from './direct-publications/shipping/shipping.service
 import { ShippingController } from './direct-publications/shipping/shipping.controller';
 
 @Module({
+  imports: [AuthModule],
   controllers: [
     MercadolibreController,
     PublicationsController,

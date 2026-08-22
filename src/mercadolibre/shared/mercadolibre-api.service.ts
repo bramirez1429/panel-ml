@@ -211,11 +211,9 @@ export class MercadolibreApiService {
       if (!response.ok) {
         this.throwApiError(response.status, kind);
       }
-
-      return {
-        data: undefined as T,
-        headers: response.headers,
-      };
+      throw new BadGatewayException(
+        'Mercado Libre devolvi\u00f3 una respuesta inv\u00e1lida',
+      );
     }
 
     if (!response.ok) {

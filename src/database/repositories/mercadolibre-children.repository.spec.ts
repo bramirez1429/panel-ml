@@ -4,19 +4,20 @@ import { MercadolibreChildrenRepository } from './mercadolibre-children.reposito
 
 describe('MercadolibreChildrenRepository updatePrice', () => {
   const eq = jest.fn();
-  const update = jest.fn();
+  let updatedValues: Record<string, unknown> | undefined;
+  const update = jest.fn((values: Record<string, unknown>) => {
+    updatedValues = values;
+    return { eq };
+  });
   const from = jest.fn();
 
   let repository: MercadolibreChildrenRepository;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    updatedValues = undefined;
 
     eq.mockResolvedValue({ error: null });
-
-    update.mockReturnValue({
-      eq,
-    });
 
     from.mockReturnValue({
       update,
@@ -34,12 +35,8 @@ describe('MercadolibreChildrenRepository updatePrice', () => {
 
     expect(from).toHaveBeenCalledWith('mercadolibre_product_children');
 
-    expect(update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        price: 50000,
-        updated_at: expect.any(String),
-      }),
-    );
+    expect(updatedValues?.price).toBe(50000);
+    expect(typeof updatedValues?.updated_at).toBe('string');
 
     expect(eq).toHaveBeenCalledWith('item_id', 'MLA123456789');
   });

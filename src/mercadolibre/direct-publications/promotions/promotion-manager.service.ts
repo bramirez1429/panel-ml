@@ -40,10 +40,12 @@ export class PromotionManagerService {
   ) {}
 
   async switchClassic(
+    userId: string,
     itemId: string,
     request: PromotionSwitchRequest,
   ): Promise<PromotionManagerResult> {
     return this.switchPromotion(
+      userId,
       {
         type: 'CLASSIC',
         itemId,
@@ -53,11 +55,13 @@ export class PromotionManagerService {
   }
 
   async switchNew(
+    userId: string,
     familyId: string,
     itemId: string,
     request: PromotionSwitchRequest,
   ): Promise<PromotionManagerResult> {
     return this.switchPromotion(
+      userId,
       {
         type: 'NEW',
         familyId,
@@ -68,10 +72,12 @@ export class PromotionManagerService {
   }
 
   private async switchPromotion(
+    userId: string,
     publication: PublicationKind,
     request: PromotionSwitchRequest,
   ): Promise<PromotionManagerResult> {
     const before = await this.publicationDetailService.getDetail(
+      userId,
       publication.itemId,
     );
 
@@ -82,18 +88,19 @@ export class PromotionManagerService {
     let removedPreviousPromotion = false;
 
     if (previousPromotion) {
-      await this.removePromotion(publication, previousPromotion);
+      await this.removePromotion(userId, publication, previousPromotion);
 
       removedPreviousPromotion = true;
 
-      await this.waitForNoActivePromotion(publication.itemId);
+      await this.waitForNoActivePromotion(userId, publication.itemId);
     }
 
-    await this.waitForCandidate(publication.itemId, request);
+    await this.waitForCandidate(userId, publication.itemId, request);
 
-    await this.activatePromotionWithRetry(publication, request);
+    await this.activatePromotionWithRetry(userId, publication, request);
 
     const activePromotion = await this.waitForPromotion(
+      userId,
       publication.itemId,
       request.type,
     );
@@ -116,6 +123,7 @@ export class PromotionManagerService {
   }
 
   private async activatePromotionWithRetry(
+    userId: string,
     publication: PublicationKind,
     request: PromotionSwitchRequest,
   ): Promise<void> {
@@ -123,7 +131,7 @@ export class PromotionManagerService {
 
     for (let attempt = 0; attempt < 10; attempt++) {
       try {
-        await this.activatePromotion(publication, request);
+        await this.activatePromotion(userId, publication, request);
 
         return;
       } catch (error) {
@@ -147,7 +155,7 @@ export class PromotionManagerService {
       getResponse?: () => unknown;
     };
 
-    let response: unknown | undefined;
+    let response: unknown;
 
     try {
       response =
@@ -166,6 +174,7 @@ export class PromotionManagerService {
   }
 
   private async activatePromotion(
+    userId: string,
     publication: PublicationKind,
     request: PromotionSwitchRequest,
   ): Promise<void> {
@@ -183,6 +192,7 @@ export class PromotionManagerService {
 
         if (publication.type === 'CLASSIC') {
           await this.priceDiscountService.createClassicPriceDiscount(
+            userId,
             publication.itemId,
             changes,
           );
@@ -191,6 +201,7 @@ export class PromotionManagerService {
         }
 
         await this.priceDiscountService.createNewPriceDiscount(
+          userId,
           publication.familyId,
           publication.itemId,
           changes,
@@ -209,12 +220,17 @@ export class PromotionManagerService {
         };
 
         if (publication.type === 'CLASSIC') {
-          await this.dealService.createClassic(publication.itemId, changes);
+          await this.dealService.createClassic(
+            userId,
+            publication.itemId,
+            changes,
+          );
 
           return;
         }
 
         await this.dealService.createNew(
+          userId,
           publication.familyId,
           publication.itemId,
           changes,
@@ -232,6 +248,7 @@ export class PromotionManagerService {
 
         if (publication.type === 'CLASSIC') {
           await this.sellerCampaignService.createClassic(
+            userId,
             publication.itemId,
             changes,
           );
@@ -240,6 +257,7 @@ export class PromotionManagerService {
         }
 
         await this.sellerCampaignService.createNew(
+          userId,
           publication.familyId,
           publication.itemId,
           changes,
@@ -257,6 +275,7 @@ export class PromotionManagerService {
 
         if (publication.type === 'CLASSIC') {
           await this.smartPromotionService.createClassic(
+            userId,
             publication.itemId,
             changes,
           );
@@ -265,6 +284,7 @@ export class PromotionManagerService {
         }
 
         await this.smartPromotionService.createNew(
+          userId,
           publication.familyId,
           publication.itemId,
           changes,
@@ -284,6 +304,7 @@ export class PromotionManagerService {
   }
 
   private async removePromotion(
+    userId: string,
     publication: PublicationKind,
     promotion: ManagedActivePromotion,
   ): Promise<void> {
@@ -293,6 +314,7 @@ export class PromotionManagerService {
       case 'PRICE_DISCOUNT': {
         if (publication.type === 'CLASSIC') {
           await this.priceDiscountService.deleteClassicPriceDiscount(
+            userId,
             publication.itemId,
           );
 
@@ -300,6 +322,7 @@ export class PromotionManagerService {
         }
 
         await this.priceDiscountService.deleteNewPriceDiscount(
+          userId,
           publication.familyId,
           publication.itemId,
         );
@@ -311,12 +334,17 @@ export class PromotionManagerService {
         const promotionId = this.requirePromotionId(promotion);
 
         if (publication.type === 'CLASSIC') {
-          await this.dealService.deleteClassic(publication.itemId, promotionId);
+          await this.dealService.deleteClassic(
+            userId,
+            publication.itemId,
+            promotionId,
+          );
 
           return;
         }
 
         await this.dealService.deleteNew(
+          userId,
           publication.familyId,
           publication.itemId,
           promotionId,
@@ -330,6 +358,7 @@ export class PromotionManagerService {
 
         if (publication.type === 'CLASSIC') {
           await this.sellerCampaignService.deleteClassic(
+            userId,
             publication.itemId,
             promotionId,
           );
@@ -338,6 +367,7 @@ export class PromotionManagerService {
         }
 
         await this.sellerCampaignService.deleteNew(
+          userId,
           publication.familyId,
           publication.itemId,
           promotionId,
@@ -353,6 +383,7 @@ export class PromotionManagerService {
 
         if (publication.type === 'CLASSIC') {
           await this.smartPromotionService.deleteClassic(
+            userId,
             publication.itemId,
             promotionId,
             offerId,
@@ -362,6 +393,7 @@ export class PromotionManagerService {
         }
 
         await this.smartPromotionService.deleteNew(
+          userId,
           publication.familyId,
           publication.itemId,
           promotionId,
@@ -379,11 +411,15 @@ export class PromotionManagerService {
   }
 
   private async waitForPromotion(
+    userId: string,
     itemId: string,
     expectedType: ManagedPromotionType,
   ): Promise<ManagedActivePromotion | null> {
     for (let attempt = 0; attempt < 20; attempt++) {
-      const detail = await this.publicationDetailService.getDetail(itemId);
+      const detail = await this.publicationDetailService.getDetail(
+        userId,
+        itemId,
+      );
 
       const active = this.getFirstActivePromotion(detail.promotions?.active);
 
@@ -397,9 +433,15 @@ export class PromotionManagerService {
     return null;
   }
 
-  private async waitForNoActivePromotion(itemId: string): Promise<void> {
+  private async waitForNoActivePromotion(
+    userId: string,
+    itemId: string,
+  ): Promise<void> {
     for (let attempt = 0; attempt < 10; attempt++) {
-      const detail = await this.publicationDetailService.getDetail(itemId);
+      const detail = await this.publicationDetailService.getDetail(
+        userId,
+        itemId,
+      );
 
       const active = this.getFirstActivePromotion(detail.promotions?.active);
 
@@ -440,11 +482,15 @@ export class PromotionManagerService {
   }
 
   private async waitForCandidate(
+    userId: string,
     itemId: string,
     request: PromotionSwitchRequest,
   ): Promise<void> {
     for (let attempt = 0; attempt < 10; attempt++) {
-      const detail = await this.publicationDetailService.getDetail(itemId);
+      const detail = await this.publicationDetailService.getDetail(
+        userId,
+        itemId,
+      );
 
       const candidates = (detail.promotions?.candidates ??
         []) as ManagedActivePromotion[];

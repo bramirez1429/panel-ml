@@ -21,8 +21,8 @@ export class StockService {
   ) {}
 
   /** Consulta stock actual de una publicación clásica. */
-  async getClassicStock(itemId: string) {
-    const accessToken = await this.tokenService.getValidAccessToken();
+  async getClassicStock(userId: string, itemId: string) {
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 
@@ -39,8 +39,8 @@ export class StockService {
   }
 
   /** Consulta stock real de un User Product de versión nueva. */
-  async getNewStock(familyId: string, itemId: string) {
-    const accessToken = await this.tokenService.getValidAccessToken();
+  async getNewStock(userId: string, familyId: string, itemId: string) {
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 
@@ -80,10 +80,14 @@ export class StockService {
   }
 
   /** Stock de publicación clásica. */
-  async updateClassic(itemId: string, changes: ClassicStockUpdate) {
+  async updateClassic(
+    userId: string,
+    itemId: string,
+    changes: ClassicStockUpdate,
+  ) {
     this.validateQuantity(changes.quantity);
 
-    const accessToken = await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 
@@ -116,10 +120,15 @@ export class StockService {
   }
 
   /** Stock de una variante de publicación nueva. */
-  async updateNew(familyId: string, itemId: string, changes: NewStockUpdate) {
+  async updateNew(
+    userId: string,
+    familyId: string,
+    itemId: string,
+    changes: NewStockUpdate,
+  ) {
     this.validateQuantity(changes.quantity);
 
-    const accessToken = await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 

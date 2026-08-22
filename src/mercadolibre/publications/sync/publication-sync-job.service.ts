@@ -42,8 +42,8 @@ export class PublicationSyncJobService {
   ) {}
 
   /** Crea una sincronización sin procesar publicaciones todavía. */
-  async start(): Promise<SyncJobStartResponse> {
-    const connection = await this.tokenService.getStoredConnection();
+  async start(userId: string): Promise<SyncJobStartResponse> {
+    const connection = await this.tokenService.getStoredConnection(userId);
     const job = await this.jobsRepository.create({
       id: randomUUID(),
       sellerId: connection.seller_id,
@@ -53,8 +53,11 @@ export class PublicationSyncJobService {
   }
 
   /** Procesa el siguiente bloque del trabajo. */
-  async processNext(syncId: string): Promise<SyncJobNextResponse> {
-    const connection = await this.tokenService.getStoredConnection();
+  async processNext(
+    userId: string,
+    syncId: string,
+  ): Promise<SyncJobNextResponse> {
+    const connection = await this.tokenService.getStoredConnection(userId);
     const existing = await this.findOwnedJob(syncId, connection.seller_id);
     if (existing.status === 'COMPLETED') {
       return this.completedResponse(existing.id);
@@ -70,7 +73,10 @@ export class PublicationSyncJobService {
     try {
       const access: SyncAccess = {
         sellerId: connection.seller_id,
-        accessToken: await this.tokenService.getValidAccessToken(connection),
+        accessToken: await this.tokenService.getValidAccessToken(
+          userId,
+          connection,
+        ),
       };
       return await this.processClaimedJob(job, access);
     } catch (error) {
@@ -79,8 +85,11 @@ export class PublicationSyncJobService {
   }
 
   /** Devuelve el estado acumulado sin exponer datos internos. */
-  async getStatus(syncId: string): Promise<SyncJobStatusResponse> {
-    const connection = await this.tokenService.getStoredConnection();
+  async getStatus(
+    userId: string,
+    syncId: string,
+  ): Promise<SyncJobStatusResponse> {
+    const connection = await this.tokenService.getStoredConnection(userId);
     const job = await this.findOwnedJob(syncId, connection.seller_id);
     return {
       ok: true,

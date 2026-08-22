@@ -87,7 +87,12 @@ export class PublicationSyncService {
 
   /** Sincroniza solamente el MLA notificado o su familia. */
   async syncItem(itemId: string, notifiedSellerId?: number): Promise<void> {
-    const access = await this.getAccess();
+    if (!notifiedSellerId) {
+      throw new ForbiddenException(
+        'La notificaci\u00f3n no identifica al vendedor',
+      );
+    }
+    const access = await this.getAccessForSeller(notifiedSellerId);
     if (notifiedSellerId && notifiedSellerId !== access.sellerId) {
       throw new ForbiddenException('La notificación pertenece a otro vendedor');
     }
@@ -114,12 +119,16 @@ export class PublicationSyncService {
     await this.writer.finalizeFullSync(sellerId, fullSyncId, syncStartedAt);
   }
 
-  /** Obtiene seller y token sin exponerlos en respuestas. */
-  private async getAccess(): Promise<SyncAccess> {
-    const connection = await this.tokenService.getStoredConnection();
+  /** Obtiene seller y token para un webhook, sin usar una conexion global. */
+  private async getAccessForSeller(sellerId: number): Promise<SyncAccess> {
+    const connection =
+      await this.tokenService.getStoredConnectionBySellerId(sellerId);
     return {
       sellerId: connection.seller_id,
-      accessToken: await this.tokenService.getValidAccessToken(connection),
+      accessToken: await this.tokenService.getValidAccessToken(
+        connection.user_id,
+        connection,
+      ),
     };
   }
 

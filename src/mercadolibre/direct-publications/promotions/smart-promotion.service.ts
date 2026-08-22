@@ -19,8 +19,12 @@ export class SmartPromotionService {
     private readonly itemsService: ItemsService,
   ) {}
 
-  async createClassic(itemId: string, changes: SmartPromotionUpdate) {
-    const accessToken = await this.tokenService.getValidAccessToken();
+  async createClassic(
+    userId: string,
+    itemId: string,
+    changes: SmartPromotionUpdate,
+  ) {
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 
@@ -29,8 +33,13 @@ export class SmartPromotionService {
     return this.create(item.id, changes, accessToken);
   }
 
-  async deleteClassic(itemId: string, promotionId: string, offerId: string) {
-    const accessToken = await this.tokenService.getValidAccessToken();
+  async deleteClassic(
+    userId: string,
+    itemId: string,
+    promotionId: string,
+    offerId: string,
+  ) {
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 
@@ -40,11 +49,12 @@ export class SmartPromotionService {
   }
 
   async createNew(
+    userId: string,
     familyId: string,
     itemId: string,
     changes: SmartPromotionUpdate,
   ) {
-    const accessToken = await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 
@@ -54,12 +64,13 @@ export class SmartPromotionService {
   }
 
   async deleteNew(
+    userId: string,
     familyId: string,
     itemId: string,
     promotionId: string,
     offerId: string,
   ) {
-    const accessToken = await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 

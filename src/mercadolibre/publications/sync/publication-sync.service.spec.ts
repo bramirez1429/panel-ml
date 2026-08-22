@@ -13,6 +13,7 @@ import { PublicationSyncService } from './publication-sync.service';
 import { PublicationSyncWriterService } from './publication-sync-writer.service';
 
 const FULL_SYNC_ID = '11111111-1111-4111-8111-111111111111';
+const APP_USER_ID = '22222222-2222-4222-8222-222222222222';
 const ACCESS = { sellerId: 123, accessToken: 'private-token' };
 const SHARED: MercadoLibrePublication = {
   id: 'MLA1',
@@ -46,7 +47,10 @@ function sharedBundle(): NormalizedPublicationBundle {
 /** Crea el orquestador con dependencias controladas. */
 function setup() {
   const token = {
-    getStoredConnection: jest.fn().mockResolvedValue({ seller_id: 123 }),
+    getStoredConnectionBySellerId: jest.fn().mockResolvedValue({
+      user_id: APP_USER_ID,
+      seller_id: 123,
+    }),
     getValidAccessToken: jest.fn().mockResolvedValue('private-token'),
   };
   const source = {
@@ -90,7 +94,7 @@ function setup() {
     familySync as unknown as PublicationFamilySyncService,
     writer as unknown as PublicationSyncWriterService,
   );
-  return { familySync, preparer, service, source, writer };
+  return { familySync, preparer, service, source, token, writer };
 }
 
 describe('PublicationSyncService', () => {
@@ -149,12 +153,17 @@ describe('PublicationSyncService', () => {
   });
 
   it('sincroniza un webhook SHARED sin marca de full sync', async () => {
-    const { familySync, service, writer } = setup();
+    const { familySync, service, token, writer } = setup();
 
     await service.syncItem('MLA1', 123);
 
     expect(writer.save).toHaveBeenCalledWith(sharedBundle());
     expect(familySync.syncPublication).not.toHaveBeenCalled();
+    expect(token.getStoredConnectionBySellerId).toHaveBeenCalledWith(123);
+    expect(token.getValidAccessToken).toHaveBeenCalledWith(
+      APP_USER_ID,
+      expect.objectContaining({ user_id: APP_USER_ID, seller_id: 123 }),
+    );
   });
 
   it('delega un webhook VARIANT a la reconstrucción de familia', async () => {

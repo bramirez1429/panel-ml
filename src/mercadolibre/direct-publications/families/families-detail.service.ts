@@ -14,9 +14,9 @@ export class FamiliesDetailService {
   ) {}
 
   /** Devuelve una familia completa con precio y promociones. */
-  async getDetail(familyId: string) {
+  async getDetail(userId: string, familyId: string) {
     const { family, items, accessToken } =
-      await this.familiesService.getFamilyItems(familyId);
+      await this.familiesService.getFamilyItems(userId, familyId);
 
     const variants = [];
 
@@ -29,7 +29,7 @@ export class FamiliesDetailService {
           const [price, promotions] = await Promise.all([
             this.pricingService.getPrice(item, accessToken),
 
-            this.promotionsService.getPromotions(item.id, accessToken),
+            this.promotionsService.getPromotions(userId, item.id, accessToken),
           ]);
 
           const friendlyStatus = PublicationDetailMapper.getStatus(item.status);

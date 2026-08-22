@@ -14,12 +14,29 @@ type Table<Row, Insert, Relationships extends readonly unknown[] = []> = {
 };
 
 type TokenRow = {
+  user_id: string;
   seller_id: number;
   nickname: string;
   access_token: string;
   refresh_token: string;
   expires_at: string;
   updated_at: string;
+};
+
+type MercadoLibreOAuthTransactionRow = {
+  state_hash: string;
+  user_id: string;
+  refresh_session_id: string;
+  browser_binding_hash: string;
+  expires_at: string;
+  created_at: string;
+};
+
+type MercadoLibreOAuthTransactionInsert = Omit<
+  MercadoLibreOAuthTransactionRow,
+  'created_at'
+> & {
+  created_at?: string;
 };
 
 type UserRow = {
@@ -222,7 +239,39 @@ export type Database = {
           },
         ]
       >;
-      mercadolibre_tokens: Table<TokenRow, TokenRow>;
+      mercadolibre_tokens: Table<
+        TokenRow,
+        TokenRow,
+        [
+          {
+            foreignKeyName: 'mercadolibre_tokens_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: true;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+        ]
+      >;
+      mercadolibre_oauth_transactions: Table<
+        MercadoLibreOAuthTransactionRow,
+        MercadoLibreOAuthTransactionInsert,
+        [
+          {
+            foreignKeyName: 'mercadolibre_oauth_transactions_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'mercadolibre_oauth_transactions_refresh_session_id_fkey';
+            columns: ['refresh_session_id'];
+            isOneToOne: false;
+            referencedRelation: 'user_refresh_sessions';
+            referencedColumns: ['id'];
+          },
+        ]
+      >;
       mercadolibre_products: Table<ProductRow, ProductInsert>;
       mercadolibre_product_children: Table<
         ChildRow,
@@ -255,6 +304,24 @@ export type Database = {
           p_next_refresh_token_hash: string;
         };
         Returns: UserRefreshSessionMetadataRow[];
+      };
+      create_mercadolibre_oauth_transaction: {
+        Args: {
+          p_state_hash: string;
+          p_user_id: string;
+          p_refresh_session_id: string;
+          p_browser_binding_hash: string;
+          p_expires_at: string;
+        };
+        Returns: boolean;
+      };
+      consume_mercadolibre_oauth_transaction: {
+        Args: {
+          p_state_hash: string;
+          p_user_id: string;
+          p_browser_binding_hash: string;
+        };
+        Returns: boolean;
       };
     };
   };

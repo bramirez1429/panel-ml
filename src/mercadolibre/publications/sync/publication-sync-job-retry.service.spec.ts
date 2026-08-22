@@ -8,6 +8,7 @@ import { PublicationSyncService } from './publication-sync.service';
 
 const JOB_ID = '11111111-1111-4111-8111-111111111111';
 const FULL_SYNC_ID = '22222222-2222-4222-8222-222222222222';
+const APP_USER_ID = '33333333-3333-4333-8333-333333333333';
 
 /** Crea un job reclamado con el contador solicitado. */
 function job(retryCount: number, status: MercadolibreSyncJob['status']) {
@@ -43,7 +44,10 @@ function setup(retryCount: number, failure: number | Error) {
     fail: jest.fn().mockResolvedValue(job(retryCount, 'FAILED')),
   };
   const token = {
-    getStoredConnection: jest.fn().mockResolvedValue({ seller_id: 123 }),
+    getStoredConnection: jest.fn().mockResolvedValue({
+      user_id: APP_USER_ID,
+      seller_id: 123,
+    }),
     getValidAccessToken: jest.fn().mockResolvedValue('private-token'),
   };
   const source = { fetchNextScanPage: jest.fn() };
@@ -74,7 +78,9 @@ describe('PublicationSyncJobService retries', () => {
       const { jobs, service } = setup(0, status);
       const log = jest.spyOn(Logger.prototype, 'error').mockImplementation();
 
-      await expect(service.processNext(JOB_ID)).rejects.toMatchObject({
+      await expect(
+        service.processNext(APP_USER_ID, JOB_ID),
+      ).rejects.toMatchObject({
         status,
       });
 
@@ -95,7 +101,9 @@ describe('PublicationSyncJobService retries', () => {
     const { jobs, service } = setup(2, 503);
     jest.spyOn(Logger.prototype, 'error').mockImplementation();
 
-    await expect(service.processNext(JOB_ID)).rejects.toMatchObject({
+    await expect(
+      service.processNext(APP_USER_ID, JOB_ID),
+    ).rejects.toMatchObject({
       status: 503,
     });
 
@@ -112,7 +120,9 @@ describe('PublicationSyncJobService retries', () => {
     const { jobs, service } = setup(0, failure);
     jest.spyOn(Logger.prototype, 'error').mockImplementation();
 
-    await expect(service.processNext(JOB_ID)).rejects.toBe(failure);
+    await expect(service.processNext(APP_USER_ID, JOB_ID)).rejects.toBe(
+      failure,
+    );
 
     expect(jobs.releaseAfterError).toHaveBeenCalledWith(
       JOB_ID,
@@ -126,7 +136,9 @@ describe('PublicationSyncJobService retries', () => {
     const { jobs, service } = setup(3, 503);
     jest.spyOn(Logger.prototype, 'error').mockImplementation();
 
-    await expect(service.processNext(JOB_ID)).rejects.toMatchObject({
+    await expect(
+      service.processNext(APP_USER_ID, JOB_ID),
+    ).rejects.toMatchObject({
       status: 503,
     });
 

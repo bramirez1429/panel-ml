@@ -33,8 +33,8 @@ export class SkuService {
   /**
    * Consulta SKU de una publicación clásica.
    */
-  async getClassicSku(itemId: string) {
-    const accessToken = await this.tokenService.getValidAccessToken();
+  async getClassicSku(userId: string, itemId: string) {
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.getClassicItemWithAttributes(itemId, accessToken);
 
@@ -70,10 +70,14 @@ export class SkuService {
    *
    * Si tiene variaciones, variationId es obligatorio.
    */
-  async updateClassicSku(itemId: string, changes: ClassicSkuUpdate) {
+  async updateClassicSku(
+    userId: string,
+    itemId: string,
+    changes: ClassicSkuUpdate,
+  ) {
     const sku = this.validateSku(changes.sku);
 
-    const accessToken = await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.getClassicItemWithAttributes(itemId, accessToken);
 
@@ -140,8 +144,8 @@ export class SkuService {
   /**
    * Consulta SKU de un MLA del modelo nuevo.
    */
-  async getNewSku(familyId: string, itemId: string) {
-    const accessToken = await this.tokenService.getValidAccessToken();
+  async getNewSku(userId: string, familyId: string, itemId: string) {
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 
@@ -163,10 +167,15 @@ export class SkuService {
   /**
    * Modifica SKU de un User Product mediante su MLA.
    */
-  async updateNewSku(familyId: string, itemId: string, changes: NewSkuUpdate) {
+  async updateNewSku(
+    userId: string,
+    familyId: string,
+    itemId: string,
+    changes: NewSkuUpdate,
+  ) {
     const sku = this.validateSku(changes.sku);
 
-    const accessToken = await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 

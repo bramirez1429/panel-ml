@@ -24,6 +24,7 @@ export class FamilyUpdateService {
    * VARIANT_PRICING.
    */
   async updateFamily(
+    userId: string,
     familyId: string,
     changes: {
       familyName?: string;
@@ -32,8 +33,10 @@ export class FamilyUpdateService {
     this.validateFamilyId(familyId);
     this.validateChanges(changes);
 
-    const { family, accessToken } =
-      await this.familiesService.getFamilyItems(familyId);
+    const { family, accessToken } = await this.familiesService.getFamilyItems(
+      userId,
+      familyId,
+    );
 
     if (changes.familyName !== undefined && !changes.familyName.trim()) {
       throw new BadRequestException(
@@ -98,12 +101,15 @@ export class FamilyUpdateService {
     }
   }
 
-  async getTaskStatus(taskId: string): Promise<FamilyTaskStatusResponse> {
+  async getTaskStatus(
+    userId: string,
+    taskId: string,
+  ): Promise<FamilyTaskStatusResponse> {
     if (!taskId.trim()) {
       throw new BadRequestException('taskId inválido');
     }
 
-    const accessToken = await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     return this.apiService.get<FamilyTaskStatusResponse>(
       `/user-products-families/tasks/${encodeURIComponent(taskId)}`,

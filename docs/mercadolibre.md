@@ -9,6 +9,7 @@ Ejecutar en Supabase SQL Editor:
 
 ```text
 supabase/migrations/20260809000000_create_mercadolibre_publications.sql
+supabase/migrations/20260822000000_scope_mercadolibre_tokens_by_user.sql
 ```
 
 La migraci\u00f3n crea `mercadolibre_products` y
@@ -16,9 +17,21 @@ La migraci\u00f3n crea `mercadolibre_products` y
 activa RLS sin policies p\u00fablicas. Tambi\u00e9n activa RLS en la tabla existente de
 tokens. El backend sigue accediendo con `SUPABASE_SERVICE_ROLE_KEY`.
 
+La migración `20260822000000_scope_mercadolibre_tokens_by_user.sql` agrega el
+`user_id` de la aplicación a `mercadolibre_tokens`, crea su FK con `users` y
+garantiza una conexión por usuario. Debe aplicarse después de las migraciones de
+autenticación que crean `users`. También crea la tabla privada de transacciones
+OAuth y las funciones atómicas que registran y consumen cada `state` una sola
+vez, vinculándolo a la sesión de refresh que inició el flujo.
+
+Las conexiones globales anteriores no tienen información suficiente para
+inferir un dueño de forma segura. La migración elimina esas filas legacy; cada
+usuario afectado debe volver a ejecutar el flujo **Conectar Mercado Libre**.
+
 ## Responsabilidades
 
-- `auth/`: OAuth, state firmado, almacenamiento y refresh de tokens.
+- `auth/`: OAuth, state firmado por usuario, almacenamiento y refresh de
+  tokens.
 - `shared/mercadolibre-api.service.ts`: HTTP, Authorization, timeout, JSON y
   errores seguros.
 - `publications/publications.service.ts`: listado y detalle desde Supabase.
@@ -36,13 +49,72 @@ tokens. El backend sigue accediendo con `SUPABASE_SERVICE_ROLE_KEY`.
 
 ## OAuth
 
+Para iniciar la conexión, el frontend llama al endpoint con el access JWT de la
+aplicación:
+
 ```text
 GET /mercadolibre/connect
+Authorization: Bearer <access-jwt-de-la-aplicacion>
+```
+
+`GET /mercadolibre/connect` exige un usuario autenticado y responde HTTP 200 con
+una URL, no con una redirección directa:
+
+```json
+{
+  "url": "https://auth.mercadolibre.com.ar/authorization?..."
+}
+```
+
+La llamada `fetch` a `/connect` debe usar `credentials: 'include'`. El backend
+emite una cookie de correlación corta, única por transacción, `HttpOnly`,
+`SameSite=Lax` y restringida al path configurado en `ML_REDIRECT_URI`. No
+contiene tokens de Mercado Libre: sirve para comprobar que la autorización
+vuelve al mismo navegador que la inició. Frontend y API deben desplegarse en el
+mismo site; CORS con credenciales no evita por sí solo el bloqueo de cookies de
+terceros entre sitios distintos.
+
+El frontend debe navegar a esa `url` para continuar en Mercado Libre. No debe
+agregar el JWT de la aplicación a la URL de Mercado Libre.
+
+Mercado Libre vuelve al callback existente:
+
+```text
 GET /mercadolibre/callback?code=...&state=...
 ```
 
-El callback valida el state, intercambia el c\u00f3digo, consulta `/users/me` y
-guarda los tokens. Nunca devuelve access token, refresh token ni Client Secret.
+El callback es público porque la redirección de Mercado Libre no conserva el
+header `Authorization`. La asociación no depende de un `user_id` enviado por el
+frontend: el `state` contiene el `user_id` autenticado que inició el flujo, un
+nonce y un timestamp, todo protegido por firma HMAC y con vencimiento. El
+callback valida esa firma y la cookie, exige que la misma sesión de refresh siga
+vigente y consume la transacción en Supabase de forma atómica. Solo el primer
+callback válido puede recuperar al dueño; luego intercambia el código, consulta
+`/users/me` y guarda la conexión para ese usuario.
+
+La respuesta del callback incluye solamente el resultado y los datos públicos
+básicos del vendedor. Nunca devuelve `access_token`, `refresh_token` ni Client
+Secret.
+
+La firma del `state` tambien cubre el hash de la cookie de correlacion. El
+callback rechaza URLs compartidas o abiertas en otro navegador, rechaza replay
+y elimina solamente la cookie de la transacción validada. Un callback inválido
+no cancela otro flujo pendiente.
+
+### Tokens por usuario
+
+Los tokens de Mercado Libre se guardan exclusivamente en Supabase mediante el
+backend y asociados al `user_id` de la aplicación. El frontend no debe guardar
+tokens de Mercado Libre en memoria persistente, cookies, `localStorage` ni
+`sessionStorage`; tampoco debe recibirlos mediante respuestas o URLs.
+
+Cada operación autenticada busca la conexión de su propio usuario. Cuando el
+`access_token` está vencido o próximo a vencer, el backend lo renueva
+automáticamente usando el `refresh_token` de ese mismo dueño y persiste los
+tokens nuevos en su conexión. Una conexión obtenida para otro `user_id` se
+rechaza. La persistencia del refresh usa compare-and-swap por owner, seller y
+versión para que un refresh viejo no sobrescriba una reconexión; si otro worker
+gana la renovación, la operación recarga y usa el token vigente guardado.
 
 ## Sincronizaci\u00f3n completa
 

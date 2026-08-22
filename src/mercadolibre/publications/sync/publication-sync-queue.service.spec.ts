@@ -14,6 +14,7 @@ import {
 jest.mock('@vercel/queue', () => ({ send: jest.fn() }));
 
 const SYNC_ID = '11111111-1111-4111-8111-111111111111';
+const APP_USER_ID = '22222222-2222-4222-8222-222222222222';
 const sendMock = jest.mocked(send);
 
 describe('PublicationSyncQueueService', () => {
@@ -30,10 +31,11 @@ describe('PublicationSyncQueueService', () => {
 
   afterEach(() => jest.restoreAllMocks());
 
-  it('publica el syncId en el topic configurado', async () => {
-    await service.enqueue(SYNC_ID);
+  it('publica userId y syncId en el topic configurado', async () => {
+    await service.enqueue(APP_USER_ID, SYNC_ID);
 
     expect(sendMock).toHaveBeenCalledWith(PUBLICATION_SYNC_QUEUE_TOPIC, {
+      userId: APP_USER_ID,
       syncId: SYNC_ID,
     });
   });
@@ -41,12 +43,12 @@ describe('PublicationSyncQueueService', () => {
   it('procesa un batch y publica el siguiente cuando quedan items', async () => {
     processNext.mockResolvedValue({ status: 'PENDING', hasMore: true });
 
-    await service.consume({ syncId: SYNC_ID });
+    await service.consume({ userId: APP_USER_ID, syncId: SYNC_ID });
 
-    expect(processNext).toHaveBeenCalledWith(SYNC_ID);
+    expect(processNext).toHaveBeenCalledWith(APP_USER_ID, SYNC_ID);
     expect(sendMock).toHaveBeenCalledWith(
       PUBLICATION_SYNC_QUEUE_TOPIC,
-      { syncId: SYNC_ID },
+      { userId: APP_USER_ID, syncId: SYNC_ID },
       { delaySeconds: 15 },
     );
   });
@@ -54,7 +56,7 @@ describe('PublicationSyncQueueService', () => {
   it('termina sin publicar cuando el job está completo', async () => {
     processNext.mockResolvedValue({ status: 'COMPLETED', hasMore: false });
 
-    await service.consume({ syncId: SYNC_ID });
+    await service.consume({ userId: APP_USER_ID, syncId: SYNC_ID });
 
     expect(sendMock).not.toHaveBeenCalled();
   });
@@ -62,7 +64,9 @@ describe('PublicationSyncQueueService', () => {
   it('confirma una entrega duplicada que perdió el claim', async () => {
     processNext.mockRejectedValue(new ConflictException());
 
-    await expect(service.consume({ syncId: SYNC_ID })).resolves.toBeUndefined();
+    await expect(
+      service.consume({ userId: APP_USER_ID, syncId: SYNC_ID }),
+    ).resolves.toBeUndefined();
     expect(sendMock).not.toHaveBeenCalled();
   });
 
@@ -70,7 +74,9 @@ describe('PublicationSyncQueueService', () => {
     const error = new Error('temporal');
     processNext.mockRejectedValue(error);
 
-    await expect(service.consume({ syncId: SYNC_ID })).rejects.toBe(error);
+    await expect(
+      service.consume({ userId: APP_USER_ID, syncId: SYNC_ID }),
+    ).rejects.toBe(error);
     expect(sendMock).not.toHaveBeenCalled();
   });
 

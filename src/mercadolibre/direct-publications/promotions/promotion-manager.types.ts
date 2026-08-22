@@ -36,7 +36,7 @@ export type PromotionSwitchRequest =
 
 export type ManagedActivePromotion = {
   id?: string | null;
-  type?: ManagedPromotionType | string | null;
+  type?: string | null;
   ref_id?: string | null;
   status?: string | null;
   price?: number | null;

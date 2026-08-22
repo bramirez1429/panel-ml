@@ -17,22 +17,23 @@ export class PublicationsService {
   ) {}
 
   /** Listado directo sin agrupar. */
-  async getPage(limit = 20, offset = 0) {
+  async getPage(userId: string, limit = 20, offset = 0) {
     this.validatePage(limit, offset);
 
-    const connection = await this.tokenService.getStoredConnection();
+    const connection = await this.tokenService.getStoredConnection(userId);
+    const accessToken = await this.tokenService.getValidAccessToken(
+      userId,
+      connection,
+    );
 
     const search = await this.searchService.searchPage(
       connection.seller_id,
-      connection.access_token,
+      accessToken,
       limit,
       offset,
     );
 
-    const items = await this.itemsService.getMany(
-      search.results,
-      connection.access_token,
-    );
+    const items = await this.itemsService.getMany(search.results, accessToken);
 
     return {
       paging: search.paging,
@@ -44,14 +45,18 @@ export class PublicationsService {
   }
 
   /** Listado agrupado para el frontend. */
-  async getGrouped(limit = 20, cursor?: string) {
+  async getGrouped(userId: string, limit = 20, cursor?: string) {
     this.validateLimit(limit);
 
-    const connection = await this.tokenService.getStoredConnection();
+    const connection = await this.tokenService.getStoredConnection(userId);
+    const accessToken = await this.tokenService.getValidAccessToken(
+      userId,
+      connection,
+    );
 
     const scan = await this.searchService.scanPage(
       connection.seller_id,
-      connection.access_token,
+      accessToken,
       limit,
       cursor,
     );
@@ -68,7 +73,7 @@ export class PublicationsService {
       };
     }
 
-    const items = await this.itemsService.getMany(ids, connection.access_token);
+    const items = await this.itemsService.getMany(ids, accessToken);
 
     const shared = items
       .filter((item) => PublicationsMapper.getModel(item) === 'SHARED')
@@ -79,7 +84,7 @@ export class PublicationsService {
     const families = [];
 
     for (const familyId of familyIds) {
-      families.push(await this.familiesService.getSummary(familyId));
+      families.push(await this.familiesService.getSummary(userId, familyId));
     }
 
     return {

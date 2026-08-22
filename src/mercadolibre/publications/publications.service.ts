@@ -19,9 +19,9 @@ export class PublicationsService {
   ) {}
 
   /** Lista resúmenes paginados desde Supabase. */
-  async list(page = 1, limit = 20) {
+  async list(userId: string, page = 1, limit = 20) {
     this.validatePaging(page, limit);
-    const connection = await this.tokenService.getStoredConnection();
+    const connection = await this.tokenService.getStoredConnection(userId);
     const result = await this.productsRepository.findPage(
       connection.seller_id,
       page,
@@ -41,9 +41,9 @@ export class PublicationsService {
   }
 
   /** Devuelve un producto guardado y sus hijos cuando corresponde. */
-  async findOne(productId: string) {
+  async findOne(userId: string, productId: string) {
     this.validateProductId(productId);
-    const connection = await this.tokenService.getStoredConnection();
+    const connection = await this.tokenService.getStoredConnection(userId);
     const product = await this.productsRepository.findById(
       connection.seller_id,
       productId,
@@ -76,14 +76,23 @@ export class PublicationsService {
   }
 
   /** Modifica el precio real de una publicación en Mercado Libre. */
-  async updatePrice(productId: string, price: number, itemId?: string) {
+  async updatePrice(
+    userId: string,
+    productId: string,
+    price: number,
+    itemId?: string,
+  ) {
     this.validateProductId(productId);
 
     if (!Number.isFinite(price) || price <= 0) {
       throw new BadRequestException('El precio debe ser mayor que cero');
     }
 
-    const connection = await this.tokenService.getStoredConnection();
+    const connection = await this.tokenService.getStoredConnection(userId);
+    const accessToken = await this.tokenService.getValidAccessToken(
+      userId,
+      connection,
+    );
 
     const product = await this.productsRepository.findById(
       connection.seller_id,
@@ -102,7 +111,7 @@ export class PublicationsService {
       await this.apiService.put(
         `/items/${product.parent_item_id}`,
         { price },
-        connection.access_token,
+        accessToken,
       );
 
       await this.productsRepository.updatePrice(product.id, price); // 2 Supabase
@@ -133,7 +142,7 @@ export class PublicationsService {
     await this.apiService.put(
       `/items/${child.item_id}`,
       { price },
-      connection.access_token,
+      accessToken,
     );
     // Mercado Libre respondió OK → actualizar Supabase
     await this.childrenRepository.updatePrice(child.item_id, price);
@@ -147,6 +156,7 @@ export class PublicationsService {
 
   /** Modifica el stock real en Mercado Libre. */
   async updateStock(
+    userId: string,
     productId: string,
     stock: number,
     itemId?: string,
@@ -160,7 +170,11 @@ export class PublicationsService {
       );
     }
 
-    const connection = await this.tokenService.getStoredConnection();
+    const connection = await this.tokenService.getStoredConnection(userId);
+    const accessToken = await this.tokenService.getValidAccessToken(
+      userId,
+      connection,
+    );
 
     const product = await this.productsRepository.findById(
       connection.seller_id,
@@ -194,7 +208,7 @@ export class PublicationsService {
       await this.apiService.put(
         `/items/${child.item_id}`,
         { available_quantity: stock },
-        connection.access_token,
+        accessToken,
       );
 
       await this.childrenRepository.updateStock(child.item_id, stock);
@@ -216,7 +230,7 @@ export class PublicationsService {
       await this.apiService.put(
         `/items/${product.parent_item_id}`,
         { available_quantity: stock },
-        connection.access_token,
+        accessToken,
       );
 
       await this.productsRepository.updateStock(product.id, stock);
@@ -231,7 +245,7 @@ export class PublicationsService {
     // SHARED con variaciones: traerlas para conservar todos los IDs.
     const item = await this.apiService.get<{
       variations?: Array<{ id: number }>;
-    }>(`/items/${product.parent_item_id}`, connection.access_token);
+    }>(`/items/${product.parent_item_id}`, accessToken);
 
     const variations = item.variations ?? [];
 
@@ -257,7 +271,7 @@ export class PublicationsService {
               },
         ),
       },
-      connection.access_token,
+      accessToken,
     );
 
     await this.productsRepository.updateVariationStock(
@@ -275,10 +289,14 @@ export class PublicationsService {
   }
 
   /** Obtiene las promociones de todos los MLA de una publicación. */
-  async getPromotions(productId: string) {
+  async getPromotions(userId: string, productId: string) {
     this.validateProductId(productId);
 
-    const connection = await this.tokenService.getStoredConnection();
+    const connection = await this.tokenService.getStoredConnection(userId);
+    const accessToken = await this.tokenService.getValidAccessToken(
+      userId,
+      connection,
+    );
 
     const product = await this.productsRepository.findById(
       connection.seller_id,
@@ -310,7 +328,7 @@ export class PublicationsService {
     for (const itemId of itemIds) {
       const promotions = await this.apiService.get<unknown[]>(
         `/seller-promotions/items/${itemId}?app_version=v2`,
-        connection.access_token,
+        accessToken,
       );
 
       items.push({

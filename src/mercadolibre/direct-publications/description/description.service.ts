@@ -16,8 +16,8 @@ export class DescriptionService {
     private readonly itemsService: ItemsService,
   ) {}
 
-  async getClassic(itemId: string): Promise<MlDescription> {
-    const accessToken = await this.tokenService.getValidAccessToken();
+  async getClassic(userId: string, itemId: string): Promise<MlDescription> {
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 
@@ -29,10 +29,11 @@ export class DescriptionService {
   }
 
   async createClassic(
+    userId: string,
     itemId: string,
     changes: DescriptionUpdate,
   ): Promise<MlDescription> {
-    const accessToken = await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 
@@ -44,10 +45,11 @@ export class DescriptionService {
   }
 
   async updateClassic(
+    userId: string,
     itemId: string,
     changes: DescriptionUpdate,
   ): Promise<MlDescription> {
-    const accessToken = await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 
@@ -58,8 +60,12 @@ export class DescriptionService {
     return this.updateDescription(item.id, changes, accessToken);
   }
 
-  async getNew(familyId: string, itemId: string): Promise<MlDescription> {
-    const accessToken = await this.tokenService.getValidAccessToken();
+  async getNew(
+    userId: string,
+    familyId: string,
+    itemId: string,
+  ): Promise<MlDescription> {
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 
@@ -73,11 +79,12 @@ export class DescriptionService {
   }
 
   async createNew(
+    userId: string,
     familyId: string,
     itemId: string,
     changes: DescriptionUpdate,
   ): Promise<MlDescription> {
-    const accessToken = await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 
@@ -91,11 +98,12 @@ export class DescriptionService {
   }
 
   async updateNew(
+    userId: string,
     familyId: string,
     itemId: string,
     changes: DescriptionUpdate,
   ): Promise<MlDescription> {
-    const accessToken = await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 

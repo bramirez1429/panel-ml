@@ -17,8 +17,8 @@ export class PicturesService {
   ) {}
 
   /** Consulta imágenes de publicación clásica. */
-  async getClassicPictures(itemId: string) {
-    const accessToken = await this.tokenService.getValidAccessToken();
+  async getClassicPictures(userId: string, itemId: string) {
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 
@@ -39,10 +39,14 @@ export class PicturesService {
   }
 
   /** Reemplaza/reordena imágenes de publicación clásica. */
-  async updateClassicPictures(itemId: string, changes: PicturesUpdate) {
+  async updateClassicPictures(
+    userId: string,
+    itemId: string,
+    changes: PicturesUpdate,
+  ) {
     const pictures = this.validatePictures(changes.pictures);
 
-    const accessToken = await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 
@@ -60,8 +64,8 @@ export class PicturesService {
   }
 
   /** Consulta imágenes de un User Product nuevo. */
-  async getNewPictures(familyId: string, itemId: string) {
-    const accessToken = await this.tokenService.getValidAccessToken();
+  async getNewPictures(userId: string, familyId: string, itemId: string) {
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 
@@ -102,13 +106,14 @@ export class PicturesService {
 
   /** Reemplaza/reordena imágenes de un User Product nuevo. */
   async updateNewPictures(
+    userId: string,
     familyId: string,
     itemId: string,
     changes: PicturesUpdate,
   ) {
     const pictures = this.validatePictures(changes.pictures);
 
-    const accessToken = await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 

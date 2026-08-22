@@ -218,18 +218,6 @@ export class PublicationFamilySyncService {
   }
 }
 
-/** Comprueba que el bundle tenga todos los MLA esperados. */
-function isFamilyBundleComplete(
-  bundle: {
-    children: Array<{ item_id: string }>;
-  },
-  expectedItemIds: string[],
-): boolean {
-  const normalizedIds = new Set(bundle.children.map((child) => child.item_id));
-
-  return expectedItemIds.every((itemId) => normalizedIds.has(itemId));
-}
-
 /** Devuelve una referencia segura para un error individual. */
 function safeItemId(publication: MercadoLibrePublication): string {
   try {

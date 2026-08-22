@@ -24,31 +24,38 @@ export class FamiliesService {
   ) {}
 
   /** Devuelve una familia agrupada para el listado. */
-  async getSummary(familyId: string) {
-    const { family, items } = await this.loadFamily(familyId);
+  async getSummary(userId: string, familyId: string) {
+    const { family, items } = await this.loadFamily(userId, familyId);
 
     return FamiliesMapper.toSummary(family, items);
   }
 
   /** Devuelve familia + todos sus MLA para otros servicios. */
-  async getFamilyItems(familyId: string) {
-    return this.loadFamily(familyId);
+  async getFamilyItems(userId: string, familyId: string) {
+    return this.loadFamily(userId, familyId);
   }
 
   /** Resuelve family_id → MLAU → MLA. */
-  private async loadFamily(familyId: string): Promise<{
+  private async loadFamily(
+    userId: string,
+    familyId: string,
+  ): Promise<{
     family: MlFamilyResponse;
     items: MlItem[];
     accessToken: string;
   }> {
     this.validateFamilyId(familyId);
 
-    const connection = await this.tokenService.getStoredConnection();
+    const connection = await this.tokenService.getStoredConnection(userId);
+    const accessToken = await this.tokenService.getValidAccessToken(
+      userId,
+      connection,
+    );
 
     // 1. family_id → MLAU.
     const family = await this.apiService.get<MlFamilyResponse>(
       `/sites/MLA/user-products-families/${familyId}`,
-      connection.access_token,
+      accessToken,
     );
 
     this.validateSeller(family, connection.seller_id);
@@ -57,19 +64,16 @@ export class FamiliesService {
     const itemIds = await this.searchService.searchByUserProductIds(
       connection.seller_id,
       family.user_products_ids,
-      connection.access_token,
+      accessToken,
     );
 
     // 3. Obtenemos todos los MLA completos.
-    const items = await this.itemsService.getMany(
-      itemIds,
-      connection.access_token,
-    );
+    const items = await this.itemsService.getMany(itemIds, accessToken);
 
     return {
       family,
       items,
-      accessToken: connection.access_token,
+      accessToken,
     };
   }
 

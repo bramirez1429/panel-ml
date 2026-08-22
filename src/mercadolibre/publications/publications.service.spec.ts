@@ -6,14 +6,18 @@ import { MercadolibreApiService } from '../shared/mercadolibre-api.service';
 import { PublicationsService } from './publications.service';
 
 const PRODUCT_ID = '123e4567-e89b-42d3-a456-426614174000';
+const APP_USER_ID = '11111111-1111-4111-8111-111111111111';
+const OTHER_APP_USER_ID = '22222222-2222-4222-8222-222222222222';
 
 const connection = {
+  user_id: APP_USER_ID,
   seller_id: 123,
   access_token: 'token-test',
 };
 
 describe('PublicationsService', () => {
   const getStoredConnection = jest.fn();
+  const getValidAccessToken = jest.fn();
 
   const findPage = jest.fn();
   const findById = jest.fn();
@@ -30,11 +34,13 @@ describe('PublicationsService', () => {
     jest.clearAllMocks();
 
     getStoredConnection.mockResolvedValue(connection);
+    getValidAccessToken.mockResolvedValue(connection.access_token);
     apiPut.mockResolvedValue({});
 
     service = new PublicationsService(
       {
         getStoredConnection,
+        getValidAccessToken,
       } as unknown as MercadolibreTokenService,
 
       {
@@ -67,7 +73,7 @@ describe('PublicationsService', () => {
       total: 21,
     });
 
-    await expect(service.list(2, 20)).resolves.toEqual({
+    await expect(service.list(APP_USER_ID, 2, 20)).resolves.toEqual({
       paging: {
         page: 2,
         limit: 20,
@@ -79,18 +85,39 @@ describe('PublicationsService', () => {
     });
 
     expect(findPage).toHaveBeenCalledWith(123, 2, 20);
+    expect(getStoredConnection).toHaveBeenCalledWith(APP_USER_ID);
   });
 
   it('rechaza paginación inválida antes de consultar Supabase', async () => {
-    await expect(service.list(0, 20)).rejects.toBeInstanceOf(
+    await expect(service.list(APP_USER_ID, 0, 20)).rejects.toBeInstanceOf(
       BadRequestException,
     );
 
-    await expect(service.list(1, 101)).rejects.toBeInstanceOf(
+    await expect(service.list(APP_USER_ID, 1, 101)).rejects.toBeInstanceOf(
       BadRequestException,
     );
 
     expect(getStoredConnection).not.toHaveBeenCalled();
+  });
+
+  it('consulta publicaciones con el seller de cada usuario', async () => {
+    const otherConnection = {
+      ...connection,
+      user_id: OTHER_APP_USER_ID,
+      seller_id: 456,
+    };
+    getStoredConnection
+      .mockResolvedValueOnce(connection)
+      .mockResolvedValueOnce(otherConnection);
+    findPage.mockResolvedValue({ products: [], total: 0 });
+
+    await service.list(APP_USER_ID, 1, 20);
+    await service.list(OTHER_APP_USER_ID, 1, 20);
+
+    expect(getStoredConnection).toHaveBeenNthCalledWith(1, APP_USER_ID);
+    expect(getStoredConnection).toHaveBeenNthCalledWith(2, OTHER_APP_USER_ID);
+    expect(findPage).toHaveBeenNthCalledWith(1, 123, 1, 20);
+    expect(findPage).toHaveBeenNthCalledWith(2, 456, 1, 20);
   });
 
   it('devuelve SHARED sin consultar hijos', async () => {
@@ -101,10 +128,11 @@ describe('PublicationsService', () => {
 
     findById.mockResolvedValue(product);
 
-    await expect(service.findOne(PRODUCT_ID)).resolves.toEqual({
+    await expect(service.findOne(APP_USER_ID, PRODUCT_ID)).resolves.toEqual({
       product,
     });
 
+    expect(findById).toHaveBeenCalledWith(connection.seller_id, PRODUCT_ID);
     expect(findByProductId).not.toHaveBeenCalled();
   });
 
@@ -123,22 +151,22 @@ describe('PublicationsService', () => {
     findById.mockResolvedValue(product);
     findByProductId.mockResolvedValue(children);
 
-    await expect(service.findOne(PRODUCT_ID)).resolves.toEqual({
+    await expect(service.findOne(APP_USER_ID, PRODUCT_ID)).resolves.toEqual({
       product,
       children,
     });
   });
 
   it('valida UUID y devuelve 404 cuando no existe', async () => {
-    await expect(service.findOne('MLA123')).rejects.toBeInstanceOf(
+    await expect(service.findOne(APP_USER_ID, 'MLA123')).rejects.toBeInstanceOf(
       BadRequestException,
     );
 
     findById.mockResolvedValue(null);
 
-    await expect(service.findOne(PRODUCT_ID)).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
+    await expect(
+      service.findOne(APP_USER_ID, PRODUCT_ID),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('actualiza precio SHARED en Mercado Libre y Supabase', async () => {
@@ -148,7 +176,7 @@ describe('PublicationsService', () => {
       parent_item_id: 'MLA111111111',
     });
 
-    await service.updatePrice(PRODUCT_ID, 45000);
+    await service.updatePrice(APP_USER_ID, PRODUCT_ID, 45000);
 
     expect(apiPut).toHaveBeenCalledWith(
       '/items/MLA111111111',
@@ -157,6 +185,7 @@ describe('PublicationsService', () => {
     );
 
     expect(updateProductPrice).toHaveBeenCalledWith(PRODUCT_ID, 45000);
+    expect(getValidAccessToken).toHaveBeenCalledWith(APP_USER_ID, connection);
   });
 
   it('actualiza precio VARIANT_PRICING en Mercado Libre y Supabase', async () => {
@@ -171,7 +200,7 @@ describe('PublicationsService', () => {
       },
     ]);
 
-    await service.updatePrice(PRODUCT_ID, 50000, 'MLA222222222');
+    await service.updatePrice(APP_USER_ID, PRODUCT_ID, 50000, 'MLA222222222');
 
     expect(apiPut).toHaveBeenCalledWith(
       '/items/MLA222222222',
@@ -183,9 +212,9 @@ describe('PublicationsService', () => {
   });
 
   it('rechaza precio menor o igual a cero', async () => {
-    await expect(service.updatePrice(PRODUCT_ID, 0)).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(
+      service.updatePrice(APP_USER_ID, PRODUCT_ID, 0),
+    ).rejects.toBeInstanceOf(BadRequestException);
 
     expect(apiPut).not.toHaveBeenCalled();
   });
@@ -199,9 +228,9 @@ describe('PublicationsService', () => {
 
     apiPut.mockRejectedValue(new Error('Mercado Libre falló'));
 
-    await expect(service.updatePrice(PRODUCT_ID, 45000)).rejects.toThrow(
-      'Mercado Libre falló',
-    );
+    await expect(
+      service.updatePrice(APP_USER_ID, PRODUCT_ID, 45000),
+    ).rejects.toThrow('Mercado Libre falló');
 
     expect(updateProductPrice).not.toHaveBeenCalled();
     expect(updateChildPrice).not.toHaveBeenCalled();

@@ -12,6 +12,8 @@ import { PublicationSyncService } from './publication-sync.service';
 
 const JOB_ID = '11111111-1111-4111-8111-111111111111';
 const FULL_SYNC_ID = '22222222-2222-4222-8222-222222222222';
+const APP_USER_ID = '33333333-3333-4333-8333-333333333333';
+const OTHER_APP_USER_ID = '44444444-4444-4444-8444-444444444444';
 const STARTED_AT = '2026-08-10T12:00:00.000Z';
 const SELLER_ID = 123;
 /** Crea un trabajo completo con valores predeterminados. */
@@ -46,6 +48,7 @@ function itemIds(amount: number): string[] {
 
 /** Crea el servicio con todas sus dependencias controladas. */
 function setup() {
+  const connection = { user_id: APP_USER_ID, seller_id: SELLER_ID };
   const jobs = {
     create: jest.fn().mockResolvedValue(job()),
     findById: jest.fn().mockResolvedValue(job()),
@@ -58,7 +61,7 @@ function setup() {
     fail: jest.fn().mockResolvedValue(job({ status: 'FAILED' })),
   };
   const token = {
-    getStoredConnection: jest.fn().mockResolvedValue({ seller_id: SELLER_ID }),
+    getStoredConnection: jest.fn().mockResolvedValue(connection),
     getValidAccessToken: jest.fn().mockResolvedValue('private-token'),
   };
   const source = {
@@ -74,16 +77,17 @@ function setup() {
     source as unknown as PublicationSourceService,
     sync as unknown as PublicationSyncService,
   );
-  return { jobs, service, source, sync, token };
+  return { connection, jobs, service, source, sync, token };
 }
 describe('PublicationSyncJobService', () => {
   it('crea el job sin consultar Mercado Libre ni pedir un token válido', async () => {
     const { jobs, service, source, sync, token } = setup();
-    await expect(service.start()).resolves.toEqual({
+    await expect(service.start(APP_USER_ID)).resolves.toEqual({
       ok: true,
       syncId: JOB_ID,
       status: 'PENDING',
     });
+    expect(token.getStoredConnection).toHaveBeenCalledWith(APP_USER_ID);
     expect(jobs.create).toHaveBeenCalledTimes(1);
     expect(token.getValidAccessToken).not.toHaveBeenCalled();
     expect(source.fetchNextScanPage).not.toHaveBeenCalled();
@@ -91,7 +95,7 @@ describe('PublicationSyncJobService', () => {
   });
 
   it('trae una página, procesa diez y luego consume el buffer', async () => {
-    const { jobs, service, source, sync } = setup();
+    const { connection, jobs, service, source, sync, token } = setup();
     const ids = itemIds(100);
     const running = job({ status: 'RUNNING', started_at: STARTED_AT });
     const afterFirst = job({
@@ -130,8 +134,8 @@ describe('PublicationSyncJobService', () => {
         childrenSaved: 5,
         errors: [],
       });
-    await service.processNext(JOB_ID);
-    const second = await service.processNext(JOB_ID);
+    await service.processNext(APP_USER_ID, JOB_ID);
+    const second = await service.processNext(APP_USER_ID, JOB_ID);
     expect(source.fetchNextScanPage).toHaveBeenCalledTimes(1);
     expect(sync.syncBatch).toHaveBeenNthCalledWith(
       1,
@@ -151,12 +155,18 @@ describe('PublicationSyncJobService', () => {
       processedItems: 20,
       hasMore: true,
     });
+    expect(token.getValidAccessToken).toHaveBeenCalledWith(
+      APP_USER_ID,
+      connection,
+    );
   });
 
   it('finaliza y limpia solamente al recibir la página terminal', async () => {
     const { jobs, service, source, sync } = setup();
     source.fetchNextScanPage.mockResolvedValue({ itemIds: [], scrollId: null });
-    await expect(service.processNext(JOB_ID)).resolves.toMatchObject({
+    await expect(
+      service.processNext(APP_USER_ID, JOB_ID),
+    ).resolves.toMatchObject({
       status: 'COMPLETED',
       hasMore: false,
     });
@@ -182,9 +192,9 @@ describe('PublicationSyncJobService', () => {
     sync.syncBatch.mockRejectedValue(
       new BadRequestException('access_token=private-token'),
     );
-    await expect(service.processNext(JOB_ID)).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(
+      service.processNext(APP_USER_ID, JOB_ID),
+    ).rejects.toBeInstanceOf(BadRequestException);
     expect(jobs.fail).toHaveBeenCalledWith(
       JOB_ID,
       'La sincronización no pudo continuar',
@@ -200,9 +210,9 @@ describe('PublicationSyncJobService', () => {
       new BadGatewayException('No se pudo completar'),
     );
 
-    await expect(service.processNext(JOB_ID)).rejects.toBeInstanceOf(
-      BadGatewayException,
-    );
+    await expect(
+      service.processNext(APP_USER_ID, JOB_ID),
+    ).rejects.toBeInstanceOf(BadGatewayException);
     expect(sync.finalizeFullSync).toHaveBeenCalledTimes(1);
     expect(jobs.fail).not.toHaveBeenCalled();
   });
@@ -227,7 +237,9 @@ describe('PublicationSyncJobService', () => {
       childrenSaved: 5,
       errors: [{ itemId: 'MLA3', message: 'No encontrado' }],
     });
-    await expect(service.processNext(JOB_ID)).resolves.toMatchObject({
+    await expect(
+      service.processNext(APP_USER_ID, JOB_ID),
+    ).resolves.toMatchObject({
       status: 'PENDING',
       processedItems: 30,
       errorsCount: 3,
@@ -242,9 +254,25 @@ describe('PublicationSyncJobService', () => {
   it('rechaza jobs de otro vendedor antes de reclamarlos', async () => {
     const { jobs, service } = setup();
     jobs.findById.mockResolvedValue(job({ seller_id: 999 }));
-    await expect(service.processNext(JOB_ID)).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
+    await expect(
+      service.processNext(APP_USER_ID, JOB_ID),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(jobs.claim).not.toHaveBeenCalled();
+  });
+
+  it('no expone el estado de un job a un usuario conectado a otro seller', async () => {
+    const { jobs, service, token } = setup();
+    token.getStoredConnection.mockResolvedValue({
+      user_id: OTHER_APP_USER_ID,
+      seller_id: 999,
+    });
+    jobs.findById.mockResolvedValue(job({ seller_id: SELLER_ID }));
+
+    await expect(
+      service.getStatus(OTHER_APP_USER_ID, JOB_ID),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+
+    expect(token.getStoredConnection).toHaveBeenCalledWith(OTHER_APP_USER_ID);
     expect(jobs.claim).not.toHaveBeenCalled();
   });
 });

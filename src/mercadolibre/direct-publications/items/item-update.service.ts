@@ -56,6 +56,7 @@ export class ItemUpdateService {
 
   /** Edita una publicación versión clásica. */
   async updateClassic(
+    userId: string,
     itemId: string,
     changes: ClassicItemUpdate,
   ): Promise<MlItem> {
@@ -64,7 +65,7 @@ export class ItemUpdateService {
 
     this.validateAllowedFields(changes, CLASSIC_ALLOWED_FIELDS);
 
-    const accessToken = await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 
@@ -102,6 +103,7 @@ export class ItemUpdateService {
 
   /** Edita un MLA perteneciente a una publicación nueva. */
   async updateVariantPricingItem(
+    userId: string,
     familyId: string,
     itemId: string,
     changes: VariantPricingItemUpdate,
@@ -111,7 +113,7 @@ export class ItemUpdateService {
 
     this.validateAllowedFields(changes, NEW_ALLOWED_FIELDS);
 
-    const accessToken = await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 

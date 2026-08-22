@@ -4,12 +4,21 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { Database } from './database.types';
 
 export type MercadoLibreConnection = {
+  user_id: string;
   seller_id: number;
   nickname: string;
   access_token: string;
   refresh_token: string;
   expires_at: string;
   updated_at: string;
+};
+
+export type MercadoLibreOAuthTransaction = {
+  stateHash: string;
+  userId: string;
+  refreshSessionId: string;
+  browserBindingHash: string;
+  expiresAt: string;
 };
 
 @Injectable()
@@ -23,7 +32,7 @@ export class SupabaseService {
   async saveConnection(connection: MercadoLibreConnection): Promise<void> {
     const { error } = await this.getClient()
       .from('mercadolibre_tokens')
-      .upsert(connection, { onConflict: 'seller_id' });
+      .upsert(connection, { onConflict: 'user_id' });
 
     if (error) {
       throw new ServiceUnavailableException(
@@ -32,15 +41,113 @@ export class SupabaseService {
     }
   }
 
-  /** Devuelve la conexión guardada o null si todavía no existe. */
-  async getConnection(): Promise<MercadoLibreConnection | null> {
+  /** Registra un inicio OAuth sólo si la sesión autenticada sigue vigente. */
+  async createMercadoLibreOAuthTransaction(
+    transaction: MercadoLibreOAuthTransaction,
+  ): Promise<boolean> {
+    const { data, error } = await this.getClient().rpc(
+      'create_mercadolibre_oauth_transaction',
+      {
+        p_state_hash: transaction.stateHash,
+        p_user_id: transaction.userId,
+        p_refresh_session_id: transaction.refreshSessionId,
+        p_browser_binding_hash: transaction.browserBindingHash,
+        p_expires_at: transaction.expiresAt,
+      },
+    );
+
+    if (error) {
+      throw new ServiceUnavailableException(
+        'No se pudo iniciar la autorización de Mercado Libre',
+      );
+    }
+    return data === true;
+  }
+
+  /** Consume exactamente una vez la transacción OAuth y su sesión. */
+  async consumeMercadoLibreOAuthTransaction(input: {
+    stateHash: string;
+    userId: string;
+    browserBindingHash: string;
+  }): Promise<boolean> {
+    const { data, error } = await this.getClient().rpc(
+      'consume_mercadolibre_oauth_transaction',
+      {
+        p_state_hash: input.stateHash,
+        p_user_id: input.userId,
+        p_browser_binding_hash: input.browserBindingHash,
+      },
+    );
+
+    if (error) {
+      throw new ServiceUnavailableException(
+        'No se pudo validar la autorización de Mercado Libre',
+      );
+    }
+    return data === true;
+  }
+
+  /** Reemplaza tokens solo si la conexion no cambio durante el refresh. */
+  async saveRefreshedConnection(
+    connection: MercadoLibreConnection,
+    previousUpdatedAt: string,
+  ): Promise<boolean> {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const { data, error } = await this.getClient()
+          .from('mercadolibre_tokens')
+          .update({
+            nickname: connection.nickname,
+            access_token: connection.access_token,
+            refresh_token: connection.refresh_token,
+            expires_at: connection.expires_at,
+            updated_at: connection.updated_at,
+          })
+          .eq('user_id', connection.user_id)
+          .eq('seller_id', connection.seller_id)
+          .eq('updated_at', previousUpdatedAt)
+          .select('user_id')
+          .maybeSingle();
+
+        if (!error) return data !== null;
+      } catch {
+        // Reintenta: la respuesta puede haberse perdido tras aplicar el CAS.
+      }
+    }
+    throw new ServiceUnavailableException(
+      'No se pudo actualizar la conexion de Mercado Libre',
+    );
+  }
+
+  /** Devuelve solamente la conexión del usuario indicado. */
+  async getConnection(userId: string): Promise<MercadoLibreConnection | null> {
     const { data, error } = await this.getClient()
       .from('mercadolibre_tokens')
       .select(
-        'seller_id,nickname,access_token,refresh_token,expires_at,updated_at',
+        'user_id,seller_id,nickname,access_token,refresh_token,expires_at,updated_at',
       )
-      .order('updated_at', { ascending: false })
-      .limit(1)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) {
+      throw new ServiceUnavailableException(
+        'No se pudo leer la conexión de Mercado Libre',
+      );
+    }
+
+    return data;
+  }
+
+  /** Resuelve una conexión por seller para procesos originados por Mercado Libre. */
+  async getConnectionBySellerId(
+    sellerId: number,
+  ): Promise<MercadoLibreConnection | null> {
+    const { data, error } = await this.getClient()
+      .from('mercadolibre_tokens')
+      .select(
+        'user_id,seller_id,nickname,access_token,refresh_token,expires_at,updated_at',
+      )
+      .eq('seller_id', sellerId)
       .maybeSingle();
 
     if (error) {

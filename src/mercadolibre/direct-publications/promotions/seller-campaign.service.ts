@@ -19,8 +19,12 @@ export class SellerCampaignService {
     private readonly itemsService: ItemsService,
   ) {}
 
-  async createClassic(itemId: string, changes: SellerCampaignUpdate) {
-    const accessToken = await this.tokenService.getValidAccessToken();
+  async createClassic(
+    userId: string,
+    itemId: string,
+    changes: SellerCampaignUpdate,
+  ) {
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 
@@ -29,8 +33,12 @@ export class SellerCampaignService {
     return this.create(item.id, changes, accessToken);
   }
 
-  async updateClassic(itemId: string, changes: SellerCampaignUpdate) {
-    const accessToken = await this.tokenService.getValidAccessToken();
+  async updateClassic(
+    userId: string,
+    itemId: string,
+    changes: SellerCampaignUpdate,
+  ) {
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 
@@ -39,8 +47,8 @@ export class SellerCampaignService {
     return this.update(item.id, changes, accessToken);
   }
 
-  async deleteClassic(itemId: string, promotionId: string) {
-    const accessToken = await this.tokenService.getValidAccessToken();
+  async deleteClassic(userId: string, itemId: string, promotionId: string) {
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 
@@ -50,11 +58,12 @@ export class SellerCampaignService {
   }
 
   async createNew(
+    userId: string,
     familyId: string,
     itemId: string,
     changes: SellerCampaignUpdate,
   ) {
-    const accessToken = await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 
@@ -64,11 +73,12 @@ export class SellerCampaignService {
   }
 
   async updateNew(
+    userId: string,
     familyId: string,
     itemId: string,
     changes: SellerCampaignUpdate,
   ) {
-    const accessToken = await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 
@@ -77,8 +87,13 @@ export class SellerCampaignService {
     return this.update(item.id, changes, accessToken);
   }
 
-  async deleteNew(familyId: string, itemId: string, promotionId: string) {
-    const accessToken = await this.tokenService.getValidAccessToken();
+  async deleteNew(
+    userId: string,
+    familyId: string,
+    itemId: string,
+    promotionId: string,
+  ) {
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 

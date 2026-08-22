@@ -14,14 +14,14 @@ export class PublicationDetailService {
     private readonly promotionsService: PromotionsService,
   ) {}
 
-  async getDetail(itemId: string) {
-    const accessToken = await this.tokenService.getValidAccessToken();
+  async getDetail(userId: string, itemId: string) {
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 
     const [price, promotions] = await Promise.all([
       this.pricingService.getPrice(item, accessToken),
-      this.promotionsService.getPromotions(itemId, accessToken),
+      this.promotionsService.getPromotions(userId, itemId, accessToken),
     ]);
 
     const version = PublicationDetailMapper.getVersion(item);

@@ -24,10 +24,11 @@ export class PriceDiscountService {
   ) {}
 
   async createClassicPriceDiscount(
+    userId: string,
     itemId: string,
     changes: PriceDiscountUpdate,
   ) {
-    const accessToken = await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 
@@ -38,8 +39,8 @@ export class PriceDiscountService {
     return this.createPriceDiscount(item.id, changes, accessToken);
   }
 
-  async deleteClassicPriceDiscount(itemId: string) {
-    const accessToken = await this.tokenService.getValidAccessToken();
+  async deleteClassicPriceDiscount(userId: string, itemId: string) {
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 
@@ -51,11 +52,12 @@ export class PriceDiscountService {
   }
 
   async createNewPriceDiscount(
+    userId: string,
     familyId: string,
     itemId: string,
     changes: PriceDiscountUpdate,
   ) {
-    const accessToken = await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 
@@ -64,8 +66,12 @@ export class PriceDiscountService {
     return this.createPriceDiscount(item.id, changes, accessToken);
   }
 
-  async deleteNewPriceDiscount(familyId: string, itemId: string) {
-    const accessToken = await this.tokenService.getValidAccessToken();
+  async deleteNewPriceDiscount(
+    userId: string,
+    familyId: string,
+    itemId: string,
+  ) {
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.itemsService.getOne(itemId, accessToken);
 

@@ -41,8 +41,8 @@ export class AttributesService {
   /**
    * Lee atributos de publicación clásica.
    */
-  async getClassic(itemId: string) {
-    const accessToken = await this.tokenService.getValidAccessToken();
+  async getClassic(userId: string, itemId: string) {
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.getItemWithAttributes(itemId, accessToken);
 
@@ -74,8 +74,12 @@ export class AttributesService {
   /**
    * Edita atributo general de clásica.
    */
-  async updateClassicItemAttribute(itemId: string, changes: AttributeUpdate) {
-    const accessToken = await this.tokenService.getValidAccessToken();
+  async updateClassicItemAttribute(
+    userId: string,
+    itemId: string,
+    changes: AttributeUpdate,
+  ) {
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.getItemWithAttributes(itemId, accessToken);
 
@@ -101,11 +105,12 @@ export class AttributesService {
    * Ejemplo: EAN, SELLER_SKU, etc.
    */
   async updateClassicVariationAttribute(
+    userId: string,
     itemId: string,
     variationId: string,
     changes: AttributeUpdate,
   ) {
-    const accessToken = await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.getItemWithAttributes(itemId, accessToken);
 
@@ -148,11 +153,12 @@ export class AttributesService {
    * Ejemplo: COLOR o SIZE.
    */
   async updateClassicCombination(
+    userId: string,
     itemId: string,
     variationId: string,
     changes: AttributeUpdate,
   ) {
-    const accessToken = await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.getItemWithAttributes(itemId, accessToken);
 
@@ -203,8 +209,8 @@ export class AttributesService {
   /**
    * Lee atributos de publicación nueva.
    */
-  async getNew(familyId: string, itemId: string) {
-    const accessToken = await this.tokenService.getValidAccessToken();
+  async getNew(userId: string, familyId: string, itemId: string) {
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.getItemWithAttributes(itemId, accessToken);
 
@@ -229,11 +235,12 @@ export class AttributesService {
    * Edita un atributo del User Product nuevo.
    */
   async updateNewAttribute(
+    userId: string,
     familyId: string,
     itemId: string,
     changes: AttributeUpdate,
   ) {
-    const accessToken = await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken(userId);
 
     const item = await this.getItemWithAttributes(itemId, accessToken);
 
