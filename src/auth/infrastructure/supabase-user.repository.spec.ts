@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '../../database/database.types';
 import type { SupabaseService } from '../../database/supabase.service';
@@ -107,15 +108,31 @@ describe('SupabaseUserRepository', () => {
   });
 
   it('oculta los detalles de errores de escritura', async () => {
+    const loggerError = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
     const { repository } = createSetup(null, {
       code: '23514',
       message: 'sensitive database details',
+      details: `Failing row contains (${INPUT.passwordHash})`,
+      hint: 'check the database constraint',
+      accessToken: 'must-not-be-logged',
+      authorization: 'must-not-be-logged',
+      refreshToken: 'must-not-be-logged',
     });
 
     await expect(repository.create(INPUT)).rejects.toMatchObject({
       status: 503,
       message: 'No se pudo guardar el usuario',
     });
+    expect(loggerError).toHaveBeenCalledTimes(1);
+    expect(loggerError).toHaveBeenCalledWith({
+      code: '23514',
+      message: 'sensitive database details',
+      details: 'Failing row contains ([REDACTED])',
+      hint: 'check the database constraint',
+    });
+    loggerError.mockRestore();
   });
 
   it('oculta los detalles de errores de lectura', async () => {

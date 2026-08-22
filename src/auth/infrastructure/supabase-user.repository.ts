@@ -1,4 +1,8 @@
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { SupabaseService } from '../../database/supabase.service';
 import { Database } from '../../database/database.types';
 import {
@@ -15,6 +19,8 @@ const USER_COLUMNS =
 
 @Injectable()
 export class SupabaseUserRepository extends UserRepository {
+  private readonly logger = new Logger(SupabaseUserRepository.name);
+
   constructor(private readonly supabaseService: SupabaseService) {
     super();
   }
@@ -31,8 +37,17 @@ export class SupabaseUserRepository extends UserRepository {
       .select(USER_COLUMNS)
       .single();
 
-    if (error?.code === '23505') throw new EmailAlreadyExistsError();
-    if (error || !data) this.writeError();
+    if (error) {
+      this.logger.error({
+        code: this.redactPasswordHash(error.code, input.passwordHash),
+        message: this.redactPasswordHash(error.message, input.passwordHash),
+        details: this.redactPasswordHash(error.details, input.passwordHash),
+        hint: this.redactPasswordHash(error.hint, input.passwordHash),
+      });
+      if (error.code === '23505') throw new EmailAlreadyExistsError();
+      this.writeError();
+    }
+    if (!data) this.writeError();
     return this.mapUser(data);
   }
 
@@ -78,5 +93,13 @@ export class SupabaseUserRepository extends UserRepository {
 
   private writeError(): never {
     throw new ServiceUnavailableException('No se pudo guardar el usuario');
+  }
+
+  private redactPasswordHash(
+    value: string | null | undefined,
+    passwordHash: string,
+  ): string | null | undefined {
+    if (!value || !passwordHash) return value;
+    return value.split(passwordHash).join('[REDACTED]');
   }
 }
