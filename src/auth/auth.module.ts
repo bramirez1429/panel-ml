@@ -36,6 +36,6 @@ import { AuthController } from './presentation/auth.controller';
     },
     { provide: AccessTokenProvider, useClass: JoseAccessTokenProvider },
   ],
-  exports: [AccessTokenGuard],
+  exports: [AuthService, AccessTokenGuard],
 })
 export class AuthModule {}
