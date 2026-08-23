@@ -12,6 +12,10 @@ import type {
   UserProductStockResponse,
 } from './stock.types';
 
+type ClassicStockVariation = {
+  id: number | string;
+};
+
 @Injectable()
 export class StockService {
   constructor(
@@ -96,15 +100,37 @@ export class StockService {
     }
 
     if (changes.variationId !== undefined) {
+      const variations = Array.isArray(item.variations)
+        ? (item.variations as ClassicStockVariation[])
+        : [];
+
+      const targetExists = variations.some(
+        (variation) => String(variation.id) === String(changes.variationId),
+      );
+
+      if (!targetExists) {
+        throw new BadRequestException(
+          'La variación indicada no existe en la publicación',
+        );
+      }
+
+      const payloadVariations = variations.map((variation) => {
+        if (String(variation.id) === String(changes.variationId)) {
+          return {
+            id: variation.id,
+            available_quantity: changes.quantity,
+          };
+        }
+
+        return {
+          id: variation.id,
+        };
+      });
+
       return this.apiService.put(
         `/items/${itemId}`,
         {
-          variations: [
-            {
-              id: changes.variationId,
-              available_quantity: changes.quantity,
-            },
-          ],
+          variations: payloadVariations,
         },
         accessToken,
       );
