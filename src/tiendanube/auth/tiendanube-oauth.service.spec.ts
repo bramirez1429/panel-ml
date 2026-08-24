@@ -20,7 +20,7 @@ const CONFIG: TiendanubeEnvironment = {
 
 type ApiMock = jest.Mocked<Pick<TiendanubeApiService, 'postOAuthToken'>>;
 type ConnectionRepositoryMock = jest.Mocked<
-  Pick<TiendanubeConnectionRepository, 'saveConnection'>
+  Pick<TiendanubeConnectionRepository, 'saveConnection' | 'findSummaryByUserId'>
 >;
 
 describe('TiendanubeOAuthService', () => {
@@ -37,6 +37,7 @@ describe('TiendanubeOAuthService', () => {
     };
     connectionRepository = {
       saveConnection: jest.fn(),
+      findSummaryByUserId: jest.fn(),
     };
     service = new TiendanubeOAuthService(
       configService,

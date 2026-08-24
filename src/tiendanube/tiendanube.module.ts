@@ -6,6 +6,7 @@ import { SupabaseService } from '../database/supabase.service';
 import { TiendanubeOAuthService } from './auth/tiendanube-oauth.service';
 import { SupabaseTiendanubeConnectionRepository } from './connections/supabase-tiendanube-connection.repository';
 import { TiendanubeConnectionRepository } from './connections/tiendanube-connection.repository';
+import { TiendanubeConnectionService } from './connections/tiendanube-connection.service';
 import { TiendanubeApiService } from './shared/tiendanube-api.service';
 import { TiendanubeController } from './tiendanube.controller';
 
@@ -16,6 +17,7 @@ import { TiendanubeController } from './tiendanube.controller';
     SupabaseService,
     TiendanubeApiService,
     TiendanubeOAuthService,
+    TiendanubeConnectionService,
     {
       provide: TiendanubeConnectionRepository,
       useClass: SupabaseTiendanubeConnectionRepository,

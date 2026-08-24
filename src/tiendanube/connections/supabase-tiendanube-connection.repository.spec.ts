@@ -31,6 +31,25 @@ function setupRepository(error: unknown = null) {
   };
 }
 
+function setupReadRepository(data: unknown, error: unknown = null) {
+  const maybeSingle = jest.fn().mockResolvedValue({ data, error });
+  const eq = jest.fn().mockReturnValue({ maybeSingle });
+  const select = jest.fn().mockReturnValue({ eq });
+  const from = jest.fn().mockReturnValue({ select });
+  const client = { from } as unknown as SupabaseClient<Database>;
+  const supabase = {
+    getClient: jest.fn().mockReturnValue(client),
+  } as unknown as SupabaseService;
+
+  return {
+    repository: new SupabaseTiendanubeConnectionRepository(supabase),
+    from,
+    select,
+    eq,
+    maybeSingle,
+  };
+}
+
 describe('SupabaseTiendanubeConnectionRepository', () => {
   beforeEach(() => {
     jest.useFakeTimers();
@@ -122,6 +141,49 @@ describe('SupabaseTiendanubeConnectionRepository', () => {
     expect(caught).toMatchObject({
       status: 503,
       message: 'No se pudo guardar la conexión de Tiendanube',
+    });
+    expect(JSON.stringify(caught)).not.toContain(ACCESS_TOKEN);
+  });
+
+  it('busca una proyección segura filtrada por user_id', async () => {
+    const { repository, from, select, eq, maybeSingle } = setupReadRepository({
+      store_id: '987654',
+      scope: 'write_products',
+    });
+
+    await expect(repository.findSummaryByUserId(USER_ID)).resolves.toEqual({
+      storeId: '987654',
+      scope: 'write_products',
+    });
+    expect(from).toHaveBeenCalledWith('tiendanube_connections');
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(select).toHaveBeenCalledWith('store_id,scope');
+    expect(eq).toHaveBeenCalledTimes(1);
+    expect(eq).toHaveBeenCalledWith('user_id', USER_ID);
+    expect(maybeSingle).toHaveBeenCalledTimes(1);
+  });
+
+  it('devuelve null cuando el usuario no tiene conexión', async () => {
+    const { repository } = setupReadRepository(null);
+
+    await expect(repository.findSummaryByUserId(USER_ID)).resolves.toBeNull();
+  });
+
+  it('oculta detalles sensibles cuando falla la lectura', async () => {
+    const { repository } = setupReadRepository(null, {
+      message: `database error containing ${ACCESS_TOKEN}`,
+    });
+
+    let caught: unknown;
+    try {
+      await repository.findSummaryByUserId(USER_ID);
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toMatchObject({
+      status: 503,
+      message: 'No se pudo leer la conexión de Tiendanube',
     });
     expect(JSON.stringify(caught)).not.toContain(ACCESS_TOKEN);
   });

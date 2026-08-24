@@ -9,6 +9,7 @@ import { AuthConfiguration } from '../auth/application/ports/auth-configuration.
 import { TiendanubeOAuthService } from './auth/tiendanube-oauth.service';
 import { SupabaseTiendanubeConnectionRepository } from './connections/supabase-tiendanube-connection.repository';
 import { TiendanubeConnectionRepository } from './connections/tiendanube-connection.repository';
+import { TiendanubeConnectionService } from './connections/tiendanube-connection.service';
 import { TiendanubeApiService } from './shared/tiendanube-api.service';
 import { TiendanubeController } from './tiendanube.controller';
 import { TiendanubeModule } from './tiendanube.module';
@@ -48,6 +49,7 @@ describe('TiendanubeModule', () => {
     expect(moduleFixture.get(TiendanubeConnectionRepository)).toBeInstanceOf(
       SupabaseTiendanubeConnectionRepository,
     );
+    expect(moduleFixture.get(TiendanubeConnectionService)).toBeDefined();
   });
 
   it('expone GET /tiendanube/health con estado 200', async () => {

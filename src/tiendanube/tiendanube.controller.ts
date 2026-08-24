@@ -15,6 +15,10 @@ import type { SafeUser } from '../auth/domain/auth.models';
 import { AccessTokenGuard } from '../auth/presentation/access-token.guard';
 import { CurrentUser } from '../auth/presentation/current-user.decorator';
 import { TiendanubeOAuthService } from './auth/tiendanube-oauth.service';
+import {
+  TiendanubeConnectionService,
+  type TiendanubeConnectionStatus,
+} from './connections/tiendanube-connection.service';
 import { TIENDANUBE_OAUTH_STATE_TTL_MS } from './shared/tiendanube.config';
 
 export type TiendanubeHealthResponse = Readonly<{
@@ -24,13 +28,33 @@ export type TiendanubeHealthResponse = Readonly<{
 
 @Controller('tiendanube')
 export class TiendanubeController {
-  constructor(private readonly oauthService: TiendanubeOAuthService) {}
+  constructor(
+    private readonly oauthService: TiendanubeOAuthService,
+    private readonly connectionService: TiendanubeConnectionService,
+  ) {}
 
   @Get('health')
   health(): TiendanubeHealthResponse {
     return {
       ok: true,
       service: 'tiendanube',
+    };
+  }
+
+  @Get('connection')
+  @Header('Cache-Control', 'no-store')
+  @UseGuards(AccessTokenGuard)
+  async connection(
+    @CurrentUser() user: SafeUser,
+  ): Promise<TiendanubeConnectionStatus> {
+    const status = await this.connectionService.getStatus(user.id);
+
+    if (!status.connected) return { connected: false };
+
+    return {
+      connected: true,
+      storeId: status.storeId,
+      scope: status.scope,
     };
   }
 

@@ -4,6 +4,7 @@ import { SupabaseService } from '../../database/supabase.service';
 import {
   SaveTiendanubeConnectionInput,
   TiendanubeConnectionRepository,
+  TiendanubeConnectionSummary,
 } from './tiendanube-connection.repository';
 
 @Injectable()
@@ -35,6 +36,39 @@ export class SupabaseTiendanubeConnectionRepository extends TiendanubeConnection
     }
 
     this.writeError();
+  }
+
+  async findSummaryByUserId(
+    userId: string,
+  ): Promise<TiendanubeConnectionSummary | null> {
+    const { data, error } = await this.readSummaryRow(userId);
+
+    if (error) this.readError();
+    if (!data) return null;
+
+    return {
+      storeId: data.store_id,
+      scope: data.scope,
+    };
+  }
+
+  private async readSummaryRow(userId: string) {
+    try {
+      return await this.supabaseService
+        .getClient()
+        .from('tiendanube_connections')
+        .select('store_id,scope')
+        .eq('user_id', userId)
+        .maybeSingle();
+    } catch {
+      this.readError();
+    }
+  }
+
+  private readError(): never {
+    throw new ServiceUnavailableException(
+      'No se pudo leer la conexión de Tiendanube',
+    );
   }
 
   private writeError(): never {
