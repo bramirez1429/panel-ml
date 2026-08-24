@@ -4,6 +4,7 @@ import type { App } from 'supertest/types';
 import { AuthService } from './auth/application/auth.service';
 import { AccessTokenGuard } from './auth/presentation/access-token.guard';
 import { AppModule } from './app.module';
+import { TiendanubeApiService } from './tiendanube/shared/tiendanube-api.service';
 
 describe('AppModule', () => {
   let app: INestApplication<App>;
@@ -44,12 +45,14 @@ describe('AppModule', () => {
     }
   });
 
-  it('compila e inicializa AuthModule y MercadolibreModule sin duplicar AuthService', () => {
+  it('compila e inicializa los módulos registrados sin duplicar AuthService', () => {
     expect(app).toBeDefined();
     const authService = app.get(AuthService);
     const guard = app.get(AccessTokenGuard);
+    const tiendanubeApi = app.get(TiendanubeApiService);
 
     expect(authService).toBeDefined();
     expect(guard.authService).toBe(authService);
+    expect(tiendanubeApi).toBeDefined();
   });
 });
