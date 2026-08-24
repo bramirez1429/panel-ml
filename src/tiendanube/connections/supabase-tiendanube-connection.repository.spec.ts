@@ -205,6 +205,53 @@ describe('SupabaseTiendanubeConnectionRepository', () => {
     expect(JSON.stringify(caught)).not.toContain(ACCESS_TOKEN);
   });
 
+  it('lee credenciales internas con un select exacto y filtro por user_id', async () => {
+    const { repository, from, select, eq, maybeSingle } = setupReadRepository({
+      store_id: '987654',
+      access_token: ACCESS_TOKEN,
+      scope: 'write_products',
+    });
+
+    await expect(repository.findCredentialsByUserId(USER_ID)).resolves.toEqual({
+      storeId: '987654',
+      accessToken: ACCESS_TOKEN,
+      scope: 'write_products',
+    });
+    expect(from).toHaveBeenCalledWith('tiendanube_connections');
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(select).toHaveBeenCalledWith('store_id,access_token,scope');
+    expect(eq).toHaveBeenCalledTimes(1);
+    expect(eq).toHaveBeenCalledWith('user_id', USER_ID);
+    expect(maybeSingle).toHaveBeenCalledTimes(1);
+  });
+
+  it('devuelve null cuando no existen credenciales para el usuario', async () => {
+    const { repository } = setupReadRepository(null);
+
+    await expect(
+      repository.findCredentialsByUserId(USER_ID),
+    ).resolves.toBeNull();
+  });
+
+  it('oculta el token y los detalles cuando falla la lectura de credenciales', async () => {
+    const { repository } = setupReadRepository(null, {
+      message: `database error containing ${ACCESS_TOKEN}`,
+    });
+
+    let caught: unknown;
+    try {
+      await repository.findCredentialsByUserId(USER_ID);
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toMatchObject({
+      status: 503,
+      message: 'No se pudo leer la conexión de Tiendanube',
+    });
+    expect(JSON.stringify(caught)).not.toContain(ACCESS_TOKEN);
+  });
+
   it('elimina conexiones con un filtro exacto por store_id', async () => {
     const { repository, from, remove, eq } = setupDeleteRepository();
 

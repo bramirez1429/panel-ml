@@ -26,7 +26,10 @@ const PRIVACY_ROUTES = [STORE_REDACT_ROUTE, ...CUSTOMER_ROUTES] as const;
 type ConnectionRepositoryMock = jest.Mocked<
   Pick<
     TiendanubeConnectionRepository,
-    'saveConnection' | 'findSummaryByUserId' | 'deleteByStoreId'
+    | 'saveConnection'
+    | 'findSummaryByUserId'
+    | 'findCredentialsByUserId'
+    | 'deleteByStoreId'
   >
 >;
 
@@ -38,6 +41,7 @@ describe('TiendanubePrivacyWebhookController HTTP', () => {
     connectionRepository = {
       saveConnection: jest.fn(),
       findSummaryByUserId: jest.fn(),
+      findCredentialsByUserId: jest.fn(),
       deleteByStoreId: jest.fn(),
     };
 

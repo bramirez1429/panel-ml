@@ -6,7 +6,10 @@ const USER_ID = '11111111-1111-4111-8111-111111111111';
 type ConnectionRepositoryMock = jest.Mocked<
   Pick<
     TiendanubeConnectionRepository,
-    'saveConnection' | 'findSummaryByUserId' | 'deleteByStoreId'
+    | 'saveConnection'
+    | 'findSummaryByUserId'
+    | 'findCredentialsByUserId'
+    | 'deleteByStoreId'
   >
 >;
 
@@ -18,6 +21,7 @@ describe('TiendanubeConnectionService', () => {
     repository = {
       saveConnection: jest.fn(),
       findSummaryByUserId: jest.fn(),
+      findCredentialsByUserId: jest.fn(),
       deleteByStoreId: jest.fn(),
     };
     service = new TiendanubeConnectionService(repository);

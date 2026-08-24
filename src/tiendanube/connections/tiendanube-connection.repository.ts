@@ -11,10 +11,19 @@ export type TiendanubeConnectionSummary = Readonly<{
   scope: string;
 }>;
 
+export type TiendanubeConnectionCredentials = Readonly<{
+  storeId: string;
+  accessToken: string;
+  scope: string;
+}>;
+
 export abstract class TiendanubeConnectionRepository {
   abstract saveConnection(input: SaveTiendanubeConnectionInput): Promise<void>;
   abstract findSummaryByUserId(
     userId: string,
   ): Promise<TiendanubeConnectionSummary | null>;
+  abstract findCredentialsByUserId(
+    userId: string,
+  ): Promise<TiendanubeConnectionCredentials | null>;
   abstract deleteByStoreId(storeId: string): Promise<void>;
 }

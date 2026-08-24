@@ -10,6 +10,8 @@ import { TiendanubeOAuthService } from './auth/tiendanube-oauth.service';
 import { SupabaseTiendanubeConnectionRepository } from './connections/supabase-tiendanube-connection.repository';
 import { TiendanubeConnectionRepository } from './connections/tiendanube-connection.repository';
 import { TiendanubeConnectionService } from './connections/tiendanube-connection.service';
+import { TiendanubeProductsController } from './products/tiendanube-products.controller';
+import { TiendanubeProductsService } from './products/tiendanube-products.service';
 import { TiendanubeApiService } from './shared/tiendanube-api.service';
 import { TiendanubeController } from './tiendanube.controller';
 import { TiendanubeModule } from './tiendanube.module';
@@ -52,6 +54,8 @@ describe('TiendanubeModule', () => {
       SupabaseTiendanubeConnectionRepository,
     );
     expect(moduleFixture.get(TiendanubeConnectionService)).toBeDefined();
+    expect(moduleFixture.get(TiendanubeProductsController)).toBeDefined();
+    expect(moduleFixture.get(TiendanubeProductsService)).toBeDefined();
     expect(moduleFixture.get(TiendanubePrivacyWebhookController)).toBeDefined();
     expect(moduleFixture.get(TiendanubePrivacyWebhookService)).toBeDefined();
   });

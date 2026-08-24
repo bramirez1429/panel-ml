@@ -22,7 +22,10 @@ type ApiMock = jest.Mocked<Pick<TiendanubeApiService, 'postOAuthToken'>>;
 type ConnectionRepositoryMock = jest.Mocked<
   Pick<
     TiendanubeConnectionRepository,
-    'saveConnection' | 'findSummaryByUserId' | 'deleteByStoreId'
+    | 'saveConnection'
+    | 'findSummaryByUserId'
+    | 'findCredentialsByUserId'
+    | 'deleteByStoreId'
   >
 >;
 
@@ -41,6 +44,7 @@ describe('TiendanubeOAuthService', () => {
     connectionRepository = {
       saveConnection: jest.fn(),
       findSummaryByUserId: jest.fn(),
+      findCredentialsByUserId: jest.fn(),
       deleteByStoreId: jest.fn(),
     };
     service = new TiendanubeOAuthService(
