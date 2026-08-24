@@ -13,6 +13,8 @@ import { TiendanubeConnectionService } from './connections/tiendanube-connection
 import { TiendanubeApiService } from './shared/tiendanube-api.service';
 import { TiendanubeController } from './tiendanube.controller';
 import { TiendanubeModule } from './tiendanube.module';
+import { TiendanubePrivacyWebhookController } from './webhooks/tiendanube-privacy-webhook.controller';
+import { TiendanubePrivacyWebhookService } from './webhooks/tiendanube-privacy-webhook.service';
 
 describe('TiendanubeModule', () => {
   let app: INestApplication<App>;
@@ -50,6 +52,8 @@ describe('TiendanubeModule', () => {
       SupabaseTiendanubeConnectionRepository,
     );
     expect(moduleFixture.get(TiendanubeConnectionService)).toBeDefined();
+    expect(moduleFixture.get(TiendanubePrivacyWebhookController)).toBeDefined();
+    expect(moduleFixture.get(TiendanubePrivacyWebhookService)).toBeDefined();
   });
 
   it('expone GET /tiendanube/health con estado 200', async () => {

@@ -16,4 +16,5 @@ export abstract class TiendanubeConnectionRepository {
   abstract findSummaryByUserId(
     userId: string,
   ): Promise<TiendanubeConnectionSummary | null>;
+  abstract deleteByStoreId(storeId: string): Promise<void>;
 }

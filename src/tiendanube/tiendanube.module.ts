@@ -9,15 +9,18 @@ import { TiendanubeConnectionRepository } from './connections/tiendanube-connect
 import { TiendanubeConnectionService } from './connections/tiendanube-connection.service';
 import { TiendanubeApiService } from './shared/tiendanube-api.service';
 import { TiendanubeController } from './tiendanube.controller';
+import { TiendanubePrivacyWebhookController } from './webhooks/tiendanube-privacy-webhook.controller';
+import { TiendanubePrivacyWebhookService } from './webhooks/tiendanube-privacy-webhook.service';
 
 @Module({
   imports: [ConfigModule, AuthModule],
-  controllers: [TiendanubeController],
+  controllers: [TiendanubeController, TiendanubePrivacyWebhookController],
   providers: [
     SupabaseService,
     TiendanubeApiService,
     TiendanubeOAuthService,
     TiendanubeConnectionService,
+    TiendanubePrivacyWebhookService,
     {
       provide: TiendanubeConnectionRepository,
       useClass: SupabaseTiendanubeConnectionRepository,

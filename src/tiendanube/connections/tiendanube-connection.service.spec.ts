@@ -4,7 +4,10 @@ import { TiendanubeConnectionService } from './tiendanube-connection.service';
 const USER_ID = '11111111-1111-4111-8111-111111111111';
 
 type ConnectionRepositoryMock = jest.Mocked<
-  Pick<TiendanubeConnectionRepository, 'findSummaryByUserId'>
+  Pick<
+    TiendanubeConnectionRepository,
+    'saveConnection' | 'findSummaryByUserId' | 'deleteByStoreId'
+  >
 >;
 
 describe('TiendanubeConnectionService', () => {
@@ -13,11 +16,11 @@ describe('TiendanubeConnectionService', () => {
 
   beforeEach(() => {
     repository = {
+      saveConnection: jest.fn(),
       findSummaryByUserId: jest.fn(),
+      deleteByStoreId: jest.fn(),
     };
-    service = new TiendanubeConnectionService(
-      repository as TiendanubeConnectionRepository,
-    );
+    service = new TiendanubeConnectionService(repository);
   });
 
   it('devuelve el estado seguro de una conexión existente', async () => {

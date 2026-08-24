@@ -50,6 +50,23 @@ function setupReadRepository(data: unknown, error: unknown = null) {
   };
 }
 
+function setupDeleteRepository(error: unknown = null) {
+  const eq = jest.fn().mockResolvedValue({ data: null, error });
+  const remove = jest.fn().mockReturnValue({ eq });
+  const from = jest.fn().mockReturnValue({ delete: remove });
+  const client = { from } as unknown as SupabaseClient<Database>;
+  const supabase = {
+    getClient: jest.fn().mockReturnValue(client),
+  } as unknown as SupabaseService;
+
+  return {
+    repository: new SupabaseTiendanubeConnectionRepository(supabase),
+    from,
+    remove,
+    eq,
+  };
+}
+
 describe('SupabaseTiendanubeConnectionRepository', () => {
   beforeEach(() => {
     jest.useFakeTimers();
@@ -184,6 +201,76 @@ describe('SupabaseTiendanubeConnectionRepository', () => {
     expect(caught).toMatchObject({
       status: 503,
       message: 'No se pudo leer la conexión de Tiendanube',
+    });
+    expect(JSON.stringify(caught)).not.toContain(ACCESS_TOKEN);
+  });
+
+  it('elimina conexiones con un filtro exacto por store_id', async () => {
+    const { repository, from, remove, eq } = setupDeleteRepository();
+
+    await expect(repository.deleteByStoreId('987654')).resolves.toBeUndefined();
+
+    expect(from).toHaveBeenCalledTimes(1);
+    expect(from).toHaveBeenCalledWith('tiendanube_connections');
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(eq).toHaveBeenCalledTimes(1);
+    expect(eq).toHaveBeenCalledWith('store_id', '987654');
+  });
+
+  it('elimina todas las filas de la tienda indicada sin afectar otras tiendas', async () => {
+    const rows = [
+      { userId: 'user-a', storeId: '111111' },
+      { userId: 'user-b', storeId: '222222' },
+      { userId: 'user-c', storeId: '111111' },
+    ];
+    const eq = jest.fn((column: string, value: string) => {
+      if (column === 'store_id') {
+        for (let index = rows.length - 1; index >= 0; index -= 1) {
+          if (rows[index].storeId === value) rows.splice(index, 1);
+        }
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+    const remove = jest.fn().mockReturnValue({ eq });
+    const from = jest.fn().mockReturnValue({ delete: remove });
+    const client = { from } as unknown as SupabaseClient<Database>;
+    const supabase = {
+      getClient: jest.fn().mockReturnValue(client),
+    } as unknown as SupabaseService;
+    const repository = new SupabaseTiendanubeConnectionRepository(supabase);
+
+    await repository.deleteByStoreId('111111');
+
+    expect(rows).toEqual([{ userId: 'user-b', storeId: '222222' }]);
+    expect(eq).toHaveBeenCalledWith('store_id', '111111');
+  });
+
+  it('es idempotente cuando la tienda no tiene conexiones', async () => {
+    const { repository, eq } = setupDeleteRepository();
+
+    await expect(repository.deleteByStoreId('987654')).resolves.toBeUndefined();
+    await expect(repository.deleteByStoreId('987654')).resolves.toBeUndefined();
+
+    expect(eq).toHaveBeenCalledTimes(2);
+    expect(eq).toHaveBeenNthCalledWith(1, 'store_id', '987654');
+    expect(eq).toHaveBeenNthCalledWith(2, 'store_id', '987654');
+  });
+
+  it('oculta el token y los detalles cuando falla la eliminación', async () => {
+    const { repository } = setupDeleteRepository({
+      message: `database error containing ${ACCESS_TOKEN}`,
+    });
+
+    let caught: unknown;
+    try {
+      await repository.deleteByStoreId('987654');
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toMatchObject({
+      status: 503,
+      message: 'No se pudo eliminar la conexión de Tiendanube',
     });
     expect(JSON.stringify(caught)).not.toContain(ACCESS_TOKEN);
   });

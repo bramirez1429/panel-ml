@@ -1,7 +1,11 @@
-import { ValidationPipe } from '@nestjs/common';
+import { type NestApplicationOptions, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
+
+export const NEST_APPLICATION_OPTIONS: Readonly<NestApplicationOptions> = {
+  rawBody: true,
+};
 
 export function configureApp(app: NestExpressApplication): void {
   app.use(helmet());

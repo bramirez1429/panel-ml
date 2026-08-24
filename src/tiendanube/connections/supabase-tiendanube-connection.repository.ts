@@ -52,6 +52,24 @@ export class SupabaseTiendanubeConnectionRepository extends TiendanubeConnection
     };
   }
 
+  async deleteByStoreId(storeId: string): Promise<void> {
+    try {
+      const { error } = await this.supabaseService
+        .getClient()
+        .from('tiendanube_connections')
+        .delete()
+        .eq('store_id', storeId);
+
+      if (!error) return;
+    } catch {
+      // Los detalles de Supabase pueden contener credenciales y no se propagan.
+    }
+
+    throw new ServiceUnavailableException(
+      'No se pudo eliminar la conexión de Tiendanube',
+    );
+  }
+
   private async readSummaryRow(userId: string) {
     try {
       return await this.supabaseService
