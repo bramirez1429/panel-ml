@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   GatewayTimeoutException,
   Injectable,
+  NotFoundException,
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -298,6 +299,12 @@ export class MercadolibreApiService {
 
     if (kind === 'scroll' && (status === 400 || status === 404)) {
       throw new BadGatewayException('El scroll_id está ausente o venció');
+    }
+
+    if (kind === 'description' && status === 404) {
+      throw new NotFoundException(
+        'Mercado Libre no encontró la descripción solicitada',
+      );
     }
 
     if (status === 400) {

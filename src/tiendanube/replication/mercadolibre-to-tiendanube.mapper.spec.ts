@@ -4,6 +4,8 @@ import { MercadoLibreToTiendanubeMapper } from './mercadolibre-to-tiendanube.map
 import type { ReplicableProduct } from './tiendanube-replication.types';
 
 const COLOR_TALLE_PRODUCT: ReplicableProduct = {
+  description:
+    '  Primera & <b>"doble" y \'simple\'</b>\r\nSegunda\rTercera\nCuarta con <br> literal  ',
   title: '  Remera clásica  ',
   images: [' https://images.example.com/remera.jpg '],
   attributes: [
@@ -38,6 +40,9 @@ describe('MercadoLibreToTiendanubeMapper', () => {
 
     expect(result).toEqual({
       name: { es: 'Remera clásica' },
+      description: {
+        es: 'Primera &amp; &lt;b&gt;&quot;doble&quot; y &#39;simple&#39;&lt;/b&gt;<br>Segunda<br>Tercera<br>Cuarta con &lt;br&gt; literal',
+      },
       visibility: 'hidden',
       images: [{ src: 'https://images.example.com/remera.jpg' }],
       attributes: [{ es: 'Color' }, { es: 'Talle' }],
@@ -60,6 +65,28 @@ describe('MercadoLibreToTiendanubeMapper', () => {
     });
     expect(result).not.toHaveProperty('published');
   });
+
+  it.each([
+    ['null', null],
+    ['vacía', ''],
+    ['sólo espacios', ' \r\n\t '],
+  ])('omite una descripción %s', (_case, description) => {
+    const result = MercadoLibreToTiendanubeMapper.map({
+      ...COLOR_TALLE_PRODUCT,
+      description,
+    });
+
+    expect(result).not.toHaveProperty('description');
+    expect(result.visibility).toBe('hidden');
+    expect(result).not.toHaveProperty('published');
+  });
+
+  it.each([undefined, 123, {}, []])(
+    'rechaza una descripción no nullable/string: %p',
+    (description) => {
+      expectControlledFailure({ ...COLOR_TALLE_PRODUCT, description });
+    },
+  );
 
   it('deduplica imágenes conservando orden y limita el DTO a nueve', () => {
     const uniqueImages = Array.from(
@@ -89,6 +116,7 @@ describe('MercadoLibreToTiendanubeMapper', () => {
   ])('omite un SKU %s porque no es un valor real', (_case, sku) => {
     const result = MercadoLibreToTiendanubeMapper.map({
       title: 'Producto simple',
+      description: null,
       images: [],
       attributes: [],
       variants: [{ price: 1234.5, stock: 0, sku, values: [] }],

@@ -69,6 +69,8 @@ const ML_PRODUCT: MercadolibreProductDetail = {
 
 const SHARED_SOURCE: ReplicableProduct = {
   title: 'Remera clásica',
+  description:
+    'Primera & <b>"doble" y \'simple\'</b>\r\nSegunda con <br> literal',
   images: Array.from(
     { length: 11 },
     (_, index) => `https://example.com/image-${index + 1}.jpg`,
@@ -192,6 +194,9 @@ describe('TiendanubeReplicationService', () => {
       '/products',
       {
         name: { es: 'Remera clásica' },
+        description: {
+          es: 'Primera &amp; &lt;b&gt;&quot;doble&quot; y &#39;simple&#39;&lt;/b&gt;<br>Segunda con &lt;br&gt; literal',
+        },
         visibility: 'hidden',
         images: Array.from({ length: 9 }, (_, index) => ({
           src: `https://example.com/image-${index + 1}.jpg`,
@@ -249,6 +254,7 @@ describe('TiendanubeReplicationService', () => {
     };
     const familySource: ReplicableProduct = {
       title: 'Remera familiar',
+      description: null,
       images: ['https://example.com/family.jpg'],
       attributes: [
         { id: 'COLOR', name: 'Color' },
@@ -303,6 +309,40 @@ describe('TiendanubeReplicationService', () => {
     });
     expect(tokenService.getValidAccessToken).not.toHaveBeenCalled();
     expect(sourceService.load).not.toHaveBeenCalled();
+    expect(apiService.post).not.toHaveBeenCalled();
+    expect(linkRepository.complete).not.toHaveBeenCalled();
+  });
+
+  it('un conflicto de descripción ocurre tras reservar y antes del POST', async () => {
+    sourceService.load.mockRejectedValue(
+      new ConflictException(
+        'La familia tiene descripciones diferentes en Mercado Libre',
+      ),
+    );
+
+    await expect(
+      service.replicate(USER_A, ML_PRODUCT_ID),
+    ).rejects.toMatchObject({ status: 409 });
+
+    expect(linkRepository.reserve).toHaveBeenCalledWith({
+      userId: USER_A,
+      storeId: '987654',
+      mlProductId: ML_PRODUCT_ID,
+      mlSourceKey: ML_PRODUCT.external_key,
+    });
+    expect(sourceService.load).toHaveBeenCalledWith(
+      ML_PRODUCT,
+      ML_CONNECTION.seller_id,
+      ML_ACCESS_TOKEN,
+    );
+    expect(linkRepository.fail).toHaveBeenCalledWith({
+      linkId: LINK_ID,
+      userId: USER_A,
+      storeId: '987654',
+      mlProductId: ML_PRODUCT_ID,
+      mlSourceKey: ML_PRODUCT.external_key,
+      reservationVersion: RESERVATION_VERSION,
+    });
     expect(apiService.post).not.toHaveBeenCalled();
     expect(linkRepository.complete).not.toHaveBeenCalled();
   });

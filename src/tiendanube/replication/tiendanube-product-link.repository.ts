@@ -38,6 +38,18 @@ export type FailTiendanubeProductLinkInput = Readonly<{
   reservationVersion: string;
 }>;
 
+export type FindTiendanubeProductLinkStatusesInput = Readonly<{
+  userId: string;
+  storeId: string;
+  mlProductIds: readonly string[];
+}>;
+
+export type TiendanubeProductLinkStatusRecord = Readonly<{
+  mlProductId: string;
+  status: 'PENDING' | 'FAILED' | 'COMPLETED';
+  tiendanubeProductId: string | null;
+}>;
+
 export abstract class TiendanubeProductLinkRepository {
   abstract reserve(
     input: ReserveTiendanubeProductLinkInput,
@@ -46,4 +58,8 @@ export abstract class TiendanubeProductLinkRepository {
   abstract complete(input: CompleteTiendanubeProductLinkInput): Promise<void>;
 
   abstract fail(input: FailTiendanubeProductLinkInput): Promise<void>;
+
+  abstract findStatusesByMlProductIds(
+    input: FindTiendanubeProductLinkStatusesInput,
+  ): Promise<readonly TiendanubeProductLinkStatusRecord[]>;
 }

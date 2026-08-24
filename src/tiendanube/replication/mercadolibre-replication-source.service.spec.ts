@@ -5,6 +5,7 @@ import type {
   MercadolibreChildRow,
   MercadolibreProductDetail,
 } from '../../database/repositories/mercadolibre-publications.types';
+import { DescriptionService } from '../../mercadolibre/direct-publications/description/description.service';
 import type { MercadoLibrePublication } from '../../mercadolibre/publications/publication.types';
 import { PublicationSourceService } from '../../mercadolibre/publications/sync/publication-source.service';
 import { UserProductFamilyService } from '../../mercadolibre/user-products/user-product-family.service';
@@ -65,12 +66,16 @@ type PublicationSourceMock = jest.Mocked<
 type FamilyServiceMock = jest.Mocked<
   Pick<UserProductFamilyService, 'createCache' | 'getFamily' | 'getUserProduct'>
 >;
+type DescriptionServiceMock = jest.Mocked<
+  Pick<DescriptionService, 'getPlainTextByItemId'>
+>;
 
 describe('MercadoLibreReplicationSourceService', () => {
   let service: MercadoLibreReplicationSourceService;
   let childrenRepository: ChildrenRepositoryMock;
   let publicationSource: PublicationSourceMock;
   let familyService: FamilyServiceMock;
+  let descriptionService: DescriptionServiceMock;
 
   beforeEach(() => {
     childrenRepository = {
@@ -85,14 +90,21 @@ describe('MercadoLibreReplicationSourceService', () => {
       getFamily: jest.fn(),
       getUserProduct: jest.fn(),
     };
+    descriptionService = {
+      getPlainTextByItemId: jest.fn().mockResolvedValue(null),
+    };
     service = new MercadoLibreReplicationSourceService(
       childrenRepository as unknown as MercadolibreChildrenRepository,
       publicationSource as unknown as PublicationSourceService,
       familyService as unknown as UserProductFamilyService,
+      descriptionService as unknown as DescriptionService,
     );
   });
 
   it('lee SHARED vivo y conserva todas sus variaciones, SKU, precio, stock e imágenes', async () => {
+    descriptionService.getPlainTextByItemId.mockResolvedValue(
+      'Descripción real del MLA',
+    );
     publicationSource.getItemWithAllAttributes.mockResolvedValue({
       id: 'MLA100001',
       seller_id: SELLER_ID,
@@ -116,6 +128,7 @@ describe('MercadoLibreReplicationSourceService', () => {
       service.load(SHARED_PRODUCT, SELLER_ID, ACCESS_TOKEN),
     ).resolves.toEqual({
       title: 'Remera real',
+      description: 'Descripción real del MLA',
       images: ['http://example.com/one.jpg', 'https://example.com/two.jpg'],
       attributes: [
         { id: 'COLOR', name: 'Color' },
@@ -146,6 +159,10 @@ describe('MercadoLibreReplicationSourceService', () => {
       'MLA100001',
       ACCESS_TOKEN,
     );
+    expect(descriptionService.getPlainTextByItemId).toHaveBeenCalledWith(
+      'MLA100001',
+      ACCESS_TOKEN,
+    );
     expect(childrenRepository.findByProductId).not.toHaveBeenCalled();
   });
 
@@ -166,6 +183,7 @@ describe('MercadoLibreReplicationSourceService', () => {
 
     expect(result).toEqual({
       title: 'Producto simple',
+      description: null,
       images: [],
       attributes: [],
       variants: [
@@ -178,6 +196,30 @@ describe('MercadoLibreReplicationSourceService', () => {
       ],
     });
   });
+
+  it.each([
+    ['vacía', ''],
+    ['ausente', null],
+  ])(
+    'representa una descripción SHARED %s como null',
+    async (_case, description) => {
+      descriptionService.getPlainTextByItemId.mockResolvedValue(description);
+      publicationSource.getItemWithAllAttributes.mockResolvedValue({
+        id: 'MLA100001',
+        seller_id: SELLER_ID,
+        title: 'Producto simple',
+        price: 12_345.5,
+        available_quantity: 8,
+        pictures: [],
+        attributes: [],
+        variations: [],
+      });
+
+      await expect(
+        service.load(SHARED_PRODUCT, SELLER_ID, ACCESS_TOKEN),
+      ).resolves.toMatchObject({ description: null });
+    },
+  );
 
   it('no inventa un SKU a partir de seller_custom_field', async () => {
     publicationSource.getItemWithAllAttributes.mockResolvedValue({
@@ -225,6 +267,9 @@ describe('MercadoLibreReplicationSourceService', () => {
 
   it('lee una familia real y produce un producto con una variante por MLAU', async () => {
     const userProductIds = ['MLAU1001', 'MLAU1002', 'MLAU1003'];
+    descriptionService.getPlainTextByItemId.mockResolvedValue(
+      'Descripción común de la familia',
+    );
     childrenRepository.findByProductId.mockResolvedValue(
       userProductIds.map((userProductId, index) =>
         child(userProductId, `MLA20000${index + 1}`, index),
@@ -272,6 +317,7 @@ describe('MercadoLibreReplicationSourceService', () => {
 
     expect(result).toEqual({
       title: 'Remera familiar real',
+      description: 'Descripción común de la familia',
       images: [
         'https://example.com/MLAU1001.jpg',
         'https://example.com/shared.jpg',
@@ -318,7 +364,57 @@ describe('MercadoLibreReplicationSourceService', () => {
       ACCESS_TOKEN,
     );
     expect(publicationSource.getItemWithAllAttributes).toHaveBeenCalledTimes(3);
+    expect(descriptionService.getPlainTextByItemId.mock.calls).toEqual([
+      ['MLA200001', ACCESS_TOKEN],
+      ['MLA200002', ACCESS_TOKEN],
+      ['MLA200003', ACCESS_TOKEN],
+    ]);
     expect(familyService.getUserProduct).toHaveBeenCalledTimes(3);
+  });
+
+  it('rechaza descripciones diferentes de una familia antes de continuar', async () => {
+    const userProductIds = ['MLAU1001', 'MLAU1002'];
+    childrenRepository.findByProductId.mockResolvedValue([
+      child('MLAU1001', 'MLA200001', 1),
+      child('MLAU1002', 'MLA200002', 2),
+    ]);
+    familyService.getFamily.mockResolvedValue({
+      familyId: '778899',
+      siteId: 'MLA',
+      userId: SELLER_ID,
+      userProductIds,
+    });
+    publicationSource.getItemIdsForUserProducts.mockResolvedValue([
+      'MLA200001',
+      'MLA200002',
+    ]);
+    const items = new Map<string, MercadoLibrePublication>([
+      [
+        'MLA200001',
+        familyItem('MLA200001', 'MLAU1001', 'Negro', 'S', 40_000, 2, null),
+      ],
+      [
+        'MLA200002',
+        familyItem('MLA200002', 'MLAU1002', 'Blanco', 'M', 41_000, 3, null),
+      ],
+    ]);
+    publicationSource.getItemWithAllAttributes.mockImplementation((itemId) =>
+      Promise.resolve(items.get(itemId) as MercadoLibrePublication),
+    );
+    descriptionService.getPlainTextByItemId.mockImplementation((itemId) =>
+      Promise.resolve(
+        itemId === 'MLA200001' ? 'Descripción uno' : 'Descripción dos',
+      ),
+    );
+
+    await expect(
+      service.load(FAMILY_PRODUCT, SELLER_ID, ACCESS_TOKEN),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(descriptionService.getPlainTextByItemId.mock.calls).toEqual([
+      ['MLA200001', ACCESS_TOKEN],
+      ['MLA200002', ACCESS_TOKEN],
+    ]);
+    expect(familyService.getUserProduct).not.toHaveBeenCalled();
   });
 
   it('aborta antes de consultar MLA si un MLAU tiene múltiples children', async () => {

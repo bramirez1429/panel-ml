@@ -1,7 +1,13 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadGatewayException,
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 
 import { MercadolibreTokenService } from '../../auth/mercadolibre-token.service';
 import { MercadolibreApiService } from '../../shared/mercadolibre-api.service';
+import { isJsonObject } from '../../shared/mercadolibre.types';
 
 import { ItemsService } from '../items/items.service';
 import { PublicationsMapper } from '../publications/publications.mapper';
@@ -78,6 +84,41 @@ export class DescriptionService {
     return this.getDescription(item.id, accessToken);
   }
 
+  /** Lee la descripción real de un MLA sin convertir texto externo en HTML. */
+  async getPlainTextByItemId(
+    itemId: string,
+    accessToken: string,
+  ): Promise<string | null> {
+    if (!/^MLA\d+$/.test(itemId)) {
+      throw new BadRequestException('itemId debe comenzar con MLA');
+    }
+
+    try {
+      const description = await this.getDescription(itemId, accessToken);
+      if (!isJsonObject(description)) {
+        throw new BadGatewayException(
+          'Mercado Libre devolvió una descripción inválida',
+        );
+      }
+      if (
+        description.plain_text === undefined ||
+        description.plain_text === null
+      ) {
+        return null;
+      }
+      if (typeof description.plain_text !== 'string') {
+        throw new BadGatewayException(
+          'Mercado Libre devolvió una descripción inválida',
+        );
+      }
+
+      return normalizePlainText(description.plain_text);
+    } catch (error) {
+      if (error instanceof NotFoundException) return null;
+      throw error;
+    }
+  }
+
   async createNew(
     userId: string,
     familyId: string,
@@ -121,8 +162,9 @@ export class DescriptionService {
     accessToken: string,
   ): Promise<MlDescription> {
     return this.apiService.get<MlDescription>(
-      `/items/${itemId}/description`,
+      `/items/${encodeURIComponent(itemId)}/description`,
       accessToken,
+      'description',
     );
   }
 
@@ -181,4 +223,9 @@ export class DescriptionService {
       );
     }
   }
+}
+
+/** Normaliza el formato de texto sin interpretar contenido externo como HTML. */
+function normalizePlainText(value: string): string | null {
+  return value.replaceAll(/\r\n?/g, '\n').trim() || null;
 }

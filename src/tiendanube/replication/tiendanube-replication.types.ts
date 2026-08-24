@@ -17,6 +17,7 @@ export type ReplicableProductVariant = Readonly<{
 
 export type ReplicableProduct = Readonly<{
   title: string;
+  description: string | null;
   images: readonly string[];
   attributes: readonly ReplicableProductAttribute[];
   variants: readonly ReplicableProductVariant[];
@@ -36,6 +37,7 @@ export type TiendanubeCreateProductVariantDto = Readonly<{
 
 export type TiendanubeCreateProductDto = Readonly<{
   name: TiendanubeLocalizedValueDto;
+  description?: TiendanubeLocalizedValueDto;
   visibility: 'hidden';
   images: readonly Readonly<{ src: string }>[];
   attributes: readonly TiendanubeLocalizedValueDto[];

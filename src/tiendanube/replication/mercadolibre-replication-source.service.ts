@@ -10,6 +10,7 @@ import type {
   MercadolibreChildRow,
   MercadolibreProductDetail,
 } from '../../database/repositories/mercadolibre-publications.types';
+import { DescriptionService } from '../../mercadolibre/direct-publications/description/description.service';
 import {
   textOrNull,
   varyingAttributeIds,
@@ -41,6 +42,11 @@ type SourcePicture = Readonly<{
   url?: unknown;
 }>;
 
+type ReplicableProductWithoutDescription = Omit<
+  ReplicableProduct,
+  'description'
+>;
+
 const TECHNICAL_ATTRIBUTE_IDS = new Set([
   'EMPTY_GTIN_REASON',
   'GTIN',
@@ -55,6 +61,7 @@ export class MercadoLibreReplicationSourceService {
     private readonly childrenRepository: MercadolibreChildrenRepository,
     private readonly publicationSourceService: PublicationSourceService,
     private readonly userProductFamilyService: UserProductFamilyService,
+    private readonly descriptionService: DescriptionService,
   ) {}
 
   async load(
@@ -97,40 +104,35 @@ export class MercadoLibreReplicationSourceService {
     const images = parsePictures(item.pictures);
     const price = requirePrice(item.price);
     const rawVariations = item.variations;
-
-    if (rawVariations === undefined || rawVariations === null) {
-      return {
-        title,
-        images,
-        attributes: [],
-        variants: [
-          {
-            price,
-            stock: requireStock(item.available_quantity),
-            sku: findSku(item.attributes),
-            values: [],
-          },
-        ],
-      };
-    }
-    if (!Array.isArray(rawVariations)) throw invalidMlResponse();
-    if (rawVariations.length === 0) {
-      return {
-        title,
-        images,
-        attributes: [],
-        variants: [
-          {
-            price,
-            stock: requireStock(item.available_quantity),
-            sku: findSku(item.attributes),
-            values: [],
-          },
-        ],
-      };
+    if (
+      rawVariations !== undefined &&
+      rawVariations !== null &&
+      !Array.isArray(rawVariations)
+    ) {
+      throw invalidMlResponse();
     }
 
-    return this.buildSharedProduct(title, images, price, rawVariations);
+    const source =
+      Array.isArray(rawVariations) && rawVariations.length > 0
+        ? this.buildSharedProduct(title, images, price, rawVariations)
+        : {
+            title,
+            images,
+            attributes: [],
+            variants: [
+              {
+                price,
+                stock: requireStock(item.available_quantity),
+                sku: findSku(item.attributes),
+                values: [],
+              },
+            ],
+          };
+    const description = normalizeDescription(
+      await this.descriptionService.getPlainTextByItemId(itemId, accessToken),
+    );
+
+    return { ...source, description };
   }
 
   private buildSharedProduct(
@@ -138,7 +140,7 @@ export class MercadoLibreReplicationSourceService {
     images: readonly string[],
     price: number,
     rawVariations: readonly unknown[],
-  ): ReplicableProduct {
+  ): ReplicableProductWithoutDescription {
     const parsed = rawVariations.map((value) => {
       if (!isJsonObject(value)) throw invalidMlResponse();
       const combinations = parseAttributes(value.attribute_combinations);
@@ -277,6 +279,17 @@ export class MercadoLibreReplicationSourceService {
       );
     }
 
+    const descriptions: Array<string | null> = [];
+    for (const item of orderedItems) {
+      descriptions.push(
+        await this.descriptionService.getPlainTextByItemId(
+          requireItemId(item.id),
+          accessToken,
+        ),
+      );
+    }
+    const description = requireConsistentFamilyDescription(descriptions);
+
     const userProducts: MercadoLibreUserProduct[] = [];
     for (const userProductId of family.userProductIds) {
       userProducts.push(
@@ -301,7 +314,7 @@ export class MercadoLibreReplicationSourceService {
     }));
     ensureUniqueVariantCombinations(variants);
 
-    return { title, images, attributes, variants };
+    return { title, description, images, attributes, variants };
   }
 
   private validateStoredChildren(
@@ -502,6 +515,27 @@ function requireConsistentFamilyTitle(
     );
   }
   return [...titles][0];
+}
+
+function requireConsistentFamilyDescription(
+  descriptions: readonly (string | null)[],
+): string | null {
+  let uniqueDescription: string | null = null;
+  for (const description of descriptions) {
+    const normalized = normalizeDescription(description);
+    if (!normalized) continue;
+    if (uniqueDescription && normalized !== uniqueDescription) {
+      throw new ConflictException(
+        'La familia tiene descripciones diferentes entre sus publicaciones',
+      );
+    }
+    uniqueDescription = normalized;
+  }
+  return uniqueDescription;
+}
+
+function normalizeDescription(value: string | null): string | null {
+  return value?.trim() || null;
 }
 
 function requireSameSet(

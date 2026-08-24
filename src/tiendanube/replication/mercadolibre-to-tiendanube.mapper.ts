@@ -30,11 +30,18 @@ function parseProduct(value: unknown): ReplicableProduct {
   const title = nonEmptyString(value.title);
   if (!title) invalidProduct();
 
+  const description = parseDescription(value.description);
   const images = parseImages(value.images);
   const attributes = parseAttributes(value.attributes);
   const variants = parseVariants(value.variants, attributes);
 
-  return { title, images, attributes, variants };
+  return { title, description, images, attributes, variants };
+}
+
+function parseDescription(value: unknown): string | null {
+  if (value === null) return null;
+  if (typeof value !== 'string') invalidProduct();
+  return value.trim() || null;
 }
 
 function parseImages(value: unknown): readonly string[] {
@@ -173,11 +180,24 @@ function orderValues(
 function mapProduct(product: ReplicableProduct): TiendanubeCreateProductDto {
   return {
     name: { es: product.title },
+    ...(product.description
+      ? { description: { es: plainTextToSafeHtml(product.description) } }
+      : {}),
     visibility: 'hidden',
     images: product.images.map((src) => ({ src })),
     attributes: product.attributes.map(({ name }) => ({ es: name })),
     variants: product.variants.map(mapVariant),
   };
+}
+
+function plainTextToSafeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+    .replaceAll(/\r\n?|\n/g, '<br>');
 }
 
 function mapVariant(

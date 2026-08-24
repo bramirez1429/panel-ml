@@ -121,6 +121,22 @@ describe('MercadolibreApiService', () => {
     },
   );
 
+  it('distingue un 404 de descripción sin cambiar otros 404', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ message: 'not found' }, 404))
+      .mockResolvedValueOnce(jsonResponse({ message: 'not found' }, 404));
+
+    await expect(
+      service.get('/items/MLA1/description', 'private-token', 'description'),
+    ).rejects.toMatchObject({
+      status: 404,
+      message: 'Mercado Libre no encontró la descripción solicitada',
+    });
+    await expect(
+      service.get('/items/MLA1', 'private-token'),
+    ).rejects.toMatchObject({ status: 502 });
+  });
+
   it('distingue timeout, red y JSON inválido', async () => {
     fetchMock
       .mockRejectedValueOnce(

@@ -129,6 +129,7 @@ import { ShippingController } from './direct-publications/shipping/shipping.cont
     MercadolibreTokenService,
     PublicationSourceService,
     UserProductFamilyService,
+    DescriptionService,
   ],
 })
 export class MercadolibreModule {}
