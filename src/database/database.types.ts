@@ -61,6 +61,40 @@ type TiendanubeConnectionInsert = {
   updated_at?: string;
 };
 
+type TiendanubeProductLinkStatus = 'PENDING' | 'FAILED' | 'COMPLETED';
+
+type TiendanubeProductLinkRow = {
+  id: string;
+  user_id: string;
+  store_id: string;
+  ml_product_id: string | null;
+  ml_source_key: string;
+  tiendanube_product_id: string | null;
+  status: TiendanubeProductLinkStatus;
+  created_at: string;
+  updated_at: string;
+};
+
+type TiendanubeProductLinkInsert = {
+  id?: string;
+  user_id: string;
+  store_id: string;
+  ml_product_id?: string | null;
+  ml_source_key: string;
+  tiendanube_product_id?: string | null;
+  status?: TiendanubeProductLinkStatus;
+  created_at?: string;
+  updated_at?: string;
+};
+
+type ReserveTiendanubeProductLinkResult = {
+  outcome: 'RESERVED' | 'PENDING' | 'COMPLETED';
+  link_id: string;
+  link_status: TiendanubeProductLinkStatus;
+  tiendanube_product_id: string | null;
+  reservation_version: string | null;
+};
+
 type UserRow = {
   id: string;
   email: string;
@@ -307,6 +341,26 @@ export type Database = {
           },
         ]
       >;
+      tiendanube_product_links: Table<
+        TiendanubeProductLinkRow,
+        TiendanubeProductLinkInsert,
+        [
+          {
+            foreignKeyName: 'tiendanube_product_links_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'tiendanube_product_links_ml_product_id_fkey';
+            columns: ['ml_product_id'];
+            isOneToOne: false;
+            referencedRelation: 'mercadolibre_products';
+            referencedColumns: ['id'];
+          },
+        ]
+      >;
       mercadolibre_products: Table<ProductRow, ProductInsert>;
       mercadolibre_product_children: Table<
         ChildRow,
@@ -355,6 +409,38 @@ export type Database = {
           p_state_hash: string;
           p_user_id: string;
           p_browser_binding_hash: string;
+        };
+        Returns: boolean;
+      };
+      reserve_tiendanube_product_link: {
+        Args: {
+          p_user_id: string;
+          p_store_id: string;
+          p_ml_product_id: string;
+          p_ml_source_key: string;
+        };
+        Returns: ReserveTiendanubeProductLinkResult[];
+      };
+      complete_tiendanube_product_link: {
+        Args: {
+          p_link_id: string;
+          p_user_id: string;
+          p_store_id: string;
+          p_ml_product_id: string;
+          p_ml_source_key: string;
+          p_reservation_version: string;
+          p_tiendanube_product_id: string;
+        };
+        Returns: boolean;
+      };
+      fail_tiendanube_product_link: {
+        Args: {
+          p_link_id: string;
+          p_user_id: string;
+          p_store_id: string;
+          p_ml_product_id: string;
+          p_ml_source_key: string;
+          p_reservation_version: string;
         };
         Returns: boolean;
       };

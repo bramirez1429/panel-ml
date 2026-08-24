@@ -12,6 +12,11 @@ import { TiendanubeConnectionRepository } from './connections/tiendanube-connect
 import { TiendanubeConnectionService } from './connections/tiendanube-connection.service';
 import { TiendanubeProductsController } from './products/tiendanube-products.controller';
 import { TiendanubeProductsService } from './products/tiendanube-products.service';
+import { MercadoLibreReplicationSourceService } from './replication/mercadolibre-replication-source.service';
+import { SupabaseTiendanubeProductLinkRepository } from './replication/supabase-tiendanube-product-link.repository';
+import { TiendanubeProductLinkRepository } from './replication/tiendanube-product-link.repository';
+import { TiendanubeReplicationController } from './replication/tiendanube-replication.controller';
+import { TiendanubeReplicationService } from './replication/tiendanube-replication.service';
 import { TiendanubeApiService } from './shared/tiendanube-api.service';
 import { TiendanubeController } from './tiendanube.controller';
 import { TiendanubeModule } from './tiendanube.module';
@@ -56,6 +61,14 @@ describe('TiendanubeModule', () => {
     expect(moduleFixture.get(TiendanubeConnectionService)).toBeDefined();
     expect(moduleFixture.get(TiendanubeProductsController)).toBeDefined();
     expect(moduleFixture.get(TiendanubeProductsService)).toBeDefined();
+    expect(moduleFixture.get(TiendanubeReplicationController)).toBeDefined();
+    expect(moduleFixture.get(TiendanubeReplicationService)).toBeDefined();
+    expect(
+      moduleFixture.get(MercadoLibreReplicationSourceService),
+    ).toBeDefined();
+    expect(moduleFixture.get(TiendanubeProductLinkRepository)).toBeInstanceOf(
+      SupabaseTiendanubeProductLinkRepository,
+    );
     expect(moduleFixture.get(TiendanubePrivacyWebhookController)).toBeDefined();
     expect(moduleFixture.get(TiendanubePrivacyWebhookService)).toBeDefined();
   });

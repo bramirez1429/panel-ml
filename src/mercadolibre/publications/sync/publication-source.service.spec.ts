@@ -231,6 +231,28 @@ describe('PublicationSourceService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('puede solicitar todos los atributos sin omitir el saneamiento', async () => {
+    const { api, source } = createSource(() => ({
+      id: 'MLA123',
+      attributes: [{ id: 'SELLER_SKU', value_name: 'SKU-123' }],
+      access_token: 'secret',
+    }));
+
+    await expect(
+      source.getItemWithAllAttributes('MLA123', 'private-token'),
+    ).resolves.toEqual({
+      id: 'MLA123',
+      attributes: [{ id: 'SELLER_SKU', value_name: 'SKU-123' }],
+    });
+    expect(api.calls).toEqual([
+      {
+        path: '/items/MLA123?include_attributes=all',
+        accessToken: 'private-token',
+        kind: undefined,
+      },
+    ]);
+  });
+
   it('rechaza respuestas externas mal formadas', async () => {
     const { source } = createSource(() => ({ results: ['MLA1'] }));
     await expect(

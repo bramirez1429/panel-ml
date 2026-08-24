@@ -123,5 +123,12 @@ import { ShippingController } from './direct-publications/shipping/shipping.cont
     SmartPromotionService,
     PromotionManagerService,
   ],
+  exports: [
+    MercadolibreProductsRepository,
+    MercadolibreChildrenRepository,
+    MercadolibreTokenService,
+    PublicationSourceService,
+    UserProductFamilyService,
+  ],
 })
 export class MercadolibreModule {}

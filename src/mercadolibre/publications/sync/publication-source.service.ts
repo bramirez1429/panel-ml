@@ -144,11 +144,29 @@ export class PublicationSourceService {
     itemId: string,
     accessToken: string,
   ): Promise<MercadoLibrePublication> {
+    return this.getValidatedItem(itemId, accessToken, false);
+  }
+
+  /** Obtiene un MLA con todos sus atributos, incluidos los usados para SKU. */
+  async getItemWithAllAttributes(
+    itemId: string,
+    accessToken: string,
+  ): Promise<MercadoLibrePublication> {
+    return this.getValidatedItem(itemId, accessToken, true);
+  }
+
+  /** Comparte validación y saneamiento entre las lecturas individuales. */
+  private async getValidatedItem(
+    itemId: string,
+    accessToken: string,
+    includeAllAttributes: boolean,
+  ): Promise<MercadoLibrePublication> {
     if (!/^MLA\d+$/.test(itemId)) {
       throw new BadRequestException('itemId debe comenzar con MLA');
     }
+    const suffix = includeAllAttributes ? '?include_attributes=all' : '';
     const data = await this.apiService.get<unknown>(
-      `/items/${encodeURIComponent(itemId)}`,
+      `/items/${encodeURIComponent(itemId)}${suffix}`,
       accessToken,
     );
     if (!isJsonObject(data) || data.id !== itemId) {
