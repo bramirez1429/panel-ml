@@ -3,7 +3,11 @@ import { ConfigService } from '@nestjs/config';
 
 export const TIENDANUBE_API_URL = 'https://api.tiendanube.com';
 export const TIENDANUBE_API_VERSION = '2025-03';
+export const TIENDANUBE_APPS_URL = 'https://www.tiendanube.com/apps';
+export const TIENDANUBE_OAUTH_TOKEN_URL =
+  'https://www.tiendanube.com/apps/authorize/token';
 export const TIENDANUBE_REQUEST_TIMEOUT_MS = 10_000;
+export const TIENDANUBE_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
 export type TiendanubeEnvironment = {
   TIENDANUBE_CLIENT_ID: string;

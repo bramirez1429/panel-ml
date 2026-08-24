@@ -11,6 +11,7 @@ import {
   getRequiredTiendanubeConfig,
   TIENDANUBE_API_URL,
   TIENDANUBE_API_VERSION,
+  TIENDANUBE_OAUTH_TOKEN_URL,
   TIENDANUBE_REQUEST_TIMEOUT_MS,
   TiendanubeEnvironment,
 } from './tiendanube.config';
@@ -30,6 +31,15 @@ type TiendanubeRequest = Readonly<{
   accessToken?: string;
   body?: unknown;
 }>;
+
+export type TiendanubeOAuthTokenRequest = Readonly<{
+  client_id: string;
+  client_secret: string;
+  grant_type: 'authorization_code';
+  code: string;
+}>;
+
+type TiendanubeErrorContext = 'api' | 'oauth';
 
 @Injectable()
 export class TiendanubeApiService {
@@ -61,6 +71,24 @@ export class TiendanubeApiService {
     });
   }
 
+  /** Intercambia credenciales únicamente contra el endpoint OAuth oficial. */
+  postOAuthToken<T>(
+    request: TiendanubeOAuthTokenRequest,
+  ): Promise<T | undefined> {
+    return this.executeJsonRequest<T>(
+      TIENDANUBE_OAUTH_TOKEN_URL,
+      {
+        method: 'POST',
+        headers: this.buildHeaders(undefined, true),
+        body: JSON.stringify(request),
+        redirect: 'error',
+        signal: AbortSignal.timeout(TIENDANUBE_REQUEST_TIMEOUT_MS),
+      },
+      [request.client_secret, request.code],
+      'oauth',
+    );
+  }
+
   private async requestJson<T>(
     storeId: string | number,
     path: string,
@@ -77,6 +105,21 @@ export class TiendanubeApiService {
         request.body === undefined ? undefined : JSON.stringify(request.body),
       signal: AbortSignal.timeout(TIENDANUBE_REQUEST_TIMEOUT_MS),
     };
+
+    return this.executeJsonRequest<T>(
+      url,
+      init,
+      request.accessToken ? [request.accessToken] : [],
+      'api',
+    );
+  }
+
+  private async executeJsonRequest<T>(
+    url: string,
+    init: RequestInit,
+    sensitiveValues: readonly string[],
+    errorContext: TiendanubeErrorContext,
+  ): Promise<T | undefined> {
     let response: Response;
 
     try {
@@ -99,7 +142,12 @@ export class TiendanubeApiService {
 
     if (data === INVALID_JSON) {
       if (!response.ok) {
-        throwTiendanubeError(response.status, undefined, request.accessToken);
+        throwTiendanubeError(
+          response.status,
+          undefined,
+          sensitiveValues,
+          errorContext,
+        );
       }
 
       throw new BadGatewayException(
@@ -108,7 +156,12 @@ export class TiendanubeApiService {
     }
 
     if (!response.ok) {
-      throwTiendanubeError(response.status, data, request.accessToken);
+      throwTiendanubeError(
+        response.status,
+        data,
+        sensitiveValues,
+        errorContext,
+      );
     }
 
     return data as T;
@@ -177,16 +230,23 @@ async function readJson(response: Response): Promise<unknown> {
 function throwTiendanubeError(
   status: number,
   data?: unknown,
-  accessToken?: string,
+  sensitiveValues: readonly string[] = [],
+  context: TiendanubeErrorContext = 'api',
 ): never {
-  const safeData = sanitizeTiendanubeData(data, accessToken);
-  const message = extractTiendanubeMessage(safeData);
+  const safeData = sanitizeTiendanubeData(data, sensitiveValues);
+  const detail = extractTiendanubeMessage(safeData);
   const responseStatus = status >= 400 && status <= 599 ? status : 502;
+  const message =
+    context === 'oauth'
+      ? detail
+        ? `Tiendanube rechazó el intercambio OAuth: ${detail}`
+        : 'Tiendanube rechazó el intercambio OAuth'
+      : (detail ?? 'Tiendanube rechazó la solicitud');
 
   throw new HttpException(
     {
       statusCode: responseStatus,
-      message: message ?? 'Tiendanube rechazó la solicitud',
+      message,
       service: 'tiendanube',
     },
     responseStatus,
@@ -244,14 +304,21 @@ function extractTiendanubeMessage(value: unknown): string | null {
     : null;
 }
 
-function sanitizeTiendanubeData(value: unknown, accessToken?: string): unknown {
+function sanitizeTiendanubeData(
+  value: unknown,
+  sensitiveValues: readonly string[],
+): unknown {
   if (typeof value === 'string') {
-    const token = accessToken?.trim();
-    return token ? value.replaceAll(token, '[REDACTED]') : value;
+    return sensitiveValues.reduce((safeValue, sensitiveValue) => {
+      const normalized = sensitiveValue.trim();
+      return normalized
+        ? safeValue.replaceAll(normalized, '[REDACTED]')
+        : safeValue;
+    }, value);
   }
 
   if (Array.isArray(value)) {
-    return value.map((item) => sanitizeTiendanubeData(item, accessToken));
+    return value.map((item) => sanitizeTiendanubeData(item, sensitiveValues));
   }
 
   if (!isJsonObject(value)) {
@@ -266,7 +333,7 @@ function sanitizeTiendanubeData(value: unknown, accessToken?: string): unknown {
       )
       .map(([key, nested]) => [
         key,
-        sanitizeTiendanubeData(nested, accessToken),
+        sanitizeTiendanubeData(nested, sensitiveValues),
       ]),
   );
 }

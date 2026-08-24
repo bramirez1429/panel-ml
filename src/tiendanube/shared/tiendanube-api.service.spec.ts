@@ -24,7 +24,9 @@ describe('TiendanubeApiService', () => {
     } as unknown as ConfigService<TiendanubeEnvironment>;
 
     service = new TiendanubeApiService(configService);
-    fetchMock = jest.spyOn(global, 'fetch');
+    fetchMock = jest
+      .spyOn(global, 'fetch')
+      .mockRejectedValue(new Error('Unexpected network request'));
   });
 
   afterEach(() => {
@@ -60,6 +62,71 @@ describe('TiendanubeApiService', () => {
     expect(headers.get('authorization')).toBe('Bearer private-access-token');
     expect(headers.get('content-type')).toBe('application/json; charset=utf-8');
     expect(init?.body).toBe(JSON.stringify({ name: 'Example' }));
+  });
+
+  it('intercambia OAuth mediante POST JSON al endpoint fijo', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        access_token: 'private-access-token',
+        token_type: 'bearer',
+        scope: 'read_products',
+        user_id: 1234,
+      }),
+    );
+    const tokenRequest = {
+      client_id: '123',
+      client_secret: 'private-client-secret',
+      grant_type: 'authorization_code' as const,
+      code: 'authorization-code',
+    };
+
+    await service.postOAuthToken(tokenRequest);
+
+    const [url, init] = fetchMock.mock.calls[0];
+    const headers = new Headers(init?.headers);
+
+    expect(url).toBe('https://www.tiendanube.com/apps/authorize/token');
+    expect(init?.method).toBe('POST');
+    expect(init?.redirect).toBe('error');
+    expect(headers.get('content-type')).toBe('application/json; charset=utf-8');
+    expect(headers.has('authorization')).toBe(false);
+    expect(init?.body).toBe(JSON.stringify(tokenRequest));
+  });
+
+  it('informa un rechazo OAuth sin filtrar credenciales', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        {
+          error: 'invalid_grant',
+          description: 'Rejected private-client-secret and authorization-code',
+          client_secret: 'private-client-secret',
+          access_token: 'must-not-leak',
+        },
+        400,
+      ),
+    );
+
+    let caught: unknown;
+    try {
+      await service.postOAuthToken({
+        client_id: '123',
+        client_secret: 'private-client-secret',
+        grant_type: 'authorization_code',
+        code: 'authorization-code',
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    const serializedError = JSON.stringify(caught);
+    expect(caught).toMatchObject({ status: 400 });
+    expect(serializedError).toContain(
+      'Tiendanube rechazó el intercambio OAuth',
+    );
+    expect(serializedError).toContain('invalid_grant');
+    expect(serializedError).not.toContain('private-client-secret');
+    expect(serializedError).not.toContain('authorization-code');
+    expect(serializedError).not.toContain('must-not-leak');
   });
 
   it('conserva un mensaje útil sin exponer credenciales de Tiendanube', async () => {

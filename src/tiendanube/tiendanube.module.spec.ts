@@ -1,9 +1,12 @@
 import type { INestApplication } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 
+import { AuthConfiguration } from '../auth/application/ports/auth-configuration.port';
+import { TiendanubeOAuthService } from './auth/tiendanube-oauth.service';
 import { TiendanubeApiService } from './shared/tiendanube-api.service';
 import { TiendanubeController } from './tiendanube.controller';
 import { TiendanubeModule } from './tiendanube.module';
@@ -14,8 +17,20 @@ describe('TiendanubeModule', () => {
 
   beforeAll(async () => {
     moduleFixture = await Test.createTestingModule({
-      imports: [TiendanubeModule],
-    }).compile();
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true }),
+        TiendanubeModule,
+      ],
+    })
+      .overrideProvider(AuthConfiguration)
+      .useValue({
+        jwtAccessSecret: 'test-secret-with-at-least-32-bytes',
+        jwtIssuer: 'panel-ml-api-test',
+        jwtAudience: 'panel-ml-test',
+        accessTokenTtlSeconds: 900,
+        refreshSessionTtlMs: 86_400_000,
+      })
+      .compile();
     app = moduleFixture.createNestApplication<NestExpressApplication>();
     await app.init();
   });
@@ -27,6 +42,7 @@ describe('TiendanubeModule', () => {
   it('carga el módulo con su controller y cliente API', () => {
     expect(moduleFixture.get(TiendanubeController)).toBeDefined();
     expect(moduleFixture.get(TiendanubeApiService)).toBeDefined();
+    expect(moduleFixture.get(TiendanubeOAuthService)).toBeDefined();
   });
 
   it('expone GET /tiendanube/health con estado 200', async () => {
