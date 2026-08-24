@@ -39,6 +39,28 @@ type MercadoLibreOAuthTransactionInsert = Omit<
   created_at?: string;
 };
 
+type TiendanubeConnectionRow = {
+  id: string;
+  user_id: string;
+  store_id: string;
+  access_token: string;
+  token_type: string;
+  scope: string;
+  connected_at: string;
+  updated_at: string;
+};
+
+type TiendanubeConnectionInsert = {
+  id?: string;
+  user_id: string;
+  store_id: string;
+  access_token: string;
+  token_type: string;
+  scope: string;
+  connected_at?: string;
+  updated_at?: string;
+};
+
 type UserRow = {
   id: string;
   email: string;
@@ -268,6 +290,19 @@ export type Database = {
             columns: ['refresh_session_id'];
             isOneToOne: false;
             referencedRelation: 'user_refresh_sessions';
+            referencedColumns: ['id'];
+          },
+        ]
+      >;
+      tiendanube_connections: Table<
+        TiendanubeConnectionRow,
+        TiendanubeConnectionInsert,
+        [
+          {
+            foreignKeyName: 'tiendanube_connections_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: true;
+            referencedRelation: 'users';
             referencedColumns: ['id'];
           },
         ]

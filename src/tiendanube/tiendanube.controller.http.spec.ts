@@ -36,7 +36,7 @@ type OAuthMock = jest.Mocked<
     | 'getAuthorizationCookieName'
     | 'getCallbackCookiePath'
     | 'verifyState'
-    | 'exchangeCode'
+    | 'completeAuthorization'
   >
 >;
 
@@ -54,7 +54,7 @@ describe('TiendanubeController HTTP OAuth', () => {
       getAuthorizationCookieName: jest.fn(),
       getCallbackCookiePath: jest.fn(),
       verifyState: jest.fn(),
-      exchangeCode: jest.fn(),
+      completeAuthorization: jest.fn(),
     };
 
     const moduleFixture = await Test.createTestingModule({
@@ -97,7 +97,7 @@ describe('TiendanubeController HTTP OAuth', () => {
     oauthService.getAuthorizationCookieName.mockReturnValue(COOKIE_NAME);
     oauthService.getCallbackCookiePath.mockReturnValue('/tiendanube/callback');
     oauthService.verifyState.mockReturnValue(USER.id);
-    oauthService.exchangeCode.mockResolvedValue({
+    oauthService.completeAuthorization.mockResolvedValue({
       storeId: '987654',
       scope: 'read_products',
     });
@@ -142,7 +142,7 @@ describe('TiendanubeController HTTP OAuth', () => {
       message: 'Falta el código de autorización',
     });
     expect(oauthService.verifyState).not.toHaveBeenCalled();
-    expect(oauthService.exchangeCode).not.toHaveBeenCalled();
+    expect(oauthService.completeAuthorization).not.toHaveBeenCalled();
   });
 
   it('rechaza callback sin state', async () => {
@@ -153,7 +153,7 @@ describe('TiendanubeController HTTP OAuth', () => {
 
     expect(response.body).toMatchObject({ message: 'Falta el state OAuth' });
     expect(oauthService.verifyState).not.toHaveBeenCalled();
-    expect(oauthService.exchangeCode).not.toHaveBeenCalled();
+    expect(oauthService.completeAuthorization).not.toHaveBeenCalled();
   });
 
   it('rechaza un state inválido antes del intercambio', async () => {
@@ -168,11 +168,11 @@ describe('TiendanubeController HTTP OAuth', () => {
     expect(response.body).toMatchObject({
       message: 'El state de Tiendanube es inválido o venció',
     });
-    expect(oauthService.exchangeCode).not.toHaveBeenCalled();
+    expect(oauthService.completeAuthorization).not.toHaveBeenCalled();
   });
 
   it('convierte user_id a storeId y nunca devuelve secretos', async () => {
-    oauthService.exchangeCode.mockResolvedValue({
+    oauthService.completeAuthorization.mockResolvedValue({
       storeId: '987654',
       scope: 'read_products',
       access_token: 'private-access-token',
@@ -182,7 +182,11 @@ describe('TiendanubeController HTTP OAuth', () => {
     const response = await request(app.getHttpServer())
       .get('/tiendanube/callback')
       .set('Cookie', `${COOKIE_NAME}=${BROWSER_BINDING}`)
-      .query({ code: 'authorization-code', state: 'signed-state' })
+      .query({
+        code: 'authorization-code',
+        state: 'signed-state',
+        userId: '22222222-2222-4222-8222-222222222222',
+      })
       .expect(200)
       .expect({
         ok: true,
@@ -197,9 +201,11 @@ describe('TiendanubeController HTTP OAuth', () => {
       'signed-state',
       BROWSER_BINDING,
     );
-    expect(oauthService.exchangeCode).toHaveBeenCalledWith(
+    expect(oauthService.completeAuthorization).toHaveBeenCalledWith(
+      USER.id,
       'authorization-code',
     );
+    expect(oauthService.completeAuthorization).toHaveBeenCalledTimes(1);
     expect(response.headers['set-cookie']?.[0]).toContain(`${COOKIE_NAME}=`);
     expect(response.headers['set-cookie']?.[0]).toContain(
       'Path=/tiendanube/callback',
@@ -207,7 +213,7 @@ describe('TiendanubeController HTTP OAuth', () => {
   });
 
   it('devuelve un error claro cuando Tiendanube rechaza OAuth', async () => {
-    oauthService.exchangeCode.mockRejectedValue(
+    oauthService.completeAuthorization.mockRejectedValue(
       new BadRequestException('Tiendanube rechazó el intercambio OAuth'),
     );
 

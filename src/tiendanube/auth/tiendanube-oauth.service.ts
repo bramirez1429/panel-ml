@@ -19,6 +19,7 @@ import {
   TIENDANUBE_OAUTH_STATE_TTL_MS,
 } from '../shared/tiendanube.config';
 import { TiendanubeApiService } from '../shared/tiendanube-api.service';
+import { TiendanubeConnectionRepository } from '../connections/tiendanube-connection.repository';
 
 const APP_USER_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -37,7 +38,7 @@ export type TiendanubeAuthorizationRequest = Readonly<{
   secureCookie: boolean;
 }>;
 
-export type TiendanubeOAuthTokenResponse = Readonly<{
+type TiendanubeOAuthTokenResponse = Readonly<{
   access_token: string;
   token_type: 'bearer';
   scope: string;
@@ -54,6 +55,7 @@ export class TiendanubeOAuthService {
   constructor(
     private readonly configService: ConfigService<TiendanubeEnvironment>,
     private readonly apiService: TiendanubeApiService,
+    private readonly connectionRepository: TiendanubeConnectionRepository,
   ) {}
 
   /** Genera una autorización firmada y ligada al navegador del usuario. */
@@ -135,8 +137,13 @@ export class TiendanubeOAuthService {
     return userId;
   }
 
-  /** Intercambia el code y descarta el token antes de retornar al controller. */
-  async exchangeCode(code: string): Promise<TiendanubeOAuthResult> {
+  /** Intercambia el code, persiste la conexión y retorna sólo datos seguros. */
+  async completeAuthorization(
+    userId: string,
+    code: string,
+  ): Promise<TiendanubeOAuthResult> {
+    this.requireAppUserId(userId);
+
     const normalizedCode = code.trim();
     if (!normalizedCode) {
       throw new BadRequestException('Falta el código de autorización');
@@ -149,9 +156,18 @@ export class TiendanubeOAuthService {
       code: normalizedCode,
     });
     const tokens = parseOAuthTokenResponse(response);
+    const storeId = String(tokens.user_id);
+
+    await this.connectionRepository.saveConnection({
+      userId,
+      storeId,
+      accessToken: tokens.access_token,
+      tokenType: tokens.token_type,
+      scope: tokens.scope,
+    });
 
     return {
-      storeId: String(tokens.user_id),
+      storeId,
       scope: tokens.scope,
     };
   }

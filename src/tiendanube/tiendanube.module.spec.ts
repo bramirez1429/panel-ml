@@ -7,6 +7,8 @@ import type { App } from 'supertest/types';
 
 import { AuthConfiguration } from '../auth/application/ports/auth-configuration.port';
 import { TiendanubeOAuthService } from './auth/tiendanube-oauth.service';
+import { SupabaseTiendanubeConnectionRepository } from './connections/supabase-tiendanube-connection.repository';
+import { TiendanubeConnectionRepository } from './connections/tiendanube-connection.repository';
 import { TiendanubeApiService } from './shared/tiendanube-api.service';
 import { TiendanubeController } from './tiendanube.controller';
 import { TiendanubeModule } from './tiendanube.module';
@@ -43,6 +45,9 @@ describe('TiendanubeModule', () => {
     expect(moduleFixture.get(TiendanubeController)).toBeDefined();
     expect(moduleFixture.get(TiendanubeApiService)).toBeDefined();
     expect(moduleFixture.get(TiendanubeOAuthService)).toBeDefined();
+    expect(moduleFixture.get(TiendanubeConnectionRepository)).toBeInstanceOf(
+      SupabaseTiendanubeConnectionRepository,
+    );
   });
 
   it('expone GET /tiendanube/health con estado 200', async () => {

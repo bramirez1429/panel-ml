@@ -88,7 +88,10 @@ export class TiendanubeController {
       });
     }
 
-    const connection = await this.oauthService.exchangeCode(parsedCode);
+    const connection = await this.oauthService.completeAuthorization(
+      userId,
+      parsedCode,
+    );
 
     return {
       ok: true,

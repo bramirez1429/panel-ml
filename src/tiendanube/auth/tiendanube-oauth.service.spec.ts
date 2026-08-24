@@ -1,5 +1,7 @@
+import { ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { TiendanubeConnectionRepository } from '../connections/tiendanube-connection.repository';
 import { TiendanubeApiService } from '../shared/tiendanube-api.service';
 import {
   TIENDANUBE_OAUTH_STATE_TTL_MS,
@@ -17,10 +19,14 @@ const CONFIG: TiendanubeEnvironment = {
 };
 
 type ApiMock = jest.Mocked<Pick<TiendanubeApiService, 'postOAuthToken'>>;
+type ConnectionRepositoryMock = jest.Mocked<
+  Pick<TiendanubeConnectionRepository, 'saveConnection'>
+>;
 
 describe('TiendanubeOAuthService', () => {
   let service: TiendanubeOAuthService;
   let apiService: ApiMock;
+  let connectionRepository: ConnectionRepositoryMock;
 
   beforeEach(() => {
     const configService = {
@@ -29,9 +35,13 @@ describe('TiendanubeOAuthService', () => {
     apiService = {
       postOAuthToken: jest.fn(),
     };
+    connectionRepository = {
+      saveConnection: jest.fn(),
+    };
     service = new TiendanubeOAuthService(
       configService,
       apiService as unknown as TiendanubeApiService,
+      connectionRepository,
     );
   });
 
@@ -96,7 +106,7 @@ describe('TiendanubeOAuthService', () => {
     expect(service.verifyState(state, authorization.browserBinding)).toBeNull();
   });
 
-  it('intercambia el code, convierte user_id a storeId y descarta secretos', async () => {
+  it('intercambia el code, persiste la conexión y retorna sólo datos seguros', async () => {
     apiService.postOAuthToken.mockResolvedValue({
       access_token: 'private-access-token',
       token_type: 'bearer',
@@ -104,13 +114,23 @@ describe('TiendanubeOAuthService', () => {
       user_id: 987654,
     });
 
-    const result = await service.exchangeCode(' authorization-code ');
+    const result = await service.completeAuthorization(
+      USER_A,
+      ' authorization-code ',
+    );
 
     expect(apiService.postOAuthToken).toHaveBeenCalledWith({
       client_id: CONFIG.TIENDANUBE_CLIENT_ID,
       client_secret: CONFIG.TIENDANUBE_CLIENT_SECRET,
       grant_type: 'authorization_code',
       code: 'authorization-code',
+    });
+    expect(connectionRepository.saveConnection).toHaveBeenCalledWith({
+      userId: USER_A,
+      storeId: '987654',
+      accessToken: 'private-access-token',
+      tokenType: 'bearer',
+      scope: 'read_products',
     });
     expect(result).toEqual({
       storeId: '987654',
@@ -119,5 +139,38 @@ describe('TiendanubeOAuthService', () => {
     const serializedResult = JSON.stringify(result);
     expect(serializedResult).not.toContain('private-access-token');
     expect(serializedResult).not.toContain(CONFIG.TIENDANUBE_CLIENT_SECRET);
+  });
+
+  it('no guarda una conexión cuando Tiendanube rechaza el intercambio', async () => {
+    apiService.postOAuthToken.mockRejectedValue(
+      new Error('OAuth exchange rejected'),
+    );
+
+    await expect(
+      service.completeAuthorization(USER_A, 'authorization-code'),
+    ).rejects.toThrow('OAuth exchange rejected');
+    expect(connectionRepository.saveConnection).not.toHaveBeenCalled();
+  });
+
+  it('no devuelve éxito cuando falla la persistencia', async () => {
+    apiService.postOAuthToken.mockResolvedValue({
+      access_token: 'private-access-token',
+      token_type: 'bearer',
+      scope: 'read_products',
+      user_id: 987654,
+    });
+    connectionRepository.saveConnection.mockRejectedValue(
+      new ServiceUnavailableException(
+        'No se pudo guardar la conexión de Tiendanube',
+      ),
+    );
+
+    await expect(
+      service.completeAuthorization(USER_A, 'authorization-code'),
+    ).rejects.toMatchObject({
+      status: 503,
+      message: 'No se pudo guardar la conexión de Tiendanube',
+    });
+    expect(connectionRepository.saveConnection).toHaveBeenCalledTimes(1);
   });
 });
