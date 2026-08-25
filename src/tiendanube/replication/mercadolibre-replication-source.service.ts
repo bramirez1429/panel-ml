@@ -401,7 +401,14 @@ function defineSharedAttributes(
       );
     }
   }
-  return attributes;
+
+  return attributes.filter(({ id }) => {
+    const values = combinationsByVariant.map(
+      (combinations) =>
+        combinations.find((attribute) => attribute.id === id)?.value,
+    );
+    return new Set(values).size > 1;
+  });
 }
 
 function defineVaryingAttributes(

@@ -135,10 +135,7 @@ describe('MercadoLibreReplicationSourceService', () => {
       images: ['http://example.com/one.jpg', 'https://example.com/two.jpg'],
       brand: 'ACME',
       tags: ['nuevo', 'remera'],
-      attributes: [
-        { id: 'COLOR', name: 'Color' },
-        { id: 'SIZE', name: 'Talle' },
-      ],
+      attributes: [{ id: 'SIZE', name: 'Talle' }],
       variants: [
         {
           weight: 0.5,
@@ -148,10 +145,7 @@ describe('MercadoLibreReplicationSourceService', () => {
           price: 36_000,
           stock: 4,
           sku: 'REM-NEG-S',
-          values: [
-            { attributeId: 'COLOR', value: 'Negro' },
-            { attributeId: 'SIZE', value: 'S' },
-          ],
+          values: [{ attributeId: 'SIZE', value: 'S' }],
         },
         {
           weight: 0.5,
@@ -161,10 +155,7 @@ describe('MercadoLibreReplicationSourceService', () => {
           price: 35_000,
           stock: 3,
           sku: null,
-          values: [
-            { attributeId: 'COLOR', value: 'Negro' },
-            { attributeId: 'SIZE', value: 'M' },
-          ],
+          values: [{ attributeId: 'SIZE', value: 'M' }],
         },
       ],
     });
@@ -549,7 +540,157 @@ describe('MercadoLibreReplicationSourceService', () => {
       service.load(SHARED_PRODUCT, SELLER_ID, ACCESS_TOKEN),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
+  it('elimina dimensiones constantes de SHARED y conserva solo las reales', async () => {
+    publicationSource.getItemWithAllAttributes.mockResolvedValue({
+      id: 'MLA100001',
+      seller_id: SELLER_ID,
+      title: 'Producto con dimensiones descriptivas',
+      price: 100,
+      available_quantity: 2,
+      pictures: [],
+      attributes: [],
+      variations: [
+        sharedVariationWithExtraAttributes(1, 'Negro', 'S'),
+        sharedVariationWithExtraAttributes(2, 'Blanco', 'M'),
+      ],
+    });
+
+    const result = await service.load(SHARED_PRODUCT, SELLER_ID, ACCESS_TOKEN);
+
+    expect(result.attributes).toEqual([
+      { id: 'COLOR', name: 'Color' },
+      { id: 'SIZE', name: 'Talle' },
+    ]);
+    expect(result.variants.map(({ values }) => values)).toEqual([
+      [
+        { attributeId: 'COLOR', value: 'Negro' },
+        { attributeId: 'SIZE', value: 'S' },
+      ],
+      [
+        { attributeId: 'COLOR', value: 'Blanco' },
+        { attributeId: 'SIZE', value: 'M' },
+      ],
+    ]);
+  });
+
+  it('permite tres dimensiones reales', async () => {
+    publicationSource.getItemWithAllAttributes.mockResolvedValue({
+      id: 'MLA100001',
+      seller_id: SELLER_ID,
+      title: 'Producto tridimensional',
+      price: 100,
+      available_quantity: 2,
+      pictures: [],
+      attributes: [],
+      variations: [
+        sharedVariationWithDimensions(1, 'Negro', 'S', 'Corto'),
+        sharedVariationWithDimensions(2, 'Blanco', 'M', 'Largo'),
+      ],
+    });
+
+    const result = await service.load(SHARED_PRODUCT, SELLER_ID, ACCESS_TOKEN);
+
+    expect(result.attributes.map(({ id }) => id)).toEqual([
+      'COLOR',
+      'SIZE',
+      'LENGTH',
+    ]);
+  });
+
+  it('rechaza cuatro dimensiones necesarias', async () => {
+    publicationSource.getItemWithAllAttributes.mockResolvedValue({
+      id: 'MLA100001',
+      seller_id: SELLER_ID,
+      title: 'Producto de cuatro dimensiones',
+      price: 100,
+      available_quantity: 2,
+      pictures: [],
+      attributes: [],
+      variations: [
+        sharedVariationWithFourDimensions(1, 'Negro', 'S', 'Corto', 'A'),
+        sharedVariationWithFourDimensions(2, 'Blanco', 'M', 'Largo', 'B'),
+      ],
+    });
+
+    await expect(
+      service.load(SHARED_PRODUCT, SELLER_ID, ACCESS_TOKEN),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('rechaza colisiones luego de filtrar dimensiones constantes', async () => {
+    publicationSource.getItemWithAllAttributes.mockResolvedValue({
+      id: 'MLA100001',
+      seller_id: SELLER_ID,
+      title: 'Producto con combinaciones repetidas',
+      price: 100,
+      available_quantity: 2,
+      pictures: [],
+      attributes: [],
+      variations: [
+        sharedVariationWithExtraAttributes(1, 'Negro', 'S'),
+        sharedVariationWithExtraAttributes(2, 'Negro', 'S'),
+      ],
+    });
+
+    await expect(
+      service.load(SHARED_PRODUCT, SELLER_ID, ACCESS_TOKEN),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
 });
+
+function sharedVariationWithExtraAttributes(
+  id: number,
+  color: string,
+  size: string,
+) {
+  return {
+    ...sharedVariationWithFourDimensions(id, color, size, 'Medio', 'A'),
+    attribute_combinations: [
+      ...sharedVariationWithFourDimensions(id, color, size, 'Medio', 'A')
+        .attribute_combinations,
+      { id: 'BRAND', name: 'Marca', value_name: 'Constante' },
+      { id: 'GTIN', name: 'GTIN', value_name: '779000' },
+    ],
+  };
+}
+
+function sharedVariationWithDimensions(
+  id: number,
+  color: string,
+  size: string,
+  length: string,
+) {
+  return {
+    id,
+    available_quantity: 1,
+    attribute_combinations: [
+      { id: 'COLOR', name: 'Color', value_name: color },
+      { id: 'SIZE', name: 'Talle', value_name: size },
+      { id: 'LENGTH', name: 'Largo', value_name: length },
+    ],
+    attributes: [],
+  };
+}
+
+function sharedVariationWithFourDimensions(
+  id: number,
+  color: string,
+  size: string,
+  length: string,
+  material: string,
+) {
+  return {
+    id,
+    available_quantity: 1,
+    attribute_combinations: [
+      { id: 'COLOR', name: 'Color', value_name: color },
+      { id: 'SIZE', name: 'Talle', value_name: size },
+      { id: 'LENGTH', name: 'Largo', value_name: length },
+      { id: 'MATERIAL', name: 'Material', value_name: material },
+    ],
+    attributes: [],
+  };
+}
 
 function classicVariation(
   id: number,
