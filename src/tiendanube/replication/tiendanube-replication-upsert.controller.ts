@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Header,
   Param,
@@ -11,6 +12,7 @@ import type { SafeUser } from '../../auth/domain/auth.models';
 import { AccessTokenGuard } from '../../auth/presentation/access-token.guard';
 import { CurrentUser } from '../../auth/presentation/current-user.decorator';
 import type { TiendanubeReplicationUpsertResult } from './tiendanube-replication-result.types';
+import { TiendanubeReplicationSourceDto } from './tiendanube-replication-source.dto';
 import { TiendanubeReplicationService } from './tiendanube-replication.service';
 
 @Controller('tiendanube')
@@ -19,6 +21,18 @@ export class TiendanubeReplicationUpsertController {
   constructor(
     private readonly replicationService: TiendanubeReplicationService,
   ) {}
+
+  @Post('replicate/source')
+  @Header('Cache-Control', 'no-store')
+  replicateSource(
+    @CurrentUser() user: SafeUser,
+    @Body() body: TiendanubeReplicationSourceDto,
+  ): Promise<TiendanubeReplicationUpsertResult> {
+    return this.replicationService.replicateOrUpdateBySourceKey(
+      user.id,
+      body.sourceKey,
+    );
+  }
 
   @Post('replicate/:sourceId')
   @Header('Cache-Control', 'no-store')

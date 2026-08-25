@@ -24,11 +24,14 @@ describe('TiendanubeReplicationService sourceKey bridge', () => {
 
   it('resuelve una clave item dentro del seller autenticado', async () => {
     const { products, service } = createService();
-    const replicate = jest.spyOn(service, 'replicate').mockResolvedValue({
-      ok: true,
-      alreadyReplicated: true,
-      tiendanubeProductId: '10',
-    });
+    const replicate = jest
+      .spyOn(service, 'replicateOrUpdateBySourceId')
+      .mockResolvedValue({
+        ok: true,
+        action: 'updated',
+        mercadolibreSourceId: 'product-a',
+        tiendanubeProductId: '10',
+      });
 
     await service.replicateBySourceKey('user-a', 'item:MLA1');
 
@@ -41,7 +44,44 @@ describe('TiendanubeReplicationService sourceKey bridge', () => {
     products.findByExternalKey.mockResolvedValue(null);
 
     await expect(
-      service.replicateBySourceKey('user-a', 'family:missing'),
+      service.replicateBySourceKey('user-a', 'family:123'),
     ).rejects.toMatchObject({ status: 404 });
+  });
+  it('delega creacion y actualizacion sin duplicar el flujo', async () => {
+    const { products, service } = createService();
+    const upsert = jest
+      .spyOn(service, 'replicateOrUpdateBySourceId')
+      .mockResolvedValueOnce({
+        ok: true,
+        action: 'created',
+        mercadolibreSourceId: 'product-a',
+        tiendanubeProductId: '101',
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        action: 'updated',
+        mercadolibreSourceId: 'product-a',
+        tiendanubeProductId: '101',
+      });
+
+    await expect(
+      service.replicateOrUpdateBySourceKey('user-a', 'item:MLA1'),
+    ).resolves.toMatchObject({ action: 'created' });
+    await expect(
+      service.replicateOrUpdateBySourceKey('user-a', 'item:MLA1'),
+    ).resolves.toMatchObject({ action: 'updated' });
+
+    expect(products.findByExternalKey).toHaveBeenCalledTimes(2);
+    expect(upsert).toHaveBeenCalledTimes(2);
+  });
+
+  it('rechaza un sourceKey no soportado antes de consultar Mercado Libre', async () => {
+    const { products, service } = createService();
+
+    await expect(
+      service.replicateOrUpdateBySourceKey('user-a', 'item:MLB1'),
+    ).rejects.toMatchObject({ status: 400 });
+
+    expect(products.findByExternalKey).not.toHaveBeenCalled();
   });
 });

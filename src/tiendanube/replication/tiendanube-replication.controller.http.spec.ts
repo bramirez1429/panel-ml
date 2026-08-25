@@ -42,7 +42,7 @@ type AuthServiceMock = jest.Mocked<
 type ReplicationServiceMock = jest.Mocked<
   Pick<
     TiendanubeReplicationService,
-    'replicate' | 'replicateOrUpdateBySourceId'
+    'replicate' | 'replicateOrUpdateBySourceId' | 'replicateOrUpdateBySourceKey'
   >
 >;
 
@@ -58,6 +58,7 @@ describe('TiendanubeReplicationController HTTP', () => {
     replicationService = {
       replicate: jest.fn(),
       replicateOrUpdateBySourceId: jest.fn(),
+      replicateOrUpdateBySourceKey: jest.fn(),
     };
 
     const moduleFixture = await Test.createTestingModule({
@@ -108,6 +109,9 @@ describe('TiendanubeReplicationController HTTP', () => {
     );
     replicationService.replicateOrUpdateBySourceId.mockRejectedValue(
       new Error('Unexpected source replication call'),
+    );
+    replicationService.replicateOrUpdateBySourceKey.mockRejectedValue(
+      new Error('Unexpected source-key replication call'),
     );
   });
 
@@ -217,6 +221,59 @@ describe('TiendanubeReplicationController HTTP', () => {
     expect(replicationService.replicate).not.toHaveBeenCalled();
     expect(response.headers['cache-control']).toBe('no-store');
     expectSafeResponse(response.body);
+  });
+
+  it.each([
+    ['item:MLA123456789', 'created'],
+    ['family:998877', 'updated'],
+  ])(
+    'replica por sourceKey (%s) sin exponer IDs internos',
+    async (sourceKey, action) => {
+      const result: TiendanubeReplicationUpsertResult = {
+        ok: true,
+        action: action as 'created' | 'updated',
+        mercadolibreSourceId: PRODUCT_ID_A,
+        tiendanubeProductId: TIENDANUBE_PRODUCT_ID_A,
+      };
+      replicationService.replicateOrUpdateBySourceKey.mockResolvedValue(result);
+
+      const response = await request(app.getHttpServer())
+        .post('/tiendanube/replicate/source')
+        .set('Authorization', `Bearer ${APP_JWT_A}`)
+        .send({ sourceKey })
+        .expect(201)
+        .expect(result);
+
+      expect(
+        replicationService.replicateOrUpdateBySourceKey,
+      ).toHaveBeenCalledTimes(1);
+      expect(
+        replicationService.replicateOrUpdateBySourceKey,
+      ).toHaveBeenCalledWith(USER_A.id, sourceKey);
+      expect(response.headers['cache-control']).toBe('no-store');
+      expectSafeResponse(response.body);
+    },
+  );
+
+  it('un usuario B no puede usar el sourceKey del usuario A', async () => {
+    const result: TiendanubeReplicationUpsertResult = {
+      ok: true,
+      action: 'updated',
+      mercadolibreSourceId: PRODUCT_ID_B,
+      tiendanubeProductId: TIENDANUBE_PRODUCT_ID_B,
+    };
+    replicationService.replicateOrUpdateBySourceKey.mockResolvedValue(result);
+
+    await request(app.getHttpServer())
+      .post('/tiendanube/replicate/source')
+      .set('Authorization', `Bearer ${APP_JWT_B}`)
+      .send({ sourceKey: 'item:MLA123456789', userId: USER_A.id })
+      .expect(201)
+      .expect(result);
+
+    expect(
+      replicationService.replicateOrUpdateBySourceKey,
+    ).toHaveBeenCalledWith(USER_B.id, 'item:MLA123456789');
   });
 });
 

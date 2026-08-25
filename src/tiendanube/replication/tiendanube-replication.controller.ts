@@ -17,15 +17,10 @@ import { TiendanubeReplicationStatusQueryDto } from './tiendanube-replication-st
 import { TiendanubeReplicationStatusService } from './tiendanube-replication-status.service';
 import type { TiendanubeReplicationStatusResponse } from './tiendanube-replication-status.types';
 import type { TiendanubeReplicationResult } from './tiendanube-replication-result.types';
+import type { TiendanubeReplicationUpsertResult } from './tiendanube-replication-result.types';
 import type { TiendanubeReplicationSourceStatusResponse } from './tiendanube-replication-status.types';
 import { TiendanubeReplicationService } from './tiendanube-replication.service';
-import { IsString, IsNotEmpty } from 'class-validator';
-
-class SourceKeyReplicationDto {
-  @IsString()
-  @IsNotEmpty()
-  sourceKey!: string;
-}
+import { TiendanubeReplicationSourceDto } from './tiendanube-replication-source.dto';
 
 @Controller('tiendanube/replication')
 @UseGuards(AccessTokenGuard)
@@ -48,8 +43,8 @@ export class TiendanubeReplicationController {
   @Header('Cache-Control', 'no-store')
   replicateMercadoLibreSource(
     @CurrentUser() user: SafeUser,
-    @Body() body: SourceKeyReplicationDto,
-  ): Promise<TiendanubeReplicationResult> {
+    @Body() body: TiendanubeReplicationSourceDto,
+  ): Promise<TiendanubeReplicationUpsertResult> {
     return this.replicationService.replicateBySourceKey(
       user.id,
       body.sourceKey,

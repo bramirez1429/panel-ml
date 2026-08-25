@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   BadGatewayException,
   ConflictException,
   ForbiddenException,
@@ -17,6 +18,7 @@ import { MercadoLibreToTiendanubeMapper } from './mercadolibre-to-tiendanube.map
 import { TiendanubeProductLinkRepository } from './tiendanube-product-link.repository';
 import type { TiendanubeReplicationResult } from './tiendanube-replication-result.types';
 import type { TiendanubeReplicationUpsertResult } from './tiendanube-replication-result.types';
+import { isTiendanubeSourceKey } from './tiendanube-replication-source.dto';
 
 type TiendanubeCreatedProduct = Readonly<{ id?: unknown }>;
 
@@ -34,7 +36,17 @@ export class TiendanubeReplicationService {
   async replicateBySourceKey(
     userId: string,
     sourceKey: string,
-  ): Promise<TiendanubeReplicationResult> {
+  ): Promise<TiendanubeReplicationUpsertResult> {
+    return this.replicateOrUpdateBySourceKey(userId, sourceKey);
+  }
+
+  async replicateOrUpdateBySourceKey(
+    userId: string,
+    sourceKey: string,
+  ): Promise<TiendanubeReplicationUpsertResult> {
+    if (!isTiendanubeSourceKey(sourceKey)) {
+      throw new BadRequestException('sourceKey de Mercado Libre inválido');
+    }
     const connection =
       await this.mercadoLibreTokenService.getStoredConnection(userId);
     const product = await this.mercadoLibreProductsRepository.findByExternalKey(
@@ -46,7 +58,7 @@ export class TiendanubeReplicationService {
         'La publicación de Mercado Libre no existe para el usuario autenticado',
       );
     }
-    return this.replicate(userId, product.id);
+    return this.replicateOrUpdateBySourceId(userId, product.id);
   }
 
   async replicateOrUpdateBySourceId(
