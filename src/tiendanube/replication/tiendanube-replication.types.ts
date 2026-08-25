@@ -61,3 +61,15 @@ export type TiendanubeCreateProductDto = Readonly<{
   seo_title?: string;
   seo_description?: string;
 }>;
+
+export type TiendanubeUpdateProductDto = Readonly<{
+  name: TiendanubeLocalizedValueDto;
+  description?: TiendanubeLocalizedValueDto;
+  visibility: 'visible';
+  attributes: readonly TiendanubeLocalizedValueDto[];
+  brand?: string;
+  categories?: readonly number[];
+  tags?: string;
+  seo_title?: string;
+  seo_description?: string;
+}>;

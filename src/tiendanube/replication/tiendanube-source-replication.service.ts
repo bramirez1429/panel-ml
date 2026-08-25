@@ -11,6 +11,7 @@ import { MercadoLibreReplicationSourceResolver } from './mercadolibre-replicatio
 import type { SourceReservationRepository } from './tiendanube-product-link.repository';
 import { TiendanubeProductLinkRepository } from './tiendanube-product-link.repository';
 import { TiendanubeProductResolver } from './tiendanube-product-resolver';
+import { TiendanubeExistingProductSyncService } from './tiendanube-existing-product-sync.service';
 import type { TiendanubeSourceReplicationResult } from './tiendanube-replication-result.types';
 
 type CreatedProduct = Readonly<{ id?: unknown }>;
@@ -24,6 +25,7 @@ export class TiendanubeSourceReplicationService {
     private readonly sourceResolver: MercadoLibreReplicationSourceResolver,
     private readonly productResolver: TiendanubeProductResolver,
     private readonly api: TiendanubeApiService,
+    private readonly existingProductSync?: TiendanubeExistingProductSyncService,
   ) {}
 
   async replicate(
@@ -63,12 +65,20 @@ export class TiendanubeSourceReplicationService {
       productId = await this.productResolver.resolve(tnConnection, source.skus);
 
     if (productId) {
-      await this.api.put(
-        tnConnection.storeId,
-        `/products/${encodeURIComponent(productId)}`,
-        source.product,
-        tnConnection.accessToken,
-      );
+      if (this.existingProductSync) {
+        await this.existingProductSync.sync(
+          tnConnection,
+          productId,
+          source.product,
+        );
+      } else {
+        await this.api.put(
+          tnConnection.storeId,
+          `/products/${encodeURIComponent(productId)}`,
+          source.product,
+          tnConnection.accessToken,
+        );
+      }
       if (reservation.outcome === 'RESERVED') {
         await links.completeBySource({
           ...context,
