@@ -124,7 +124,7 @@ type LinkRepositoryMock = {
 type SourceServiceMock = jest.Mocked<
   Pick<MercadoLibreReplicationSourceService, 'load'>
 >;
-type ApiServiceMock = jest.Mocked<Pick<TiendanubeApiService, 'post'>>;
+type ApiServiceMock = jest.Mocked<Pick<TiendanubeApiService, 'post' | 'put'>>;
 
 describe('TiendanubeReplicationService', () => {
   let service: TiendanubeReplicationService;
@@ -164,6 +164,7 @@ describe('TiendanubeReplicationService', () => {
     };
     apiService = {
       post: jest.fn().mockResolvedValue({ id: 7654321 }),
+      put: jest.fn().mockResolvedValue(undefined),
     };
 
     service = new TiendanubeReplicationService(
@@ -197,7 +198,9 @@ describe('TiendanubeReplicationService', () => {
         description: {
           es: 'Primera &amp; &lt;b&gt;&quot;doble&quot; y &#39;simple&#39;&lt;/b&gt;<br>Segunda con &lt;br&gt; literal',
         },
-        visibility: 'hidden',
+        visibility: 'visible',
+        seo_title: SHARED_SOURCE.title,
+        seo_description: SHARED_SOURCE.description,
         images: Array.from({ length: 9 }, (_, index) => ({
           src: `https://example.com/image-${index + 1}.jpg`,
         })),
@@ -285,7 +288,7 @@ describe('TiendanubeReplicationService', () => {
     const payload = apiService.post.mock
       .calls[0]?.[2] as TiendanubeCreateProductDto;
     expect(payload.name).toEqual({ es: 'Remera familiar' });
-    expect(payload.visibility).toBe('hidden');
+    expect(payload.visibility).toBe('visible');
     expect(payload.variants).toHaveLength(5);
     expect(payload.variants[0]).toEqual({
       sku: 'FAMILY-38',
@@ -309,6 +312,46 @@ describe('TiendanubeReplicationService', () => {
     });
     expect(tokenService.getValidAccessToken).not.toHaveBeenCalled();
     expect(sourceService.load).not.toHaveBeenCalled();
+    expect(apiService.post).not.toHaveBeenCalled();
+    expect(linkRepository.complete).not.toHaveBeenCalled();
+  });
+
+  it('crea por sourceId y responde action created', async () => {
+    await expect(
+      service.replicateOrUpdateBySourceId(USER_A, ML_PRODUCT_ID),
+    ).resolves.toEqual({
+      ok: true,
+      action: 'created',
+      mercadolibreSourceId: ML_PRODUCT_ID,
+      tiendanubeProductId: '7654321',
+    });
+
+    expect(apiService.post).toHaveBeenCalledTimes(1);
+    expect(apiService.put).not.toHaveBeenCalled();
+  });
+
+  it('actualiza por sourceId el producto Tiendanube ya vinculado', async () => {
+    linkRepository.reserve.mockResolvedValue({
+      outcome: 'COMPLETED',
+      tiendanubeProductId: '12345',
+    });
+
+    await expect(
+      service.replicateOrUpdateBySourceId(USER_A, ML_PRODUCT_ID),
+    ).resolves.toEqual({
+      ok: true,
+      action: 'updated',
+      mercadolibreSourceId: ML_PRODUCT_ID,
+      tiendanubeProductId: '12345',
+    });
+
+    expect(apiService.put).toHaveBeenCalledTimes(1);
+    expect(apiService.put).toHaveBeenCalledWith(
+      '987654',
+      '/products/12345',
+      expect.objectContaining({ visibility: 'visible' }),
+      TIENDANUBE_ACCESS_TOKEN,
+    );
     expect(apiService.post).not.toHaveBeenCalled();
     expect(linkRepository.complete).not.toHaveBeenCalled();
   });

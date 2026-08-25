@@ -10,6 +10,7 @@ import { AuthConfiguration } from '../../auth/application/ports/auth-configurati
 import type { SafeUser } from '../../auth/domain/auth.models';
 import { TiendanubeModule } from '../tiendanube.module';
 import type { TiendanubeReplicationResult } from './tiendanube-replication-result.types';
+import type { TiendanubeReplicationUpsertResult } from './tiendanube-replication-result.types';
 import { TiendanubeReplicationService } from './tiendanube-replication.service';
 
 const USER_A: SafeUser = {
@@ -39,7 +40,10 @@ type AuthServiceMock = jest.Mocked<
   Pick<AuthService, 'authenticateAccessToken'>
 >;
 type ReplicationServiceMock = jest.Mocked<
-  Pick<TiendanubeReplicationService, 'replicate'>
+  Pick<
+    TiendanubeReplicationService,
+    'replicate' | 'replicateOrUpdateBySourceId'
+  >
 >;
 
 describe('TiendanubeReplicationController HTTP', () => {
@@ -53,6 +57,7 @@ describe('TiendanubeReplicationController HTTP', () => {
     };
     replicationService = {
       replicate: jest.fn(),
+      replicateOrUpdateBySourceId: jest.fn(),
     };
 
     const moduleFixture = await Test.createTestingModule({
@@ -100,6 +105,9 @@ describe('TiendanubeReplicationController HTTP', () => {
     });
     replicationService.replicate.mockRejectedValue(
       new Error('Unexpected replication call'),
+    );
+    replicationService.replicateOrUpdateBySourceId.mockRejectedValue(
+      new Error('Unexpected source replication call'),
     );
   });
 
@@ -184,6 +192,30 @@ describe('TiendanubeReplicationController HTTP', () => {
 
     expect(authService.authenticateAccessToken).toHaveBeenCalledWith(APP_JWT_A);
     expect(replicationService.replicate).not.toHaveBeenCalled();
+    expectSafeResponse(response.body);
+  });
+
+  it('crea o actualiza usando el sourceId autenticado', async () => {
+    const result: TiendanubeReplicationUpsertResult = {
+      ok: true,
+      action: 'updated',
+      mercadolibreSourceId: PRODUCT_ID_A,
+      tiendanubeProductId: TIENDANUBE_PRODUCT_ID_A,
+    };
+    replicationService.replicateOrUpdateBySourceId.mockResolvedValue(result);
+
+    const response = await request(app.getHttpServer())
+      .post(`/tiendanube/replicate/${PRODUCT_ID_A}`)
+      .set('Authorization', `Bearer ${APP_JWT_A}`)
+      .expect(201)
+      .expect(result);
+
+    expect(replicationService.replicateOrUpdateBySourceId).toHaveBeenCalledWith(
+      USER_A.id,
+      PRODUCT_ID_A,
+    );
+    expect(replicationService.replicate).not.toHaveBeenCalled();
+    expect(response.headers['cache-control']).toBe('no-store');
     expectSafeResponse(response.body);
   });
 });

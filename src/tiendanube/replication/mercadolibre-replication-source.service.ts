@@ -42,6 +42,13 @@ type SourcePicture = Readonly<{
   url?: unknown;
 }>;
 
+type ReplicableDimensions = Readonly<{
+  weight?: number;
+  width?: number;
+  height?: number;
+  depth?: number;
+}>;
+
 type ReplicableProductWithoutDescription = Omit<
   ReplicableProduct,
   'description'
@@ -131,8 +138,15 @@ export class MercadoLibreReplicationSourceService {
     const description = normalizeDescription(
       await this.descriptionService.getPlainTextByItemId(itemId, accessToken),
     );
+    const metadata = buildProductMetadata([item]);
+    const dimensions = parseDimensions(item.shipping);
 
-    return { ...source, description };
+    return {
+      ...source,
+      ...metadata,
+      description,
+      variants: applyDimensions(source.variants, dimensions),
+    };
   }
 
   private buildSharedProduct(
@@ -150,6 +164,7 @@ export class MercadoLibreReplicationSourceService {
         );
       }
       return {
+        ...parseDimensions(value.shipping),
         combinations,
         price: requireVariationPrice(value.price, price),
         stock: requireStock(value.available_quantity),
@@ -289,6 +304,7 @@ export class MercadoLibreReplicationSourceService {
       );
     }
     const description = requireConsistentFamilyDescription(descriptions);
+    const metadata = buildProductMetadata(orderedItems);
 
     const userProducts: MercadoLibreUserProduct[] = [];
     for (const userProductId of family.userProductIds) {
@@ -307,6 +323,7 @@ export class MercadoLibreReplicationSourceService {
     );
 
     const variants = orderedItems.map((item, index) => ({
+      ...parseDimensions(item.shipping),
       price: requirePrice(item.price),
       stock: requireStock(item.available_quantity),
       sku: findSku(item.attributes),
@@ -314,7 +331,7 @@ export class MercadoLibreReplicationSourceService {
     }));
     ensureUniqueVariantCombinations(variants);
 
-    return { title, description, images, attributes, variants };
+    return { title, description, images, attributes, variants, ...metadata };
   }
 
   private validateStoredChildren(
@@ -536,6 +553,132 @@ function requireConsistentFamilyDescription(
 
 function normalizeDescription(value: string | null): string | null {
   return value?.trim() || null;
+}
+
+function buildProductMetadata(
+  items: readonly MercadoLibrePublication[],
+): Pick<ReplicableProduct, 'brand' | 'categoryIds' | 'tags'> {
+  const brands = items
+    .map((item) => findBrand(item.attributes))
+    .filter((brand): brand is string => brand !== null);
+  const uniqueBrands = [...new Set(brands)];
+  if (uniqueBrands.length > 1) {
+    throw new ConflictException(
+      'Mercado Libre devolviÃ³ marcas inconsistentes',
+    );
+  }
+
+  const tags = [
+    ...new Set(
+      items.flatMap((item) =>
+        Array.isArray(item.tags)
+          ? item.tags.flatMap((tag) => {
+              if (typeof tag !== 'string' || !tag.trim()) return [];
+              return [tag.trim()];
+            })
+          : [],
+      ),
+    ),
+  ];
+  const categoryIds = [
+    ...new Set(items.flatMap((item) => findMappedCategoryIds(item) ?? [])),
+  ];
+
+  return {
+    ...(uniqueBrands[0] ? { brand: uniqueBrands[0] } : {}),
+    ...(categoryIds.length > 0 ? { categoryIds } : {}),
+    ...(tags.length > 0 ? { tags } : {}),
+  };
+}
+
+function findBrand(value: unknown): string | null {
+  if (!Array.isArray(value)) return null;
+  for (const candidate of value) {
+    if (!isJsonObject(candidate) || candidate.id !== 'BRAND') continue;
+    const valueName = textOrNull(candidate.value_name);
+    if (valueName) return valueName;
+    if (!Array.isArray(candidate.values)) continue;
+    for (const rawValue of candidate.values) {
+      if (!isJsonObject(rawValue)) continue;
+      const name = textOrNull(rawValue.name);
+      if (name) return name;
+    }
+  }
+  return null;
+}
+
+function findMappedCategoryIds(
+  item: MercadoLibrePublication | undefined,
+): readonly number[] | undefined {
+  if (!item) return undefined;
+  const rawIds = item.tiendanube_category_ids;
+  if (Array.isArray(rawIds)) {
+    const ids = rawIds.filter(
+      (id): id is number =>
+        typeof id === 'number' && Number.isSafeInteger(id) && id > 0,
+    );
+    return ids.length > 0 ? [...new Set(ids)] : undefined;
+  }
+  const singleId = item.tiendanube_category_id;
+  return typeof singleId === 'number' &&
+    Number.isSafeInteger(singleId) &&
+    singleId > 0
+    ? [singleId]
+    : undefined;
+}
+
+function applyDimensions(
+  variants: readonly ReplicableProductVariant[],
+  dimensions: ReplicableDimensions,
+): readonly ReplicableProductVariant[] {
+  return variants.map((variant) => ({ ...dimensions, ...variant }));
+}
+
+function parseDimensions(value: unknown): ReplicableDimensions {
+  if (!isJsonObject(value)) return {};
+
+  const direct: ReplicableDimensions = {
+    ...(readNonNegativeNumber(value.weight) !== null
+      ? { weight: readNonNegativeNumber(value.weight) as number }
+      : {}),
+    ...(readNonNegativeNumber(value.width) !== null
+      ? { width: readNonNegativeNumber(value.width) as number }
+      : {}),
+    ...(readNonNegativeNumber(value.height) !== null
+      ? { height: readNonNegativeNumber(value.height) as number }
+      : {}),
+    ...(readNonNegativeNumber(value.depth) !== null
+      ? { depth: readNonNegativeNumber(value.depth) as number }
+      : {}),
+  };
+  if (Object.keys(direct).length > 0) return direct;
+
+  if (typeof value.dimensions !== 'string') return {};
+  const match = value.dimensions
+    .trim()
+    .match(
+      /^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)(?:,(\d+(?:\.\d+)?)(g|kg))?$/i,
+    );
+  if (!match) return {};
+  const weight = match[4] ? Number(match[4]) : null;
+  return {
+    width: Number(match[1]),
+    height: Number(match[2]),
+    depth: Number(match[3]),
+    ...(weight !== null
+      ? { weight: match[5]?.toLowerCase() === 'g' ? weight / 1000 : weight }
+      : {}),
+  };
+}
+
+function readNonNegativeNumber(value: unknown): number | null {
+  const number =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && value.trim()
+        ? Number(value)
+        : Number.NaN;
+  return Number.isFinite(number) && number >= 0 ? number : null;
 }
 
 function requireSameSet(

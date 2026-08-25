@@ -64,6 +64,24 @@ describe('TiendanubeApiService', () => {
     expect(init?.body).toBe(JSON.stringify({ name: 'Example' }));
   });
 
+  it('permite actualizar un producto existente mediante PUT', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 1234 }));
+
+    await service.put(
+      '1234',
+      '/products/5678',
+      { visibility: 'visible' },
+      'private-access-token',
+    );
+
+    const [url, init] = fetchMock.mock.calls[0];
+    const headers = new Headers(init?.headers);
+    expect(url).toBe('https://api.tiendanube.com/2025-03/1234/products/5678');
+    expect(init?.method).toBe('PUT');
+    expect(headers.get('authorization')).toBe('Bearer private-access-token');
+    expect(init?.body).toBe(JSON.stringify({ visibility: 'visible' }));
+  });
+
   it('intercambia OAuth mediante POST JSON al endpoint fijo', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({

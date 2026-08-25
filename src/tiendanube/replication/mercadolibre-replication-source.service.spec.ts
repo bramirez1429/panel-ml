@@ -115,6 +115,9 @@ describe('MercadoLibreReplicationSourceService', () => {
         { url: 'http://example.com/one.jpg' },
         { secure_url: 'https://example.com/two.jpg' },
       ],
+      attributes: [{ id: 'BRAND', value_name: 'ACME' }],
+      tags: ['nuevo', 'remera'],
+      shipping: { dimensions: '10x20x30,500g' },
       variations: [
         {
           ...classicVariation(1, 'Negro', 'S', 4, 'REM-NEG-S'),
@@ -130,12 +133,18 @@ describe('MercadoLibreReplicationSourceService', () => {
       title: 'Remera real',
       description: 'Descripción real del MLA',
       images: ['http://example.com/one.jpg', 'https://example.com/two.jpg'],
+      brand: 'ACME',
+      tags: ['nuevo', 'remera'],
       attributes: [
         { id: 'COLOR', name: 'Color' },
         { id: 'SIZE', name: 'Talle' },
       ],
       variants: [
         {
+          weight: 0.5,
+          width: 10,
+          height: 20,
+          depth: 30,
           price: 36_000,
           stock: 4,
           sku: 'REM-NEG-S',
@@ -145,6 +154,10 @@ describe('MercadoLibreReplicationSourceService', () => {
           ],
         },
         {
+          weight: 0.5,
+          width: 10,
+          height: 20,
+          depth: 30,
           price: 35_000,
           stock: 3,
           sku: null,

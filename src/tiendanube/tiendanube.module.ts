@@ -16,6 +16,7 @@ import { TiendanubeProductLinkRepository } from './replication/tiendanube-produc
 import { TiendanubeReplicationController } from './replication/tiendanube-replication.controller';
 import { TiendanubeReplicationStatusService } from './replication/tiendanube-replication-status.service';
 import { TiendanubeReplicationService } from './replication/tiendanube-replication.service';
+import { TiendanubeReplicationUpsertController } from './replication/tiendanube-replication-upsert.controller';
 import { TiendanubeApiService } from './shared/tiendanube-api.service';
 import { TiendanubeController } from './tiendanube.controller';
 import { TiendanubePrivacyWebhookController } from './webhooks/tiendanube-privacy-webhook.controller';
@@ -28,6 +29,7 @@ import { TiendanubePrivacyWebhookService } from './webhooks/tiendanube-privacy-w
     TiendanubeProductsController,
     TiendanubePrivacyWebhookController,
     TiendanubeReplicationController,
+    TiendanubeReplicationUpsertController,
   ],
   providers: [
     SupabaseService,

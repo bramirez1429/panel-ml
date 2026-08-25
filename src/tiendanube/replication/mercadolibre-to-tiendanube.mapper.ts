@@ -34,8 +34,24 @@ function parseProduct(value: unknown): ReplicableProduct {
   const images = parseImages(value.images);
   const attributes = parseAttributes(value.attributes);
   const variants = parseVariants(value.variants, attributes);
+  const brand = parseOptionalText(value.brand);
+  const categoryIds = parseCategoryIds(value.categoryIds);
+  const tags = parseTags(value.tags);
+  const seoTitle = parseOptionalText(value.seoTitle);
+  const seoDescription = parseOptionalText(value.seoDescription);
 
-  return { title, description, images, attributes, variants };
+  return {
+    title,
+    description,
+    images,
+    attributes,
+    variants,
+    brand,
+    categoryIds,
+    tags,
+    seoTitle,
+    seoDescription,
+  };
 }
 
 function parseDescription(value: unknown): string | null {
@@ -134,13 +150,76 @@ function parseVariant(
   const values = parseVariantValues(value.values);
   if (values.length !== attributes.length) invalidProduct();
 
-  return { price, stock, sku, values };
+  return {
+    price,
+    stock,
+    sku,
+    ...parseVariantDimensions(value),
+    values,
+  };
+}
+
+function parseVariantDimensions(value: Record<string, unknown>): {
+  weight?: number;
+  width?: number;
+  height?: number;
+  depth?: number;
+} {
+  const dimensions = ['weight', 'width', 'height', 'depth'] as const;
+  const result: {
+    weight?: number;
+    width?: number;
+    height?: number;
+    depth?: number;
+  } = {};
+  for (const dimension of dimensions) {
+    const raw = value[dimension];
+    if (raw === undefined || raw === null) continue;
+    if (typeof raw !== 'number' || !Number.isFinite(raw) || raw < 0) {
+      invalidProduct();
+    }
+    result[dimension] = raw;
+  }
+  return result;
 }
 
 function parseSku(value: unknown): string | null {
   if (value === null) return null;
   if (typeof value !== 'string') invalidProduct();
   return value.trim() || null;
+}
+
+function parseOptionalText(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string') invalidProduct();
+  return value.trim() || null;
+}
+
+function parseCategoryIds(value: unknown): readonly number[] | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!Array.isArray(value)) invalidProduct();
+  const ids = value.map((candidate) => {
+    if (
+      typeof candidate !== 'number' ||
+      !Number.isSafeInteger(candidate) ||
+      candidate <= 0
+    ) {
+      invalidProduct();
+    }
+    return candidate;
+  });
+  return [...new Set(ids)];
+}
+
+function parseTags(value: unknown): readonly string[] | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!Array.isArray(value)) invalidProduct();
+  const tags = value.map((candidate) => {
+    const tag = nonEmptyString(candidate);
+    if (!tag) invalidProduct();
+    return tag;
+  });
+  return [...new Set(tags)];
 }
 
 function parseVariantValues(
@@ -183,9 +262,25 @@ function mapProduct(product: ReplicableProduct): TiendanubeCreateProductDto {
     ...(product.description
       ? { description: { es: plainTextToSafeHtml(product.description) } }
       : {}),
-    visibility: 'hidden',
+    visibility: 'visible',
     images: product.images.map((src) => ({ src })),
     attributes: product.attributes.map(({ name }) => ({ es: name })),
+    ...(product.brand ? { brand: product.brand } : {}),
+    ...(product.categoryIds && product.categoryIds.length > 0
+      ? { categories: product.categoryIds }
+      : {}),
+    ...(product.tags && product.tags.length > 0
+      ? { tags: product.tags.join(',') }
+      : {}),
+    seo_title: truncate(product.seoTitle ?? product.title, 70),
+    ...(product.seoDescription || product.description
+      ? {
+          seo_description: truncate(
+            product.seoDescription ?? product.description ?? '',
+            320,
+          ),
+        }
+      : {}),
     variants: product.variants.map(mapVariant),
   };
 }
@@ -208,10 +303,26 @@ function mapVariant(
     stock_management: true,
     stock: variant.stock,
     ...(variant.sku ? { sku: variant.sku } : {}),
+    ...(variant.weight !== undefined && variant.weight !== null
+      ? { weight: variant.weight.toFixed(2) }
+      : {}),
+    ...(variant.width !== undefined && variant.width !== null
+      ? { width: variant.width.toFixed(2) }
+      : {}),
+    ...(variant.height !== undefined && variant.height !== null
+      ? { height: variant.height.toFixed(2) }
+      : {}),
+    ...(variant.depth !== undefined && variant.depth !== null
+      ? { depth: variant.depth.toFixed(2) }
+      : {}),
     ...(variant.values.length > 0
       ? { values: variant.values.map(({ value }) => ({ es: value })) }
       : {}),
   };
+}
+
+function truncate(value: string, maxLength: number): string {
+  return value.slice(0, maxLength);
 }
 
 function nonEmptyString(value: unknown): string | null {

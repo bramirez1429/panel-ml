@@ -13,3 +13,10 @@ export type TiendanubeReplicationExistingResult = Readonly<{
 
 export type TiendanubeReplicationResult =
   TiendanubeReplicationCreatedResult | TiendanubeReplicationExistingResult;
+
+export type TiendanubeReplicationUpsertResult = Readonly<{
+  ok: true;
+  action: 'created' | 'updated';
+  mercadolibreSourceId: string;
+  tiendanubeProductId: string;
+}>;

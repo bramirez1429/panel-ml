@@ -35,7 +35,7 @@ const COLOR_TALLE_PRODUCT: ReplicableProduct = {
 };
 
 describe('MercadoLibreToTiendanubeMapper', () => {
-  it('mapea Color/Talle en el orden de atributos y crea el producto oculto', () => {
+  it('mapea Color/Talle en el orden de atributos y crea el producto visible', () => {
     const result = MercadoLibreToTiendanubeMapper.map(COLOR_TALLE_PRODUCT);
 
     expect(result).toEqual({
@@ -43,7 +43,9 @@ describe('MercadoLibreToTiendanubeMapper', () => {
       description: {
         es: 'Primera &amp; &lt;b&gt;&quot;doble&quot; y &#39;simple&#39;&lt;/b&gt;<br>Segunda<br>Tercera<br>Cuarta con &lt;br&gt; literal',
       },
-      visibility: 'hidden',
+      visibility: 'visible',
+      seo_title: COLOR_TALLE_PRODUCT.title.trim(),
+      seo_description: COLOR_TALLE_PRODUCT.description.trim(),
       images: [{ src: 'https://images.example.com/remera.jpg' }],
       attributes: [{ es: 'Color' }, { es: 'Talle' }],
       variants: [
@@ -77,7 +79,7 @@ describe('MercadoLibreToTiendanubeMapper', () => {
     });
 
     expect(result).not.toHaveProperty('description');
-    expect(result.visibility).toBe('hidden');
+    expect(result.visibility).toBe('visible');
     expect(result).not.toHaveProperty('published');
   });
 
@@ -109,6 +111,45 @@ describe('MercadoLibreToTiendanubeMapper', () => {
     expect(result.images).toHaveLength(9);
   });
 
+  it('mapea marca, tags, categorias, SEO y dimensiones por variante', () => {
+    const result = MercadoLibreToTiendanubeMapper.map({
+      ...COLOR_TALLE_PRODUCT,
+      brand: 'ACME',
+      categoryIds: [123, 456],
+      tags: ['remera', 'verano'],
+      seoTitle: 'SEO title',
+      seoDescription: 'SEO description',
+      variants: [
+        {
+          ...COLOR_TALLE_PRODUCT.variants[0],
+          weight: 0.5,
+          width: 20,
+          height: 30,
+          depth: 4,
+        },
+      ],
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        visibility: 'visible',
+        brand: 'ACME',
+        categories: [123, 456],
+        tags: 'remera,verano',
+        seo_title: 'SEO title',
+        seo_description: 'SEO description',
+      }),
+    );
+    expect(result.variants[0]).toEqual(
+      expect.objectContaining({
+        weight: '0.50',
+        width: '20.00',
+        height: '30.00',
+        depth: '4.00',
+      }),
+    );
+  });
+
   it.each([
     ['null', null],
     ['vacío', ''],
@@ -124,7 +165,8 @@ describe('MercadoLibreToTiendanubeMapper', () => {
 
     expect(result).toEqual({
       name: { es: 'Producto simple' },
-      visibility: 'hidden',
+      visibility: 'visible',
+      seo_title: 'Producto simple',
       images: [],
       attributes: [],
       variants: [{ price: '1234.50', stock_management: true, stock: 0 }],
