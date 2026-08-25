@@ -78,6 +78,23 @@ export class MercadolibreProductsRepository {
     return data;
   }
 
+  /** Busca varias claves estables dentro del vendedor en una sola lectura. */
+  async findByExternalKeys(
+    sellerId: number,
+    externalKeys: readonly string[],
+  ): Promise<readonly MercadolibreProductDetail[]> {
+    if (externalKeys.length === 0) return [];
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('mercadolibre_products')
+      .select(DETAIL_COLUMNS)
+      .eq('seller_id', sellerId)
+      .in('external_key', externalKeys);
+
+    if (error) this.readError();
+    return data;
+  }
+
   /** Inserta o actualiza un producto por vendedor y clave externa. */
   async upsert(
     product: MercadolibreProductUpsert,

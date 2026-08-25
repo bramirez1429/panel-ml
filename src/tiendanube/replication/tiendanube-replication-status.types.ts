@@ -15,3 +15,19 @@ export type TiendanubeReplicationStatusItem =
 export type TiendanubeReplicationStatusResponse = Readonly<{
   items: readonly TiendanubeReplicationStatusItem[];
 }>;
+
+export type TiendanubeReplicationSourceStatusItem =
+  | Readonly<{
+      sourceKey: string;
+      status: 'NOT_REPLICATED' | 'PENDING' | 'FAILED';
+      tiendanubeProductId: null;
+    }>
+  | Readonly<{
+      sourceKey: string;
+      status: 'COMPLETED';
+      tiendanubeProductId: string;
+    }>;
+
+export type TiendanubeReplicationSourceStatusResponse = Readonly<{
+  items: readonly TiendanubeReplicationSourceStatusItem[];
+}>;

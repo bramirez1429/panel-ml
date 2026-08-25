@@ -1,4 +1,6 @@
 import { TiendanubeConnectionRepository } from '../connections/tiendanube-connection.repository';
+import { MercadolibreProductsRepository } from '../../database/repositories/mercadolibre-products.repository';
+import { MercadolibreTokenService } from '../../mercadolibre/auth/mercadolibre-token.service';
 import { TiendanubeProductLinkRepository } from './tiendanube-product-link.repository';
 import { TiendanubeReplicationStatusService } from './tiendanube-replication-status.service';
 
@@ -14,11 +16,15 @@ type ConnectionRepositoryMock = jest.Mocked<
 type ProductLinkRepositoryMock = jest.Mocked<
   Pick<TiendanubeProductLinkRepository, 'findStatusesByMlProductIds'>
 >;
+type ProductRepositoryMock = jest.Mocked<
+  Pick<MercadolibreProductsRepository, 'findByExternalKeys'>
+>;
 
 describe('TiendanubeReplicationStatusService', () => {
   let connectionRepository: ConnectionRepositoryMock;
   let productLinkRepository: ProductLinkRepositoryMock;
   let service: TiendanubeReplicationStatusService;
+  let productRepository: ProductRepositoryMock;
 
   beforeEach(() => {
     connectionRepository = {
@@ -30,10 +36,50 @@ describe('TiendanubeReplicationStatusService', () => {
     productLinkRepository = {
       findStatusesByMlProductIds: jest.fn().mockResolvedValue([]),
     };
+    productRepository = { findByExternalKeys: jest.fn().mockResolvedValue([]) };
     service = new TiendanubeReplicationStatusService(
       connectionRepository as unknown as TiendanubeConnectionRepository,
       productLinkRepository as unknown as TiendanubeProductLinkRepository,
+      {
+        getStoredConnection: jest.fn().mockResolvedValue({ seller_id: 123 }),
+      } as unknown as MercadolibreTokenService,
+      productRepository as unknown as MercadolibreProductsRepository,
     );
+  });
+
+  it('resuelve sourceKeys en lote y consulta vínculos una sola vez', async () => {
+    productRepository.findByExternalKeys.mockResolvedValue([
+      { id: PRODUCT_A, external_key: 'item:MLA1' } as never,
+      { id: PRODUCT_B, external_key: 'family:22' } as never,
+    ]);
+    productLinkRepository.findStatusesByMlProductIds.mockResolvedValue([
+      {
+        mlProductId: PRODUCT_B,
+        status: 'COMPLETED',
+        tiendanubeProductId: '10',
+      },
+    ]);
+
+    await expect(
+      service.getStatusBySourceKeys(USER_A, 'item:MLA1,family:22'),
+    ).resolves.toEqual({
+      items: [
+        {
+          sourceKey: 'item:MLA1',
+          status: 'NOT_REPLICATED',
+          tiendanubeProductId: null,
+        },
+        {
+          sourceKey: 'family:22',
+          status: 'COMPLETED',
+          tiendanubeProductId: '10',
+        },
+      ],
+    });
+    expect(productRepository.findByExternalKeys).toHaveBeenCalledTimes(1);
+    expect(
+      productLinkRepository.findStatusesByMlProductIds,
+    ).toHaveBeenCalledTimes(1);
   });
 
   it('elimina duplicados, consulta una vez y conserva el orden solicitado', async () => {

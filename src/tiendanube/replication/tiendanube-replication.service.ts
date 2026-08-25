@@ -30,6 +30,24 @@ export class TiendanubeReplicationService {
     private readonly tiendanubeApiService: TiendanubeApiService,
   ) {}
 
+  async replicateBySourceKey(
+    userId: string,
+    sourceKey: string,
+  ): Promise<TiendanubeReplicationResult> {
+    const connection =
+      await this.mercadoLibreTokenService.getStoredConnection(userId);
+    const product = await this.mercadoLibreProductsRepository.findByExternalKey(
+      connection.seller_id,
+      sourceKey,
+    );
+    if (!product) {
+      throw new NotFoundException(
+        'La publicación de Mercado Libre no existe para el usuario autenticado',
+      );
+    }
+    return this.replicate(userId, product.id);
+  }
+
   async replicate(
     userId: string,
     mlProductId: string,

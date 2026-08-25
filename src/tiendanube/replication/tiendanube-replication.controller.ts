@@ -6,6 +6,7 @@ import {
   ParseUUIDPipe,
   Post,
   Query,
+  Body,
   UseGuards,
 } from '@nestjs/common';
 
@@ -16,7 +17,15 @@ import { TiendanubeReplicationStatusQueryDto } from './tiendanube-replication-st
 import { TiendanubeReplicationStatusService } from './tiendanube-replication-status.service';
 import type { TiendanubeReplicationStatusResponse } from './tiendanube-replication-status.types';
 import type { TiendanubeReplicationResult } from './tiendanube-replication-result.types';
+import type { TiendanubeReplicationSourceStatusResponse } from './tiendanube-replication-status.types';
 import { TiendanubeReplicationService } from './tiendanube-replication.service';
+import { IsString, IsNotEmpty } from 'class-validator';
+
+class SourceKeyReplicationDto {
+  @IsString()
+  @IsNotEmpty()
+  sourceKey!: string;
+}
 
 @Controller('tiendanube/replication')
 @UseGuards(AccessTokenGuard)
@@ -35,6 +44,18 @@ export class TiendanubeReplicationController {
     return this.replicationStatusService.getStatus(user.id, query.productIds);
   }
 
+  @Post('mercadolibre/source')
+  @Header('Cache-Control', 'no-store')
+  replicateMercadoLibreSource(
+    @CurrentUser() user: SafeUser,
+    @Body() body: SourceKeyReplicationDto,
+  ): Promise<TiendanubeReplicationResult> {
+    return this.replicationService.replicateBySourceKey(
+      user.id,
+      body.sourceKey,
+    );
+  }
+
   @Post('mercadolibre/:productId')
   @Header('Cache-Control', 'no-store')
   replicateMercadoLibrePublication(
@@ -42,5 +63,17 @@ export class TiendanubeReplicationController {
     @Param('productId', ParseUUIDPipe) productId: string,
   ): Promise<TiendanubeReplicationResult> {
     return this.replicationService.replicate(user.id, productId);
+  }
+
+  @Get('status-by-source')
+  @Header('Cache-Control', 'no-store')
+  getStatusBySource(
+    @CurrentUser() user: SafeUser,
+    @Query('sourceKeys') sourceKeys: string,
+  ): Promise<TiendanubeReplicationSourceStatusResponse> {
+    return this.replicationStatusService.getStatusBySourceKeys(
+      user.id,
+      sourceKeys,
+    );
   }
 }
