@@ -41,6 +41,19 @@ export class MercadolibreTokenService {
     return this.requireOwnedConnection(userId, connection);
   }
 
+  async getConnectionStatus(
+    userId: string,
+  ): Promise<{ connected: false } | { connected: true; sellerId: number }> {
+    const connection = await this.supabaseService.getConnection(userId);
+    if (!connection) return { connected: false };
+    this.requireOwnedConnection(userId, connection);
+    return { connected: true, sellerId: connection.seller_id };
+  }
+
+  async disconnect(userId: string): Promise<void> {
+    await this.supabaseService.deleteConnection(userId);
+  }
+
   /** Resuelve el owner interno de una notificacion identificada por seller. */
   async getStoredConnectionBySellerId(
     sellerId: number,

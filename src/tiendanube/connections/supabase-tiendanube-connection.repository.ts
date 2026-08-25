@@ -68,6 +68,24 @@ export class SupabaseTiendanubeConnectionRepository extends TiendanubeConnection
     };
   }
 
+  async deleteByUserId(userId: string): Promise<void> {
+    try {
+      const { error } = await this.supabaseService
+        .getClient()
+        .from('tiendanube_connections')
+        .delete()
+        .eq('user_id', userId);
+
+      if (!error) return;
+    } catch {
+      // Los detalles de Supabase pueden contener credenciales y no se propagan.
+    }
+
+    throw new ServiceUnavailableException(
+      'No se pudo eliminar la conexión de Tiendanube',
+    );
+  }
+
   async deleteByStoreId(storeId: string): Promise<void> {
     try {
       const { error } = await this.supabaseService
@@ -75,12 +93,10 @@ export class SupabaseTiendanubeConnectionRepository extends TiendanubeConnection
         .from('tiendanube_connections')
         .delete()
         .eq('store_id', storeId);
-
       if (!error) return;
     } catch {
-      // Los detalles de Supabase pueden contener credenciales y no se propagan.
+      // No propagar detalles sensibles de Supabase.
     }
-
     throw new ServiceUnavailableException(
       'No se pudo eliminar la conexión de Tiendanube',
     );

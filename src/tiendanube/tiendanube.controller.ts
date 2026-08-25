@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Controller,
+  Delete,
   Get,
   Header,
   Headers,
@@ -56,6 +57,13 @@ export class TiendanubeController {
       storeId: status.storeId,
       scope: status.scope,
     };
+  }
+
+  @Delete('connection')
+  @UseGuards(AccessTokenGuard)
+  async disconnect(@CurrentUser() user: SafeUser): Promise<{ ok: true }> {
+    await this.connectionService.disconnect(user.id);
+    return { ok: true };
   }
 
   @Get('connect')

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Controller,
+  Delete,
   Get,
   Header,
   Headers,
@@ -16,12 +17,30 @@ import type { AuthenticatedRequest } from '../auth/presentation/authenticated-re
 import { AccessTokenGuard } from '../auth/presentation/access-token.guard';
 import { CurrentUser } from '../auth/presentation/current-user.decorator';
 import { MercadolibreAuthService } from './auth/mercadolibre-auth.service';
+import { MercadolibreTokenService } from './auth/mercadolibre-token.service';
 import { OAUTH_STATE_TTL_MS } from './shared/mercadolibre.config';
 
 @Controller('mercadolibre')
 export class MercadolibreController {
   /** Recibe el servicio de autenticación. */
-  constructor(private readonly authService: MercadolibreAuthService) {}
+  constructor(
+    private readonly authService: MercadolibreAuthService,
+    private readonly tokenService: MercadolibreTokenService,
+  ) {}
+
+  @Get('connection')
+  @Header('Cache-Control', 'no-store')
+  @UseGuards(AccessTokenGuard)
+  connection(@CurrentUser() user: SafeUser) {
+    return this.tokenService.getConnectionStatus(user.id);
+  }
+
+  @Delete('connection')
+  @UseGuards(AccessTokenGuard)
+  async disconnect(@CurrentUser() user: SafeUser): Promise<{ ok: true }> {
+    await this.tokenService.disconnect(user.id);
+    return { ok: true };
+  }
 
   /** Entrega la URL para autorizar la cuenta desde un cliente autenticado. */
   @Get('connect')

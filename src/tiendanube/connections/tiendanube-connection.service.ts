@@ -28,4 +28,8 @@ export class TiendanubeConnectionService {
       scope: connection.scope,
     };
   }
+
+  async disconnect(userId: string): Promise<void> {
+    await this.connectionRepository.deleteByUserId(userId);
+  }
 }
