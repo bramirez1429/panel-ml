@@ -6,6 +6,7 @@ import {
   HttpException,
   Injectable,
   NotFoundException,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 
@@ -16,8 +17,13 @@ import { TiendanubeApiService } from '../shared/tiendanube-api.service';
 import { MercadoLibreReplicationSourceService } from './mercadolibre-replication-source.service';
 import { MercadoLibreToTiendanubeMapper } from './mercadolibre-to-tiendanube.mapper';
 import { TiendanubeProductLinkRepository } from './tiendanube-product-link.repository';
+import type { SourceLinkRepository } from './tiendanube-product-link.repository';
+import { MercadoLibreReplicationSourceResolver } from './mercadolibre-replication-source-resolver';
+import { TiendanubeProductResolver } from './tiendanube-product-resolver';
+import { TiendanubeSourceReplicationService } from './tiendanube-source-replication.service';
 import type { TiendanubeReplicationResult } from './tiendanube-replication-result.types';
 import type { TiendanubeReplicationUpsertResult } from './tiendanube-replication-result.types';
+import type { TiendanubeSourceReplicationResult } from './tiendanube-replication-result.types';
 import { isTiendanubeSourceKey } from './tiendanube-replication-source.dto';
 
 type TiendanubeCreatedProduct = Readonly<{ id?: unknown }>;
@@ -31,21 +37,33 @@ export class TiendanubeReplicationService {
     private readonly productLinkRepository: TiendanubeProductLinkRepository,
     private readonly sourceService: MercadoLibreReplicationSourceService,
     private readonly tiendanubeApiService: TiendanubeApiService,
+    @Optional()
+    private readonly directSourceResolver?: MercadoLibreReplicationSourceResolver,
+    @Optional()
+    private readonly tiendanubeProductResolver?: TiendanubeProductResolver,
+    @Optional()
+    private readonly directReplicationService?: TiendanubeSourceReplicationService,
   ) {}
 
   async replicateBySourceKey(
     userId: string,
     sourceKey: string,
-  ): Promise<TiendanubeReplicationUpsertResult> {
+  ): Promise<TiendanubeSourceReplicationResult> {
     return this.replicateOrUpdateBySourceKey(userId, sourceKey);
   }
 
   async replicateOrUpdateBySourceKey(
     userId: string,
     sourceKey: string,
-  ): Promise<TiendanubeReplicationUpsertResult> {
+  ): Promise<TiendanubeSourceReplicationResult> {
     if (!isTiendanubeSourceKey(sourceKey)) {
       throw new BadRequestException('sourceKey de Mercado Libre inválido');
+    }
+    if (this.directReplicationService) {
+      return this.directReplicationService.replicate(userId, sourceKey);
+    }
+    if (this.directSourceResolver) {
+      return this.replicateDirectSource(userId, sourceKey);
     }
     const connection =
       await this.mercadoLibreTokenService.getStoredConnection(userId);
@@ -58,7 +76,109 @@ export class TiendanubeReplicationService {
         'La publicación de Mercado Libre no existe para el usuario autenticado',
       );
     }
-    return this.replicateOrUpdateBySourceId(userId, product.id);
+    const result = await this.replicateOrUpdateBySourceId(userId, product.id);
+    return {
+      ok: true,
+      action: result.action,
+      sourceKey,
+      tiendanubeProductId: result.tiendanubeProductId,
+    };
+  }
+
+  private async replicateDirectSource(
+    userId: string,
+    sourceKey: string,
+  ): Promise<TiendanubeSourceReplicationResult> {
+    const mercadoLibreConnection =
+      await this.mercadoLibreTokenService.getStoredConnection(userId);
+    const tiendanubeConnection =
+      await this.tiendanubeConnectionRepository.findCredentialsByUserId(userId);
+    if (!tiendanubeConnection?.accessToken.trim()) {
+      throw new UnauthorizedException('Primero conectá Tiendanube');
+    }
+    this.requireProductWriteScope(tiendanubeConnection.scope);
+    const mercadoLibreAccessToken =
+      await this.mercadoLibreTokenService.getValidAccessToken(
+        userId,
+        mercadoLibreConnection,
+      );
+    const source = await this.directSourceResolver!.resolve(
+      sourceKey,
+      mercadoLibreConnection.seller_id,
+      mercadoLibreAccessToken,
+    );
+    const links = this.productLinkRepository as unknown as SourceLinkRepository;
+    const link = await links.findBySourceKey({
+      userId,
+      storeId: tiendanubeConnection.storeId,
+      sourceKey,
+    });
+    let productId = link?.tiendanubeProductId ?? null;
+    if (link?.status === 'PENDING') {
+      throw new ConflictException(
+        'La replicación de esta publicación está pendiente',
+      );
+    }
+    if (!this.tiendanubeProductResolver) {
+      throw new UnauthorizedException(
+        'El resolver de productos Tiendanube no está configurado',
+      );
+    }
+    if (
+      productId &&
+      !(await this.tiendanubeProductResolver.exists(
+        tiendanubeConnection,
+        productId,
+      ))
+    ) {
+      productId = null;
+    }
+    if (!productId) {
+      productId = await this.tiendanubeProductResolver.resolve(
+        tiendanubeConnection,
+        source.skus,
+      );
+    }
+    if (productId) {
+      await this.tiendanubeApiService.put(
+        tiendanubeConnection.storeId,
+        `/products/${encodeURIComponent(productId)}`,
+        source.product,
+        tiendanubeConnection.accessToken,
+      );
+      await links.saveSourceLink({
+        userId,
+        storeId: tiendanubeConnection.storeId,
+        sourceKey,
+        tiendanubeProductId: productId,
+      });
+      return {
+        ok: true,
+        action: 'updated',
+        sourceKey,
+        tiendanubeProductId: productId,
+      };
+    }
+    const created =
+      await this.tiendanubeApiService.post<TiendanubeCreatedProduct>(
+        tiendanubeConnection.storeId,
+        '/products',
+        source.product,
+        tiendanubeConnection.accessToken,
+      );
+    const createdId = parseCreatedProductId(created);
+    await links.saveSourceLink({
+      userId,
+      storeId: tiendanubeConnection.storeId,
+      sourceKey,
+      tiendanubeProductId: createdId,
+    });
+    return {
+      ok: true,
+      action: 'created',
+      sourceKey,
+      tiendanubeProductId: createdId,
+    };
   }
 
   async replicateOrUpdateBySourceId(

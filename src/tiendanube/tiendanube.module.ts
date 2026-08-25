@@ -11,6 +11,9 @@ import { TiendanubeConnectionService } from './connections/tiendanube-connection
 import { TiendanubeProductsController } from './products/tiendanube-products.controller';
 import { TiendanubeProductsService } from './products/tiendanube-products.service';
 import { MercadoLibreReplicationSourceService } from './replication/mercadolibre-replication-source.service';
+import { MercadoLibreReplicationSourceResolver } from './replication/mercadolibre-replication-source-resolver';
+import { TiendanubeProductResolver } from './replication/tiendanube-product-resolver';
+import { TiendanubeSourceReplicationService } from './replication/tiendanube-source-replication.service';
 import { SupabaseTiendanubeProductLinkRepository } from './replication/supabase-tiendanube-product-link.repository';
 import { TiendanubeProductLinkRepository } from './replication/tiendanube-product-link.repository';
 import { TiendanubeReplicationController } from './replication/tiendanube-replication.controller';
@@ -41,6 +44,9 @@ import { TiendanubePrivacyWebhookService } from './webhooks/tiendanube-privacy-w
     TiendanubeReplicationService,
     TiendanubeReplicationStatusService,
     MercadoLibreReplicationSourceService,
+    MercadoLibreReplicationSourceResolver,
+    TiendanubeProductResolver,
+    TiendanubeSourceReplicationService,
     {
       provide: TiendanubeConnectionRepository,
       useClass: SupabaseTiendanubeConnectionRepository,

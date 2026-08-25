@@ -9,6 +9,7 @@ import type {
   Reservation,
   ReserveTiendanubeProductLinkInput,
   TiendanubeProductLinkStatusRecord,
+  SourceLink,
 } from './tiendanube-product-link.repository';
 import { TiendanubeProductLinkRepository } from './tiendanube-product-link.repository';
 
@@ -23,6 +24,65 @@ const UUID_PATTERN =
 export class SupabaseTiendanubeProductLinkRepository extends TiendanubeProductLinkRepository {
   constructor(private readonly supabaseService: SupabaseService) {
     super();
+  }
+
+  async findBySourceKey(input: {
+    userId: string;
+    storeId: string;
+    sourceKey: string;
+  }): Promise<SourceLink | null> {
+    try {
+      const { data, error } = await this.supabaseService
+        .getClient()
+        .from('tiendanube_product_links')
+        .select('ml_source_key,tiendanube_product_id,status')
+        .eq('user_id', input.userId)
+        .eq('store_id', input.storeId)
+        .eq('ml_source_key', input.sourceKey)
+        .maybeSingle();
+      if (error) this.sourceLinkError();
+      if (!data) return null;
+      if (
+        typeof data.ml_source_key !== 'string' ||
+        typeof data.tiendanube_product_id !== 'string' ||
+        !['PENDING', 'FAILED', 'COMPLETED'].includes(data.status)
+      )
+        this.sourceLinkError();
+      return {
+        sourceKey: data.ml_source_key,
+        tiendanubeProductId: data.tiendanube_product_id,
+        status: data.status,
+      };
+    } catch {
+      this.sourceLinkError();
+    }
+  }
+
+  async saveSourceLink(input: {
+    userId: string;
+    storeId: string;
+    sourceKey: string;
+    tiendanubeProductId: string;
+  }): Promise<void> {
+    try {
+      const { error } = await this.supabaseService
+        .getClient()
+        .from('tiendanube_product_links')
+        .upsert(
+          {
+            user_id: input.userId,
+            store_id: input.storeId,
+            ml_source_key: input.sourceKey,
+            tiendanube_product_id: input.tiendanubeProductId,
+            status: 'COMPLETED',
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id,store_id,ml_source_key' },
+        );
+      if (error) this.sourceLinkError();
+    } catch {
+      this.sourceLinkError();
+    }
   }
 
   async reserve(
@@ -148,6 +208,12 @@ export class SupabaseTiendanubeProductLinkRepository extends TiendanubeProductLi
     }
 
     this.reserveError();
+  }
+
+  private sourceLinkError(): never {
+    throw new ServiceUnavailableException(
+      'No se pudo leer o guardar el vínculo de Tiendanube',
+    );
   }
 
   private mapStatusRows(

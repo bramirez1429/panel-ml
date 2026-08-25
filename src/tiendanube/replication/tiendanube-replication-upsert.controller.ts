@@ -12,6 +12,7 @@ import type { SafeUser } from '../../auth/domain/auth.models';
 import { AccessTokenGuard } from '../../auth/presentation/access-token.guard';
 import { CurrentUser } from '../../auth/presentation/current-user.decorator';
 import type { TiendanubeReplicationUpsertResult } from './tiendanube-replication-result.types';
+import type { TiendanubeSourceReplicationResult } from './tiendanube-replication-result.types';
 import { TiendanubeReplicationSourceDto } from './tiendanube-replication-source.dto';
 import { TiendanubeReplicationService } from './tiendanube-replication.service';
 
@@ -27,7 +28,7 @@ export class TiendanubeReplicationUpsertController {
   replicateSource(
     @CurrentUser() user: SafeUser,
     @Body() body: TiendanubeReplicationSourceDto,
-  ): Promise<TiendanubeReplicationUpsertResult> {
+  ): Promise<TiendanubeSourceReplicationResult> {
     return this.replicationService.replicateOrUpdateBySourceKey(
       user.id,
       body.sourceKey,

@@ -50,6 +50,30 @@ export type TiendanubeProductLinkStatusRecord = Readonly<{
   tiendanubeProductId: string | null;
 }>;
 
+export type SourceLink = Readonly<{
+  sourceKey: string;
+  tiendanubeProductId: string;
+  status: 'PENDING' | 'FAILED' | 'COMPLETED';
+}>;
+
+export type SourceLinkRepository = Readonly<{
+  findBySourceKey(
+    input: Readonly<{
+      userId: string;
+      storeId: string;
+      sourceKey: string;
+    }>,
+  ): Promise<SourceLink | null>;
+  saveSourceLink(
+    input: Readonly<{
+      userId: string;
+      storeId: string;
+      sourceKey: string;
+      tiendanubeProductId: string;
+    }>,
+  ): Promise<void>;
+}>;
+
 export abstract class TiendanubeProductLinkRepository {
   abstract reserve(
     input: ReserveTiendanubeProductLinkInput,

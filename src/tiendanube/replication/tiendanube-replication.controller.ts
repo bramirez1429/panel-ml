@@ -17,7 +17,7 @@ import { TiendanubeReplicationStatusQueryDto } from './tiendanube-replication-st
 import { TiendanubeReplicationStatusService } from './tiendanube-replication-status.service';
 import type { TiendanubeReplicationStatusResponse } from './tiendanube-replication-status.types';
 import type { TiendanubeReplicationResult } from './tiendanube-replication-result.types';
-import type { TiendanubeReplicationUpsertResult } from './tiendanube-replication-result.types';
+import type { TiendanubeSourceReplicationResult } from './tiendanube-replication-result.types';
 import type { TiendanubeReplicationSourceStatusResponse } from './tiendanube-replication-status.types';
 import { TiendanubeReplicationService } from './tiendanube-replication.service';
 import { TiendanubeReplicationSourceDto } from './tiendanube-replication-source.dto';
@@ -44,7 +44,7 @@ export class TiendanubeReplicationController {
   replicateMercadoLibreSource(
     @CurrentUser() user: SafeUser,
     @Body() body: TiendanubeReplicationSourceDto,
-  ): Promise<TiendanubeReplicationUpsertResult> {
+  ): Promise<TiendanubeSourceReplicationResult> {
     return this.replicationService.replicateBySourceKey(
       user.id,
       body.sourceKey,
