@@ -16,7 +16,11 @@ const PRODUCT = { name: { es: 'Remera' }, variants: [] } as never;
 
 describe('TiendanubeSourceReplicationService', () => {
   let service: TiendanubeSourceReplicationService;
-  let links: { findBySourceKey: jest.Mock; saveSourceLink: jest.Mock };
+  let links: {
+    reserveBySource: jest.Mock;
+    completeBySource: jest.Mock;
+    failBySource: jest.Mock;
+  };
   let api: { post: jest.Mock; put: jest.Mock };
   let productResolver: { exists: jest.Mock; resolve: jest.Mock };
 
@@ -33,8 +37,13 @@ describe('TiendanubeSourceReplicationService', () => {
       }),
     };
     links = {
-      findBySourceKey: jest.fn().mockResolvedValue(null),
-      saveSourceLink: jest.fn().mockResolvedValue(undefined),
+      reserveBySource: jest.fn().mockResolvedValue({
+        outcome: 'RESERVED',
+        linkId: 'link-1',
+        reservationVersion: '2030-01-01T00:00:00.000Z',
+      }),
+      completeBySource: jest.fn().mockResolvedValue(undefined),
+      failBySource: jest.fn().mockResolvedValue(undefined),
     };
     api = {
       post: jest.fn().mockResolvedValue({ id: 99 }),
@@ -70,19 +79,20 @@ describe('TiendanubeSourceReplicationService', () => {
     });
     expect(api.post).toHaveBeenCalledTimes(1);
     expect(api.put).not.toHaveBeenCalled();
-    expect(links.saveSourceLink).toHaveBeenCalledWith({
+    expect(links.completeBySource).toHaveBeenCalledWith({
       userId: USER_ID,
       storeId: STORE_ID,
       sourceKey: SOURCE_KEY,
+      linkId: 'link-1',
+      reservationVersion: '2030-01-01T00:00:00.000Z',
       tiendanubeProductId: '99',
     });
   });
 
   it('actualiza el producto confirmado por el vínculo', async () => {
-    links.findBySourceKey.mockResolvedValue({
-      sourceKey: SOURCE_KEY,
+    links.reserveBySource.mockResolvedValue({
+      outcome: 'COMPLETED',
       tiendanubeProductId: '77',
-      status: 'COMPLETED',
     });
     productResolver.exists.mockResolvedValue(true);
 
@@ -122,11 +132,21 @@ describe('TiendanubeSourceReplicationService', () => {
     expect(api.put).not.toHaveBeenCalled();
   });
 
+  it('rechaza una reserva PENDING sin llamar a Tiendanube', async () => {
+    links.reserveBySource.mockResolvedValue({ outcome: 'PENDING' });
+
+    await expect(service.replicate(USER_ID, SOURCE_KEY)).rejects.toMatchObject({
+      status: 409,
+    });
+    expect(api.post).not.toHaveBeenCalled();
+    expect(api.put).not.toHaveBeenCalled();
+  });
+
   it('mantiene el vínculo obsoleto como candidato a descubrimiento', async () => {
-    links.findBySourceKey.mockResolvedValue({
-      sourceKey: SOURCE_KEY,
-      tiendanubeProductId: '44',
-      status: 'COMPLETED',
+    links.reserveBySource.mockResolvedValue({
+      outcome: 'RESERVED',
+      linkId: 'link-1',
+      reservationVersion: '2030-01-01T00:00:00.000Z',
     });
     productResolver.exists.mockResolvedValue(false);
 

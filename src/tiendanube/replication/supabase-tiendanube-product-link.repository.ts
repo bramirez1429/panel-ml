@@ -10,6 +10,7 @@ import type {
   ReserveTiendanubeProductLinkInput,
   TiendanubeProductLinkStatusRecord,
   SourceLink,
+  SourceReservation,
 } from './tiendanube-product-link.repository';
 import { TiendanubeProductLinkRepository } from './tiendanube-product-link.repository';
 
@@ -44,15 +45,91 @@ export class SupabaseTiendanubeProductLinkRepository extends TiendanubeProductLi
       if (!data) return null;
       if (
         typeof data.ml_source_key !== 'string' ||
-        typeof data.tiendanube_product_id !== 'string' ||
         !['PENDING', 'FAILED', 'COMPLETED'].includes(data.status)
       )
         this.sourceLinkError();
+      if (
+        data.status === 'COMPLETED' &&
+        (typeof data.tiendanube_product_id !== 'string' ||
+          !/^[1-9]\d*$/u.test(data.tiendanube_product_id))
+      )
+        this.sourceLinkError();
+      if (data.status !== 'COMPLETED' && data.tiendanube_product_id !== null)
+        this.sourceLinkError();
+      const tiendanubeProductId = data.tiendanube_product_id;
       return {
         sourceKey: data.ml_source_key,
-        tiendanubeProductId: data.tiendanube_product_id,
+        tiendanubeProductId,
         status: data.status,
       };
+    } catch {
+      this.sourceLinkError();
+    }
+  }
+
+  async reserveBySource(input: {
+    userId: string;
+    storeId: string;
+    sourceKey: string;
+  }): Promise<SourceReservation> {
+    try {
+      const { data, error } = await this.supabaseService
+        .getClient()
+        .rpc('reserve_tiendanube_product_link_by_source', {
+          p_user_id: input.userId,
+          p_store_id: input.storeId,
+          p_ml_source_key: input.sourceKey,
+        });
+      if (error || !data || data.length !== 1) this.sourceLinkError();
+      return this.mapSourceReservation(data[0]);
+    } catch {
+      this.sourceLinkError();
+    }
+  }
+
+  async completeBySource(input: {
+    linkId: string;
+    userId: string;
+    storeId: string;
+    sourceKey: string;
+    reservationVersion: string;
+    tiendanubeProductId: string;
+  }): Promise<void> {
+    try {
+      const { data, error } = await this.supabaseService
+        .getClient()
+        .rpc('complete_tiendanube_product_link_by_source', {
+          p_link_id: input.linkId,
+          p_user_id: input.userId,
+          p_store_id: input.storeId,
+          p_ml_source_key: input.sourceKey,
+          p_reservation_version: input.reservationVersion,
+          p_tiendanube_product_id: input.tiendanubeProductId,
+        });
+      if (error || data !== true) this.sourceLinkError();
+    } catch {
+      this.sourceLinkError();
+    }
+  }
+
+  async failBySource(input: {
+    linkId: string;
+    userId: string;
+    storeId: string;
+    sourceKey: string;
+    reservationVersion: string;
+  }): Promise<void> {
+    try {
+      const { data, error } = await this.supabaseService
+        .getClient()
+        .rpc('fail_tiendanube_product_link_by_source', {
+          p_link_id: input.linkId,
+          p_user_id: input.userId,
+          p_store_id: input.storeId,
+          p_ml_source_key: input.sourceKey,
+          p_reservation_version: input.reservationVersion,
+        });
+      if (error || data !== true) this.sourceLinkError();
     } catch {
       this.sourceLinkError();
     }
@@ -214,6 +291,34 @@ export class SupabaseTiendanubeProductLinkRepository extends TiendanubeProductLi
     throw new ServiceUnavailableException(
       'No se pudo leer o guardar el vínculo de Tiendanube',
     );
+  }
+
+  private mapSourceReservation(row: ReserveRpcRow): SourceReservation {
+    if (row.outcome === 'PENDING' && row.link_status === 'PENDING')
+      return { outcome: 'PENDING' };
+    if (
+      row.outcome === 'COMPLETED' &&
+      row.link_status === 'COMPLETED' &&
+      typeof row.tiendanube_product_id === 'string'
+    ) {
+      return {
+        outcome: 'COMPLETED',
+        tiendanubeProductId: row.tiendanube_product_id,
+      };
+    }
+    if (
+      row.outcome === 'RESERVED' &&
+      row.link_status === 'PENDING' &&
+      typeof row.link_id === 'string' &&
+      typeof row.reservation_version === 'string'
+    ) {
+      return {
+        outcome: 'RESERVED',
+        linkId: row.link_id,
+        reservationVersion: row.reservation_version,
+      };
+    }
+    this.sourceLinkError();
   }
 
   private mapStatusRows(

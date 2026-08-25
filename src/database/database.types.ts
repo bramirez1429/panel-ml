@@ -421,6 +421,35 @@ export type Database = {
         };
         Returns: ReserveTiendanubeProductLinkResult[];
       };
+      reserve_tiendanube_product_link_by_source: {
+        Args: {
+          p_user_id: string;
+          p_store_id: string;
+          p_ml_source_key: string;
+        };
+        Returns: ReserveTiendanubeProductLinkResult[];
+      };
+      complete_tiendanube_product_link_by_source: {
+        Args: {
+          p_link_id: string;
+          p_user_id: string;
+          p_store_id: string;
+          p_ml_source_key: string;
+          p_reservation_version: string;
+          p_tiendanube_product_id: string;
+        };
+        Returns: boolean;
+      };
+      fail_tiendanube_product_link_by_source: {
+        Args: {
+          p_link_id: string;
+          p_user_id: string;
+          p_store_id: string;
+          p_ml_source_key: string;
+          p_reservation_version: string;
+        };
+        Returns: boolean;
+      };
       complete_tiendanube_product_link: {
         Args: {
           p_link_id: string;

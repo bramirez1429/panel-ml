@@ -52,7 +52,7 @@ export type TiendanubeProductLinkStatusRecord = Readonly<{
 
 export type SourceLink = Readonly<{
   sourceKey: string;
-  tiendanubeProductId: string;
+  tiendanubeProductId: string | null;
   status: 'PENDING' | 'FAILED' | 'COMPLETED';
 }>;
 
@@ -70,6 +70,40 @@ export type SourceLinkRepository = Readonly<{
       storeId: string;
       sourceKey: string;
       tiendanubeProductId: string;
+    }>,
+  ): Promise<void>;
+}>;
+
+export type SourceReservation =
+  | Readonly<{
+      outcome: 'RESERVED';
+      linkId: string;
+      reservationVersion: string;
+    }>
+  | Readonly<{ outcome: 'PENDING' }>
+  | Readonly<{ outcome: 'COMPLETED'; tiendanubeProductId: string }>;
+
+export type SourceReservationRepository = Readonly<{
+  reserveBySource(
+    input: Readonly<{ userId: string; storeId: string; sourceKey: string }>,
+  ): Promise<SourceReservation>;
+  completeBySource(
+    input: Readonly<{
+      linkId: string;
+      userId: string;
+      storeId: string;
+      sourceKey: string;
+      reservationVersion: string;
+      tiendanubeProductId: string;
+    }>,
+  ): Promise<void>;
+  failBySource(
+    input: Readonly<{
+      linkId: string;
+      userId: string;
+      storeId: string;
+      sourceKey: string;
+      reservationVersion: string;
     }>,
   ): Promise<void>;
 }>;
