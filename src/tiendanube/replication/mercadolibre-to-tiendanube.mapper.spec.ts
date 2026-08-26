@@ -112,6 +112,28 @@ describe('MercadoLibreToTiendanubeMapper', () => {
     expect(result.images).toHaveLength(9);
   });
 
+  it('preserva imageSrc sólo cuando la imagen pertenece al producto', () => {
+    const imageSrc = 'https://images.example.com/remera.jpg';
+    const result = MercadoLibreToTiendanubeMapper.map({
+      ...COLOR_TALLE_PRODUCT,
+      variants: [
+        { ...COLOR_TALLE_PRODUCT.variants[0], imageSrc },
+        COLOR_TALLE_PRODUCT.variants[1],
+      ],
+    });
+
+    expect(result.variants[0].imageSrc).toBe(imageSrc);
+    expectControlledFailure({
+      ...COLOR_TALLE_PRODUCT,
+      variants: [
+        {
+          ...COLOR_TALLE_PRODUCT.variants[0],
+          imageSrc: 'https://images.example.com/ajena.jpg',
+        },
+      ],
+    });
+  });
+
   it('mapea marca, tags, categorias, SEO y dimensiones por variante', () => {
     const result = MercadoLibreToTiendanubeMapper.map({
       ...COLOR_TALLE_PRODUCT,

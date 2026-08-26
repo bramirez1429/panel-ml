@@ -12,6 +12,7 @@ import { TiendanubeProductsController } from './products/tiendanube-products.con
 import { TiendanubeProductsService } from './products/tiendanube-products.service';
 import { MercadoLibreReplicationSourceService } from './replication/mercadolibre-replication-source.service';
 import { MercadoLibreReplicationSourceResolver } from './replication/mercadolibre-replication-source-resolver';
+import { MercadoLibreReplicationNormalizerService } from './replication/mercadolibre-replication-normalizer.service';
 import { TiendanubeProductResolver } from './replication/tiendanube-product-resolver';
 import { TiendanubeExistingProductSyncService } from './replication/tiendanube-existing-product-sync.service';
 import { TiendanubeSourceReplicationService } from './replication/tiendanube-source-replication.service';
@@ -49,6 +50,7 @@ import { TiendanubeCategoriesService } from './categories/tiendanube-categories.
     TiendanubeReplicationService,
     TiendanubeReplicationStatusService,
     MercadoLibreReplicationSourceService,
+    MercadoLibreReplicationNormalizerService,
     MercadoLibreReplicationSourceResolver,
     TiendanubeProductResolver,
     TiendanubeExistingProductSyncService,

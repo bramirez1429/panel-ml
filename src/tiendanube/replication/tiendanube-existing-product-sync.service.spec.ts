@@ -78,4 +78,53 @@ describe('TiendanubeExistingProductSyncService', () => {
       'private-token',
     );
   });
+
+  it('convierte imageSrc al image_id correspondiente sin asociación posicional', async () => {
+    const api = {
+      put: jest.fn().mockResolvedValue(undefined),
+      get: jest.fn().mockResolvedValue([]),
+      post: jest
+        .fn()
+        .mockResolvedValueOnce({ id: 701 })
+        .mockResolvedValueOnce({ id: 702 }),
+      delete: jest.fn(),
+    };
+    const withVariantImages = {
+      ...source,
+      images: [
+        { src: 'https://example.com/a.jpg' },
+        { src: 'https://example.com/b.jpg' },
+      ],
+      variants: [
+        { ...source.variants[0], imageSrc: 'https://example.com/b.jpg' },
+        {
+          ...source.variants[0],
+          values: [{ es: 'Azul' }],
+          imageSrc: 'https://example.com/a.jpg',
+        },
+      ],
+    };
+
+    await new TiendanubeExistingProductSyncService(api as never).sync(
+      connection,
+      '77',
+      withVariantImages,
+    );
+
+    expect(api.put).toHaveBeenNthCalledWith(
+      2,
+      '123456',
+      '/products/77/variants',
+      [
+        expect.objectContaining({ image_id: 702 }),
+        expect.objectContaining({ image_id: 701 }),
+      ],
+      'private-token',
+    );
+    const putCalls = api.put.mock.calls as unknown as Array<unknown[]>;
+    const variantsPayload = putCalls[1]?.[2] as Array<Record<string, unknown>>;
+    expect(variantsPayload.every((variant) => !('imageSrc' in variant))).toBe(
+      true,
+    );
+  });
 });

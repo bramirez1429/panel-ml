@@ -33,7 +33,7 @@ function parseProduct(value: unknown): ReplicableProduct {
   const description = parseDescription(value.description);
   const images = parseImages(value.images);
   const attributes = parseAttributes(value.attributes);
-  const variants = parseVariants(value.variants, attributes);
+  const variants = parseVariants(value.variants, attributes, images);
   const brand = parseOptionalText(value.brand);
   const categoryIds = parseCategoryIds(value.categoryIds);
   const tags = parseTags(value.tags);
@@ -110,6 +110,7 @@ function parseAttributes(
 function parseVariants(
   value: unknown,
   attributes: readonly ReplicableProductAttribute[],
+  images: readonly string[],
 ): readonly ReplicableProductVariant[] {
   if (!Array.isArray(value) || value.length === 0) invalidProduct();
 
@@ -117,7 +118,7 @@ function parseVariants(
   const combinations = new Set<string>();
 
   for (const candidate of value) {
-    const variant = parseVariant(candidate, attributes);
+    const variant = parseVariant(candidate, attributes, images);
     const orderedValues = orderValues(variant.values, attributes);
     const combination = JSON.stringify(
       orderedValues.map(({ value: variantValue }) => variantValue),
@@ -134,6 +135,7 @@ function parseVariants(
 function parseVariant(
   value: unknown,
   attributes: readonly ReplicableProductAttribute[],
+  images: readonly string[],
 ): ReplicableProductVariant {
   if (!isJsonObject(value)) invalidProduct();
 
@@ -147,6 +149,8 @@ function parseVariant(
   }
 
   const sku = parseSku(value.sku);
+  const imageSrc = parseOptionalText(value.imageSrc);
+  if (imageSrc && !images.includes(imageSrc)) invalidProduct();
   const values = parseVariantValues(value.values);
   if (values.length !== attributes.length) invalidProduct();
 
@@ -154,6 +158,7 @@ function parseVariant(
     price,
     stock,
     sku,
+    ...(imageSrc ? { imageSrc } : {}),
     ...parseVariantDimensions(value),
     values,
   };
@@ -303,6 +308,7 @@ function mapVariant(
     stock_management: true,
     stock: variant.stock,
     ...(variant.sku ? { sku: variant.sku } : {}),
+    ...(variant.imageSrc ? { imageSrc: variant.imageSrc } : {}),
     ...(variant.weight !== undefined && variant.weight !== null
       ? { weight: variant.weight.toFixed(2) }
       : {}),

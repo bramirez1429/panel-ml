@@ -12,7 +12,15 @@ const USER_ID = '11111111-1111-4111-8111-111111111111';
 const STORE_ID = '123456';
 const SOURCE_KEY = 'item:MLA123';
 const TOKEN = 'private-token';
-const PRODUCT = { name: { es: 'Remera' }, variants: [] } as never;
+const PRODUCT = {
+  name: { es: 'Remera' },
+  images: [],
+  attributes: [{ es: 'Color' }],
+  variants: [
+    { price: '10.00', stock_management: true, stock: 1 },
+    { price: '20.00', stock_management: true, stock: 2 },
+  ],
+} as never;
 
 describe('TiendanubeSourceReplicationService', () => {
   let service: TiendanubeSourceReplicationService;
@@ -21,7 +29,7 @@ describe('TiendanubeSourceReplicationService', () => {
     completeBySource: jest.Mock;
     failBySource: jest.Mock;
   };
-  let api: { post: jest.Mock; put: jest.Mock };
+  let api: { get: jest.Mock; post: jest.Mock; put: jest.Mock };
   let productResolver: { exists: jest.Mock; resolve: jest.Mock };
 
   beforeEach(() => {
@@ -46,6 +54,7 @@ describe('TiendanubeSourceReplicationService', () => {
       failBySource: jest.fn().mockResolvedValue(undefined),
     };
     api = {
+      get: jest.fn().mockResolvedValue({ id: 88 }),
       post: jest.fn().mockResolvedValue({ id: 99 }),
       put: jest.fn().mockResolvedValue(undefined),
     };
@@ -86,6 +95,32 @@ describe('TiendanubeSourceReplicationService', () => {
       linkId: 'link-1',
       reservationVersion: '2030-01-01T00:00:00.000Z',
       tiendanubeProductId: '99',
+    });
+  });
+
+  it('OVERRIDE reemplaza todos los precios y KEEP_SOURCE conserva los normalizados', async () => {
+    await service.replicate(USER_ID, SOURCE_KEY, {
+      priceMode: 'OVERRIDE',
+      price: 77.5,
+      categoryId: 88,
+    });
+
+    const postCalls = api.post.mock.calls as unknown as Array<unknown[]>;
+    expect(postCalls[0]?.[2]).toMatchObject({
+      categories: [88],
+      variants: [{ price: '77.50' }, { price: '77.50' }],
+    });
+
+    api.post.mockClear();
+    await service.replicate(USER_ID, SOURCE_KEY, {
+      priceMode: 'KEEP_SOURCE',
+      categoryId: 88,
+    });
+    const keepSourcePostCalls = api.post.mock.calls as unknown as Array<
+      unknown[]
+    >;
+    expect(keepSourcePostCalls[0]?.[2]).toMatchObject({
+      variants: [{ price: '10.00' }, { price: '20.00' }],
     });
   });
 

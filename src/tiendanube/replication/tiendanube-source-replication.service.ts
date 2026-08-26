@@ -14,6 +14,7 @@ import { TiendanubeProductResolver } from './tiendanube-product-resolver';
 import { TiendanubeExistingProductSyncService } from './tiendanube-existing-product-sync.service';
 import type { TiendanubeSourceReplicationResult } from './tiendanube-replication-result.types';
 import type { TiendanubeReplicationOptions } from './tiendanube-replication.types';
+import { withoutVariantImageSources } from './tiendanube-replication-payload';
 
 type CreatedProduct = Readonly<{ id?: unknown }>;
 
@@ -95,7 +96,7 @@ export class TiendanubeSourceReplicationService {
         await this.api.put(
           tnConnection.storeId,
           `/products/${encodeURIComponent(productId)}`,
-          source.product,
+          withoutVariantImageSources(payload),
           tnConnection.accessToken,
         );
       }
@@ -120,7 +121,7 @@ export class TiendanubeSourceReplicationService {
       created = await this.api.post<CreatedProduct>(
         tnConnection.storeId,
         '/products',
-        payload,
+        withoutVariantImageSources(payload),
         tnConnection.accessToken,
       );
     } catch (error) {
@@ -134,6 +135,9 @@ export class TiendanubeSourceReplicationService {
       throw error;
     }
     const createdId = parseProductId(created);
+    if (this.existingProductSync) {
+      await this.existingProductSync.sync(tnConnection, createdId, payload);
+    }
     if (reservation.outcome === 'RESERVED') {
       await links.completeBySource({
         ...context,

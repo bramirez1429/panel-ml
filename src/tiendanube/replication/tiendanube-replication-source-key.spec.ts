@@ -1,87 +1,52 @@
 import { TiendanubeReplicationService } from './tiendanube-replication.service';
 
 describe('TiendanubeReplicationService sourceKey bridge', () => {
-  const connection = { user_id: 'user-a', seller_id: 42 };
-  const product = { id: 'product-a', external_key: 'item:MLA1' };
-
   function createService() {
-    const token = {
-      getStoredConnection: jest.fn().mockResolvedValue(connection),
-    };
-    const products = {
-      findByExternalKey: jest.fn().mockResolvedValue(product),
+    const products = { findByExternalKey: jest.fn() };
+    const directReplication = {
+      replicate: jest.fn().mockResolvedValue({
+        ok: true,
+        action: 'updated',
+        sourceKey: 'item:MLA1',
+        tiendanubeProductId: '10',
+      }),
     };
     const service = new TiendanubeReplicationService(
-      token as never,
+      {} as never,
       products as never,
       {} as never,
       {} as never,
       {} as never,
       {} as never,
+      directReplication as never,
     );
-    return { products, service };
+    return { directReplication, products, service };
   }
 
-  it('resuelve una clave item dentro del seller autenticado', async () => {
-    const { products, service } = createService();
-    const replicate = jest
-      .spyOn(service, 'replicateOrUpdateBySourceId')
-      .mockResolvedValue({
-        ok: true,
-        action: 'updated',
-        mercadolibreSourceId: 'product-a',
-        tiendanubeProductId: '10',
-      });
-
-    await service.replicateBySourceKey('user-a', 'item:MLA1');
-
-    expect(products.findByExternalKey).toHaveBeenCalledWith(42, 'item:MLA1');
-    expect(replicate).toHaveBeenCalledWith('user-a', 'product-a');
-  });
-
-  it('rechaza una clave inexistente sin ejecutar la replicación', async () => {
-    const { products, service } = createService();
-    products.findByExternalKey.mockResolvedValue(null);
+  it('delega sourceKey al flujo directo sin leer publicaciones de Supabase', async () => {
+    const { directReplication, products, service } = createService();
 
     await expect(
-      service.replicateBySourceKey('user-a', 'family:123'),
-    ).rejects.toMatchObject({ status: 404 });
-  });
-  it('delega creacion y actualizacion sin duplicar el flujo', async () => {
-    const { products, service } = createService();
-    const upsert = jest
-      .spyOn(service, 'replicateOrUpdateBySourceId')
-      .mockResolvedValueOnce({
-        ok: true,
-        action: 'created',
-        mercadolibreSourceId: 'product-a',
-        tiendanubeProductId: '101',
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        action: 'updated',
-        mercadolibreSourceId: 'product-a',
-        tiendanubeProductId: '101',
-      });
-
-    await expect(
-      service.replicateOrUpdateBySourceKey('user-a', 'item:MLA1'),
-    ).resolves.toMatchObject({ action: 'created' });
-    await expect(
-      service.replicateOrUpdateBySourceKey('user-a', 'item:MLA1'),
+      service.replicateOrUpdateBySourceKey('user-a', 'family:123', {
+        priceMode: 'KEEP_SOURCE',
+        categoryId: 9,
+      }),
     ).resolves.toMatchObject({ action: 'updated' });
-
-    expect(products.findByExternalKey).toHaveBeenCalledTimes(2);
-    expect(upsert).toHaveBeenCalledTimes(2);
+    expect(directReplication.replicate).toHaveBeenCalledWith(
+      'user-a',
+      'family:123',
+      { priceMode: 'KEEP_SOURCE', categoryId: 9 },
+    );
+    expect(products.findByExternalKey).not.toHaveBeenCalled();
   });
 
-  it('rechaza un sourceKey no soportado antes de consultar Mercado Libre', async () => {
-    const { products, service } = createService();
+  it('rechaza un sourceKey no soportado antes de consultar servicios', async () => {
+    const { directReplication, products, service } = createService();
 
     await expect(
       service.replicateOrUpdateBySourceKey('user-a', 'item:MLB1'),
     ).rejects.toMatchObject({ status: 400 });
-
+    expect(directReplication.replicate).not.toHaveBeenCalled();
     expect(products.findByExternalKey).not.toHaveBeenCalled();
   });
 });

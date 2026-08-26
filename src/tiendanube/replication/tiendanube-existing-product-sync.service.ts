@@ -3,6 +3,7 @@ import { TiendanubeApiService } from '../shared/tiendanube-api.service';
 import type { TiendanubeConnectionCredentials } from '../connections/tiendanube-connection.repository';
 import type {
   TiendanubeCreateProductDto,
+  TiendanubeCreateProductVariantDto,
   TiendanubeUpdateProductDto,
 } from './tiendanube-replication.types';
 
@@ -52,16 +53,13 @@ export class TiendanubeExistingProductSyncService {
     connection: TiendanubeConnectionCredentials,
     productId: string,
     source: TiendanubeCreateProductDto,
-    imageIds: readonly string[],
+    imageIds: ReadonlyMap<string, string>,
   ): Promise<void> {
     const path = `/products/${encodeURIComponent(productId)}/variants`;
     if (source.attributes.length > 0 || source.variants.length !== 1) {
-      const withImages = source.variants.map((variant, index) => ({
-        ...variant,
-        ...(imageIds[index % imageIds.length]
-          ? { image_id: Number(imageIds[index % imageIds.length]) }
-          : {}),
-      }));
+      const withImages = source.variants.map((variant) =>
+        toApiVariant(variant, imageIds),
+      );
       await this.api.put(
         connection.storeId,
         path,
@@ -83,10 +81,7 @@ export class TiendanubeExistingProductSyncService {
     await this.api.put(
       connection.storeId,
       `${path}/${encodeURIComponent(variantId)}`,
-      {
-        ...source.variants[0],
-        ...(imageIds[0] ? { image_id: Number(imageIds[0]) } : {}),
-      },
+      toApiVariant(source.variants[0], imageIds),
       connection.accessToken,
     );
   }
@@ -95,7 +90,7 @@ export class TiendanubeExistingProductSyncService {
     connection: TiendanubeConnectionCredentials,
     productId: string,
     source: TiendanubeCreateProductDto,
-  ): Promise<readonly string[]> {
+  ): Promise<ReadonlyMap<string, string>> {
     const path = `/products/${encodeURIComponent(productId)}/images`;
     const existing = await this.api.get<unknown[]>(
       connection.storeId,
@@ -111,7 +106,7 @@ export class TiendanubeExistingProductSyncService {
         connection.accessToken,
       );
     }
-    const createdIds: string[] = [];
+    const createdIds = new Map<string, string>();
     for (const image of source.images) {
       const created = await this.api.post<unknown>(
         connection.storeId,
@@ -121,7 +116,7 @@ export class TiendanubeExistingProductSyncService {
       );
       if (created !== undefined) {
         try {
-          createdIds.push(parseId(created));
+          createdIds.set(image.src, parseId(created));
         } catch {
           // Algunas respuestas de mocks/implementaciones no incluyen el id;
           // la imagen igualmente fue enviada y no se asocia de forma inventada.
@@ -130,6 +125,18 @@ export class TiendanubeExistingProductSyncService {
     }
     return createdIds;
   }
+}
+
+function toApiVariant(
+  variant: TiendanubeCreateProductVariantDto,
+  imageIds: ReadonlyMap<string, string>,
+): TiendanubeCreateProductVariantDto {
+  const { imageSrc, ...payload } = variant;
+  const imageId = imageSrc ? imageIds.get(imageSrc) : undefined;
+  return {
+    ...payload,
+    ...(imageId ? { image_id: Number(imageId) } : {}),
+  };
 }
 
 function parseId(value: unknown): string {

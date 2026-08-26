@@ -12,6 +12,7 @@ export type ReplicableProductVariant = Readonly<{
   price: number;
   stock: number;
   sku: string | null;
+  imageSrc?: string;
   weight?: number | null;
   width?: number | null;
   height?: number | null;
@@ -47,6 +48,7 @@ export type TiendanubeCreateProductVariantDto = Readonly<{
   depth?: string;
   values?: readonly TiendanubeLocalizedValueDto[];
   image_id?: number;
+  imageSrc?: string;
 }>;
 
 export type TiendanubeCreateProductDto = Readonly<{
