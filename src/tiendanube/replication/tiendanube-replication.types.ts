@@ -62,6 +62,12 @@ export type TiendanubeCreateProductDto = Readonly<{
   seo_description?: string;
 }>;
 
+export type TiendanubeReplicationOptions = Readonly<{
+  priceMode: 'KEEP_SOURCE' | 'OVERRIDE';
+  price?: number;
+  categoryId: number;
+}>;
+
 export type TiendanubeUpdateProductDto = Readonly<{
   name: TiendanubeLocalizedValueDto;
   description?: TiendanubeLocalizedValueDto;

@@ -13,6 +13,7 @@ import { TiendanubeProductLinkRepository } from './tiendanube-product-link.repos
 import { TiendanubeProductResolver } from './tiendanube-product-resolver';
 import { TiendanubeExistingProductSyncService } from './tiendanube-existing-product-sync.service';
 import type { TiendanubeSourceReplicationResult } from './tiendanube-replication-result.types';
+import type { TiendanubeReplicationOptions } from './tiendanube-replication.types';
 
 type CreatedProduct = Readonly<{ id?: unknown }>;
 
@@ -31,6 +32,7 @@ export class TiendanubeSourceReplicationService {
   async replicate(
     userId: string,
     sourceKey: string,
+    options?: TiendanubeReplicationOptions,
   ): Promise<TiendanubeSourceReplicationResult> {
     const mlConnection =
       await this.mercadoLibreTokenService.getStoredConnection(userId);
@@ -38,6 +40,15 @@ export class TiendanubeSourceReplicationService {
       await this.connectionRepository.findCredentialsByUserId(userId);
     if (!tnConnection?.accessToken.trim())
       throw new UnauthorizedException('Primero conectá Tiendanube');
+    if (options) {
+      const category = await this.api.get<unknown>(
+        tnConnection.storeId,
+        `/categories/${options.categoryId}`,
+        tnConnection.accessToken,
+      );
+      if (!category || typeof category !== 'object')
+        throw new ConflictException('La categoría de Tiendanube no existe');
+    }
     const token = await this.mercadoLibreTokenService.getValidAccessToken(
       userId,
       mlConnection,
@@ -47,6 +58,19 @@ export class TiendanubeSourceReplicationService {
       mlConnection.seller_id,
       token,
     );
+    const payload = options
+      ? {
+          ...source.product,
+          categories: [options.categoryId],
+          variants:
+            options.priceMode === 'OVERRIDE' && options.price !== undefined
+              ? source.product.variants.map((variant) => ({
+                  ...variant,
+                  price: options.price!.toFixed(2),
+                }))
+              : source.product.variants,
+        }
+      : source.product;
     const links = this.linkRepository as unknown as SourceReservationRepository;
     const context = { userId, storeId: tnConnection.storeId, sourceKey };
     const reservation = await links.reserveBySource(context);
@@ -66,11 +90,7 @@ export class TiendanubeSourceReplicationService {
 
     if (productId) {
       if (this.existingProductSync) {
-        await this.existingProductSync.sync(
-          tnConnection,
-          productId,
-          source.product,
-        );
+        await this.existingProductSync.sync(tnConnection, productId, payload);
       } else {
         await this.api.put(
           tnConnection.storeId,
@@ -100,7 +120,7 @@ export class TiendanubeSourceReplicationService {
       created = await this.api.post<CreatedProduct>(
         tnConnection.storeId,
         '/products',
-        source.product,
+        payload,
         tnConnection.accessToken,
       );
     } catch (error) {

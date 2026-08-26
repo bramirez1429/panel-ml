@@ -29,10 +29,16 @@ export class TiendanubeReplicationUpsertController {
     @CurrentUser() user: SafeUser,
     @Body() body: TiendanubeReplicationSourceDto,
   ): Promise<TiendanubeSourceReplicationResult> {
-    return this.replicationService.replicateOrUpdateBySourceKey(
-      user.id,
-      body.sourceKey,
-    );
+    return body.options
+      ? this.replicationService.replicateOrUpdateBySourceKey(
+          user.id,
+          body.sourceKey,
+          body.options,
+        )
+      : this.replicationService.replicateOrUpdateBySourceKey(
+          user.id,
+          body.sourceKey,
+        );
   }
 
   @Post('replicate/:sourceId')

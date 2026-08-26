@@ -25,6 +25,7 @@ import type { TiendanubeReplicationResult } from './tiendanube-replication-resul
 import type { TiendanubeReplicationUpsertResult } from './tiendanube-replication-result.types';
 import type { TiendanubeSourceReplicationResult } from './tiendanube-replication-result.types';
 import { isTiendanubeSourceKey } from './tiendanube-replication-source.dto';
+import type { TiendanubeReplicationOptions } from './tiendanube-replication.types';
 
 type TiendanubeCreatedProduct = Readonly<{ id?: unknown }>;
 
@@ -55,15 +56,20 @@ export class TiendanubeReplicationService {
   async replicateOrUpdateBySourceKey(
     userId: string,
     sourceKey: string,
+    options?: TiendanubeReplicationOptions,
   ): Promise<TiendanubeSourceReplicationResult> {
     if (!isTiendanubeSourceKey(sourceKey)) {
       throw new BadRequestException('sourceKey de Mercado Libre inválido');
     }
     if (this.directReplicationService) {
-      return this.directReplicationService.replicate(userId, sourceKey);
+      return this.directReplicationService.replicate(
+        userId,
+        sourceKey,
+        options,
+      );
     }
     if (this.directSourceResolver) {
-      return this.replicateDirectSource(userId, sourceKey);
+      return this.replicateDirectSource(userId, sourceKey, options);
     }
     const connection =
       await this.mercadoLibreTokenService.getStoredConnection(userId);
@@ -88,6 +94,7 @@ export class TiendanubeReplicationService {
   private async replicateDirectSource(
     userId: string,
     sourceKey: string,
+    options?: TiendanubeReplicationOptions,
   ): Promise<TiendanubeSourceReplicationResult> {
     const mercadoLibreConnection =
       await this.mercadoLibreTokenService.getStoredConnection(userId);
@@ -97,6 +104,12 @@ export class TiendanubeReplicationService {
       throw new UnauthorizedException('Primero conectá Tiendanube');
     }
     this.requireProductWriteScope(tiendanubeConnection.scope);
+    if (options)
+      await this.ensureCategory(
+        tiendanubeConnection.storeId,
+        tiendanubeConnection.accessToken,
+        options.categoryId,
+      );
     const mercadoLibreAccessToken =
       await this.mercadoLibreTokenService.getValidAccessToken(
         userId,
@@ -107,6 +120,7 @@ export class TiendanubeReplicationService {
       mercadoLibreConnection.seller_id,
       mercadoLibreAccessToken,
     );
+    const payload = applyOptions(source.product, options);
     const links = this.productLinkRepository as unknown as SourceLinkRepository;
     const link = await links.findBySourceKey({
       userId,
@@ -143,7 +157,7 @@ export class TiendanubeReplicationService {
       await this.tiendanubeApiService.put(
         tiendanubeConnection.storeId,
         `/products/${encodeURIComponent(productId)}`,
-        source.product,
+        payload,
         tiendanubeConnection.accessToken,
       );
       await links.saveSourceLink({
@@ -163,7 +177,7 @@ export class TiendanubeReplicationService {
       await this.tiendanubeApiService.post<TiendanubeCreatedProduct>(
         tiendanubeConnection.storeId,
         '/products',
-        source.product,
+        payload,
         tiendanubeConnection.accessToken,
       );
     const createdId = parseCreatedProductId(created);
@@ -412,6 +426,38 @@ export class TiendanubeReplicationService {
       );
     }
   }
+
+  private async ensureCategory(
+    storeId: string,
+    token: string,
+    categoryId: number,
+  ): Promise<void> {
+    const category = await this.tiendanubeApiService.get<unknown>(
+      storeId,
+      `/categories/${categoryId}`,
+      token,
+    );
+    if (!category || typeof category !== 'object')
+      throw new NotFoundException('La categoría de Tiendanube no existe');
+  }
+}
+
+function applyOptions(
+  product: ReturnType<typeof MercadoLibreToTiendanubeMapper.map>,
+  options?: TiendanubeReplicationOptions,
+): ReturnType<typeof MercadoLibreToTiendanubeMapper.map> {
+  if (!options) return product;
+  return {
+    ...product,
+    categories: [options.categoryId],
+    variants:
+      options.priceMode === 'OVERRIDE' && options.price !== undefined
+        ? product.variants.map((variant) => ({
+            ...variant,
+            price: options.price!.toFixed(2),
+          }))
+        : product.variants,
+  };
 }
 
 function parseCreatedProductId(
