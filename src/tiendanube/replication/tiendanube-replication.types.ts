@@ -46,6 +46,7 @@ export type TiendanubeCreateProductVariantDto = Readonly<{
   height?: string;
   depth?: string;
   values?: readonly TiendanubeLocalizedValueDto[];
+  image_id?: number;
 }>;
 
 export type TiendanubeCreateProductDto = Readonly<{

@@ -18,8 +18,8 @@ export class TiendanubeExistingProductSyncService {
     source: TiendanubeCreateProductDto,
   ): Promise<void> {
     await this.syncBaseProduct(connection, productId, source);
-    await this.syncVariants(connection, productId, source);
-    await this.syncImages(connection, productId, source);
+    const imageIds = await this.syncImages(connection, productId, source);
+    await this.syncVariants(connection, productId, source, imageIds);
   }
 
   private async syncBaseProduct(
@@ -52,13 +52,20 @@ export class TiendanubeExistingProductSyncService {
     connection: TiendanubeConnectionCredentials,
     productId: string,
     source: TiendanubeCreateProductDto,
+    imageIds: readonly string[],
   ): Promise<void> {
     const path = `/products/${encodeURIComponent(productId)}/variants`;
     if (source.attributes.length > 0 || source.variants.length !== 1) {
+      const withImages = source.variants.map((variant, index) => ({
+        ...variant,
+        ...(imageIds[index % imageIds.length]
+          ? { image_id: Number(imageIds[index % imageIds.length]) }
+          : {}),
+      }));
       await this.api.put(
         connection.storeId,
         path,
-        source.variants,
+        withImages,
         connection.accessToken,
       );
       return;
@@ -76,7 +83,10 @@ export class TiendanubeExistingProductSyncService {
     await this.api.put(
       connection.storeId,
       `${path}/${encodeURIComponent(variantId)}`,
-      source.variants[0],
+      {
+        ...source.variants[0],
+        ...(imageIds[0] ? { image_id: Number(imageIds[0]) } : {}),
+      },
       connection.accessToken,
     );
   }
@@ -85,7 +95,7 @@ export class TiendanubeExistingProductSyncService {
     connection: TiendanubeConnectionCredentials,
     productId: string,
     source: TiendanubeCreateProductDto,
-  ): Promise<void> {
+  ): Promise<readonly string[]> {
     const path = `/products/${encodeURIComponent(productId)}/images`;
     const existing = await this.api.get<unknown[]>(
       connection.storeId,
@@ -101,14 +111,24 @@ export class TiendanubeExistingProductSyncService {
         connection.accessToken,
       );
     }
+    const createdIds: string[] = [];
     for (const image of source.images) {
-      await this.api.post(
+      const created = await this.api.post<unknown>(
         connection.storeId,
         path,
         image,
         connection.accessToken,
       );
+      if (created !== undefined) {
+        try {
+          createdIds.push(parseId(created));
+        } catch {
+          // Algunas respuestas de mocks/implementaciones no incluyen el id;
+          // la imagen igualmente fue enviada y no se asocia de forma inventada.
+        }
+      }
     }
+    return createdIds;
   }
 }
 
