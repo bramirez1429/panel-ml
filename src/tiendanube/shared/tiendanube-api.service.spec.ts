@@ -1,7 +1,12 @@
+import { GatewayTimeoutException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { TiendanubeApiService } from './tiendanube-api.service';
-import type { TiendanubeEnvironment } from './tiendanube.config';
+import {
+  TIENDANUBE_API_REQUEST_TIMEOUT_MS,
+  TIENDANUBE_OAUTH_REQUEST_TIMEOUT_MS,
+  type TiendanubeEnvironment,
+} from './tiendanube.config';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -46,6 +51,24 @@ describe('TiendanubeApiService', () => {
     expect(headers.has('authorization')).toBe(false);
   });
 
+  it('usa 30 segundos para GET, POST, PUT y DELETE', async () => {
+    const timeout = jest.spyOn(AbortSignal, 'timeout');
+    fetchMock.mockImplementation(() =>
+      Promise.resolve(jsonResponse({ ok: true })),
+    );
+
+    await service.get('1234', '/products');
+    await service.post('1234', '/products', { name: 'Producto' });
+    await service.put('1234', '/products/1', { name: 'Producto' });
+    await service.delete('1234', '/products/1');
+
+    expect(timeout).toHaveBeenCalledTimes(4);
+    for (const call of timeout.mock.calls) {
+      expect(call).toEqual([TIENDANUBE_API_REQUEST_TIMEOUT_MS]);
+    }
+    expect(TIENDANUBE_API_REQUEST_TIMEOUT_MS).toBe(30_000);
+  });
+
   it('agrega Authorization cuando recibe un token y envía JSON', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ ok: true }));
 
@@ -83,6 +106,7 @@ describe('TiendanubeApiService', () => {
   });
 
   it('intercambia OAuth mediante POST JSON al endpoint fijo', async () => {
+    const timeout = jest.spyOn(AbortSignal, 'timeout');
     fetchMock.mockResolvedValueOnce(
       jsonResponse({
         access_token: 'private-access-token',
@@ -109,6 +133,50 @@ describe('TiendanubeApiService', () => {
     expect(headers.get('content-type')).toBe('application/json; charset=utf-8');
     expect(headers.has('authorization')).toBe(false);
     expect(init?.body).toBe(JSON.stringify(tokenRequest));
+    expect(timeout).toHaveBeenCalledWith(TIENDANUBE_OAUTH_REQUEST_TIMEOUT_MS);
+    expect(TIENDANUBE_OAUTH_REQUEST_TIMEOUT_MS).toBe(10_000);
+  });
+
+  it('convierte un timeout real en GatewayTimeoutException', async () => {
+    const timeoutError = new Error('request timed out');
+    timeoutError.name = 'TimeoutError';
+    fetchMock.mockRejectedValueOnce(timeoutError);
+
+    let caught: unknown;
+    try {
+      await service.get('1234', '/products');
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(GatewayTimeoutException);
+    expect(caught).toMatchObject({
+      status: 504,
+      message: 'Tiendanube no respondió dentro del tiempo esperado',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [
+      'POST',
+      (api: TiendanubeApiService) =>
+        api.post('1234', '/products', { name: 'Producto' }),
+    ],
+    [
+      'PUT',
+      (api: TiendanubeApiService) =>
+        api.put('1234', '/products/1', { name: 'Producto' }),
+    ],
+    [
+      'DELETE',
+      (api: TiendanubeApiService) => api.delete('1234', '/products/1'),
+    ],
+  ])('no reintenta automáticamente escrituras %s', async (_method, write) => {
+    fetchMock.mockRejectedValueOnce(new Error('connection lost'));
+
+    await expect(write(service)).rejects.toMatchObject({ status: 502 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('informa un rechazo OAuth sin filtrar credenciales', async () => {

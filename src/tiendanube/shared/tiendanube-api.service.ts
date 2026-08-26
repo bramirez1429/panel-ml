@@ -9,10 +9,11 @@ import { ConfigService } from '@nestjs/config';
 
 import {
   getRequiredTiendanubeConfig,
+  TIENDANUBE_API_REQUEST_TIMEOUT_MS,
   TIENDANUBE_API_URL,
   TIENDANUBE_API_VERSION,
+  TIENDANUBE_OAUTH_REQUEST_TIMEOUT_MS,
   TIENDANUBE_OAUTH_TOKEN_URL,
-  TIENDANUBE_REQUEST_TIMEOUT_MS,
   TiendanubeEnvironment,
 } from './tiendanube.config';
 
@@ -106,7 +107,7 @@ export class TiendanubeApiService {
         headers: this.buildHeaders(undefined, true),
         body: JSON.stringify(request),
         redirect: 'error',
-        signal: AbortSignal.timeout(TIENDANUBE_REQUEST_TIMEOUT_MS),
+        signal: AbortSignal.timeout(TIENDANUBE_OAUTH_REQUEST_TIMEOUT_MS),
       },
       [request.client_secret, request.code],
       'oauth',
@@ -127,7 +128,7 @@ export class TiendanubeApiService {
       ),
       body:
         request.body === undefined ? undefined : JSON.stringify(request.body),
-      signal: AbortSignal.timeout(TIENDANUBE_REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(TIENDANUBE_API_REQUEST_TIMEOUT_MS),
     };
 
     return this.executeJsonRequest<T>(
