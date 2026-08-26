@@ -62,7 +62,10 @@ export function matchesProductFilters(
   candidate: PromotionCatalogCandidate,
   query: PromotionCatalogQuery,
 ): boolean {
-  if (query.search?.trim() && !titleMatchesSearch(candidate.title, query.search))
+  if (
+    query.search?.trim() &&
+    !titleMatchesSearch(candidate.title, query.search)
+  )
     return false;
   if (query.categoryId && candidate.categoryId !== query.categoryId)
     return false;
@@ -83,11 +86,11 @@ export function summarizePromotions(
   const activeTypes = promotionTypes(promotions.active);
   const candidateTypes = promotionTypes(promotions.candidates);
   const pendingTypes = promotionTypes(promotions.pending);
-  const status: PromotionCatalogStatus = activeTypes.length
+  const status: PromotionCatalogStatus = promotions.active.length
     ? 'ACTIVE'
-    : candidateTypes.length
+    : promotions.candidates.length
       ? 'AVAILABLE'
-      : pendingTypes.length
+      : promotions.pending.length
         ? 'PENDING'
         : 'NONE';
   return { status, activeTypes, candidateTypes, pendingTypes };

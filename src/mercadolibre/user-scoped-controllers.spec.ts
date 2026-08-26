@@ -10,6 +10,7 @@ import { PicturesController } from './direct-publications/pictures/pictures.cont
 import { DealController } from './direct-publications/promotions/deal.controller';
 import { PriceDiscountController } from './direct-publications/promotions/price-discount.controller';
 import { PromotionManagerController } from './direct-publications/promotions/promotion-manager.controller';
+import { PromotionsCatalogController } from './direct-publications/promotions/promotions-catalog.controller';
 import { SellerCampaignController } from './direct-publications/promotions/seller-campaign.controller';
 import { SmartPromotionController } from './direct-publications/promotions/smart-promotion.controller';
 import { PublicationsController } from './direct-publications/publications/publications.controller';
@@ -36,6 +37,7 @@ const USER_SCOPED_CONTROLLERS = [
   SellerCampaignController,
   SmartPromotionController,
   PromotionManagerController,
+  PromotionsCatalogController,
 ] as const;
 
 function guardsFor(controller: object): unknown[] {

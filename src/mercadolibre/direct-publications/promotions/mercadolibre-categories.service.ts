@@ -2,7 +2,10 @@ import { BadGatewayException, Injectable } from '@nestjs/common';
 
 import { PUBLICATION_REQUEST_CONCURRENCY } from '../../publications/publication.constants';
 import { MercadolibreApiService } from '../../shared/mercadolibre-api.service';
-import { isJsonObject, isNonEmptyString } from '../../shared/mercadolibre.types';
+import {
+  isJsonObject,
+  isNonEmptyString,
+} from '../../shared/mercadolibre.types';
 
 import type { PromotionCatalogCategory } from './promotions-catalog.types';
 

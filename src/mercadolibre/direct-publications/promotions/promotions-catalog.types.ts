@@ -1,10 +1,7 @@
 import type { MlPromotion, MlPromotions } from './promotions.types';
 
 export type PromotionCatalogStatus =
-  | 'ACTIVE'
-  | 'AVAILABLE'
-  | 'PENDING'
-  | 'NONE';
+  'ACTIVE' | 'AVAILABLE' | 'PENDING' | 'NONE';
 
 export type PromotionFacetFilter = Readonly<{
   attributeId: string;

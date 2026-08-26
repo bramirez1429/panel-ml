@@ -4,7 +4,6 @@ import type { ItemsService } from '../items/items.service';
 import type { MlItem } from '../items/items.types';
 
 import type { MercadoLibreCategoriesService } from './mercadolibre-categories.service';
-import type { PromotionCatalogQuery } from './promotions-catalog.types';
 import { PromotionsCatalogService } from './promotions-catalog.service';
 import type { PromotionsService } from './promotions.service';
 import type { MlPromotion, MlPromotions } from './promotions.types';
@@ -32,13 +31,15 @@ describe('PromotionsCatalogService', () => {
       itemId: 'MLA1',
       familyId: null,
     });
-    expect(result.publications.slice(1)).toEqual(
-      expect.arrayContaining(
-        ['MLA2', 'MLA3', 'MLA4', 'MLA5'].map((itemId) =>
-          expect.objectContaining({ itemId, familyId: '900' }),
-        ),
-      ),
-    );
+    expect(result.publications.slice(1).map(({ itemId }) => itemId)).toEqual([
+      'MLA2',
+      'MLA3',
+      'MLA4',
+      'MLA5',
+    ]);
+    expect(
+      result.publications.slice(1).every(({ familyId }) => familyId === '900'),
+    ).toBe(true);
   });
 
   it('resume started, candidate, pending y ausencia de promociones', async () => {
@@ -57,9 +58,9 @@ describe('PromotionsCatalogService', () => {
 
     const result = await service.getCatalog(USER_ID, { limit: 20 });
 
-    expect(result.publications.map((row) => row.promotionSummary.status)).toEqual(
-      ['ACTIVE', 'AVAILABLE', 'PENDING', 'NONE'],
-    );
+    expect(
+      result.publications.map((row) => row.promotionSummary.status),
+    ).toEqual(['ACTIVE', 'AVAILABLE', 'PENDING', 'NONE']);
     expect(result.publications[1]?.promotionSummary.candidateTypes).toEqual([
       'CUSTOM_TYPE',
     ]);
@@ -123,10 +124,7 @@ describe('PromotionsCatalogService', () => {
 
   it('pagina con cursor y conserva el orden determinístico del scan', async () => {
     const catalog = ['MLA1', 'MLA2', 'MLA3'].map((id) => item(id, id));
-    const { service } = createService(
-      [catalog.map(({ id }) => id)],
-      catalog,
-    );
+    const { service } = createService([catalog.map(({ id }) => id)], catalog);
 
     const first = await service.getCatalog(USER_ID, { limit: 2 });
     const second = await service.getCatalog(USER_ID, {

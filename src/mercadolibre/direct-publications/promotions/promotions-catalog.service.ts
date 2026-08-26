@@ -1,4 +1,8 @@
-import { BadGatewayException, BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadGatewayException,
+  BadRequestException,
+  Injectable,
+} from '@nestjs/common';
 
 import { MercadolibreTokenService } from '../../auth/mercadolibre-token.service';
 import { PUBLICATION_REQUEST_CONCURRENCY } from '../../publications/publication.constants';
@@ -33,10 +37,13 @@ export class PromotionsCatalogService {
   ) {}
 
   async getCatalog(userId: string, query: PromotionCatalogQuery) {
+    const limit = query.limit ?? 20;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 20)
+      throw new BadRequestException('limit debe estar entre 1 y 20');
     const offset = decodePromotionsCursor(query.cursor);
     if (offset === null)
       throw new BadRequestException('cursor de promociones inválido');
-    const target = offset + query.limit;
+    const target = offset + limit;
     if (!Number.isSafeInteger(target))
       throw new BadRequestException('cursor de promociones inválido');
 
@@ -159,10 +166,7 @@ export class PromotionsCatalogService {
 
   private toRow(
     match: PromotionCatalogMatch,
-    categories: ReadonlyMap<
-      string,
-      PromotionCatalogRow['category']
-    >,
+    categories: ReadonlyMap<string, PromotionCatalogRow['category']>,
   ): PromotionCatalogRow {
     const category = categories.get(match.candidate.categoryId);
     if (!category)

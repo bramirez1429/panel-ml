@@ -85,8 +85,13 @@ function trimString(value: unknown): unknown {
 
 function parseFacetFilters(value: unknown): unknown {
   const parsed = parseJsonArray(value);
-  if (!Array.isArray(parsed)) return parsed;
-  return parsed.map((entry: unknown) => {
+  const entries = Array.isArray(parsed)
+    ? parsed
+    : isObject(parsed)
+      ? [parsed]
+      : null;
+  if (!entries) return parsed;
+  return entries.map((entry: unknown) => {
     if (!isObject(entry)) return entry;
     const filter = new PromotionFacetFilterDto();
     filter.attributeId = trimString(entry.attributeId) as string;
