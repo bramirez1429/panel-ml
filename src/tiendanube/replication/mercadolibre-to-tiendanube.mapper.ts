@@ -265,7 +265,7 @@ function mapProduct(product: ReplicableProduct): TiendanubeCreateProductDto {
     visibility: 'visible',
     images: product.images.map((src) => ({ src })),
     attributes: product.attributes.map(({ name }) => ({ es: name })),
-    ...(product.brand ? { brand: product.brand } : {}),
+    brand: 'SAEL',
     ...(product.categoryIds && product.categoryIds.length > 0
       ? { categories: product.categoryIds }
       : {}),

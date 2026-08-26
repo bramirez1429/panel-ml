@@ -44,6 +44,7 @@ describe('MercadoLibreToTiendanubeMapper', () => {
         es: 'Primera &amp; &lt;b&gt;&quot;doble&quot; y &#39;simple&#39;&lt;/b&gt;<br>Segunda<br>Tercera<br>Cuarta con &lt;br&gt; literal',
       },
       visibility: 'visible',
+      brand: 'SAEL',
       seo_title: COLOR_TALLE_PRODUCT.title.trim(),
       seo_description: COLOR_TALLE_PRODUCT.description.trim(),
       images: [{ src: 'https://images.example.com/remera.jpg' }],
@@ -133,7 +134,7 @@ describe('MercadoLibreToTiendanubeMapper', () => {
     expect(result).toEqual(
       expect.objectContaining({
         visibility: 'visible',
-        brand: 'ACME',
+        brand: 'SAEL',
         categories: [123, 456],
         tags: 'remera,verano',
         seo_title: 'SEO title',
@@ -166,6 +167,7 @@ describe('MercadoLibreToTiendanubeMapper', () => {
     expect(result).toEqual({
       name: { es: 'Producto simple' },
       visibility: 'visible',
+      brand: 'SAEL',
       seo_title: 'Producto simple',
       images: [],
       attributes: [],
