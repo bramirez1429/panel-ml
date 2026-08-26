@@ -4,18 +4,36 @@ import type { ReplicableProduct } from './tiendanube-replication.types';
 export function varyingAttributes(
   items: readonly MercadoLibrePublication[],
 ): ReplicableProduct['attributes'] {
-  const all = new Map<string, { name: string; values: Set<string> }>();
-  for (const item of items)
+  const all = new Map<
+    string,
+    { name: string; values: Set<string>; present: number }
+  >();
+  const technical = new Set([
+    'SELLER_SKU',
+    'GTIN',
+    'EMPTY_GTIN_REASON',
+    'ITEM_CONDITION',
+    'MPN',
+  ]);
+  for (const item of items) {
+    const seen = new Set<string>();
     for (const attribute of parseItemAttributes(item.attributes)) {
+      if (technical.has(attribute.id) || seen.has(attribute.id)) continue;
+      seen.add(attribute.id);
       const current = all.get(attribute.id) ?? {
         name: attribute.name,
         values: new Set<string>(),
+        present: 0,
       };
       current.values.add(attribute.value);
+      current.present += 1;
       all.set(attribute.id, current);
     }
+  }
   return [...all.entries()]
-    .filter(([, value]) => value.values.size > 1)
+    .filter(
+      ([, value]) => value.present === items.length && value.values.size > 1,
+    )
     .map(([id, value]) => ({ id, name: value.name }));
 }
 
@@ -24,10 +42,15 @@ export function valuesFor(
   attributes: readonly ReplicableProduct['attributes'][number][],
 ) {
   const parsed = parseItemAttributes(item.attributes);
-  return attributes.map(({ id }) => ({
-    attributeId: id,
-    value: parsed.find((value) => value.id === id)?.value ?? '',
-  }));
+  return attributes.map(({ id }) => {
+    const value = parsed.find((candidate) => candidate.id === id)?.value;
+    if (!value) {
+      throw new ConflictException(
+        `La variante no tiene un valor válido para el atributo ${id}`,
+      );
+    }
+    return { attributeId: id, value };
+  });
 }
 
 function parseItemAttributes(
@@ -84,3 +107,4 @@ export function metadata(
       : [],
   };
 }
+import { ConflictException } from '@nestjs/common';
