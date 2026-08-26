@@ -25,6 +25,8 @@ import { TiendanubeApiService } from './shared/tiendanube-api.service';
 import { TiendanubeController } from './tiendanube.controller';
 import { TiendanubePrivacyWebhookController } from './webhooks/tiendanube-privacy-webhook.controller';
 import { TiendanubePrivacyWebhookService } from './webhooks/tiendanube-privacy-webhook.service';
+import { TiendanubeCategoriesController } from './categories/tiendanube-categories.controller';
+import { TiendanubeCategoriesService } from './categories/tiendanube-categories.service';
 
 @Module({
   imports: [ConfigModule, AuthModule, MercadolibreModule],
@@ -34,6 +36,7 @@ import { TiendanubePrivacyWebhookService } from './webhooks/tiendanube-privacy-w
     TiendanubePrivacyWebhookController,
     TiendanubeReplicationController,
     TiendanubeReplicationUpsertController,
+    TiendanubeCategoriesController,
   ],
   providers: [
     SupabaseService,
@@ -42,6 +45,7 @@ import { TiendanubePrivacyWebhookService } from './webhooks/tiendanube-privacy-w
     TiendanubeConnectionService,
     TiendanubeProductsService,
     TiendanubePrivacyWebhookService,
+    TiendanubeCategoriesService,
     TiendanubeReplicationService,
     TiendanubeReplicationStatusService,
     MercadoLibreReplicationSourceService,
