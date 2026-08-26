@@ -9,6 +9,7 @@ import {
   Req,
   Res,
   UnauthorizedException,
+  Optional,
   UseGuards,
 } from '@nestjs/common';
 import type { CookieOptions, Response } from 'express';
@@ -25,19 +26,27 @@ export class MercadolibreController {
   /** Recibe el servicio de autenticación. */
   constructor(
     private readonly authService: MercadolibreAuthService,
-    private readonly tokenService: MercadolibreTokenService,
+    @Optional() private readonly tokenService?: MercadolibreTokenService,
   ) {}
 
   @Get('connection')
   @Header('Cache-Control', 'no-store')
   @UseGuards(AccessTokenGuard)
   connection(@CurrentUser() user: SafeUser) {
+    if (!this.tokenService)
+      throw new UnauthorizedException(
+        'Conexión de Mercado Libre no disponible',
+      );
     return this.tokenService.getConnectionStatus(user.id);
   }
 
   @Delete('connection')
   @UseGuards(AccessTokenGuard)
   async disconnect(@CurrentUser() user: SafeUser): Promise<{ ok: true }> {
+    if (!this.tokenService)
+      throw new UnauthorizedException(
+        'Conexión de Mercado Libre no disponible',
+      );
     await this.tokenService.disconnect(user.id);
     return { ok: true };
   }
