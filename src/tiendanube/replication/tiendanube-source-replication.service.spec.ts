@@ -14,6 +14,7 @@ const SOURCE_KEY = 'item:MLA123';
 const TOKEN = 'private-token';
 const PRODUCT = {
   name: { es: 'Remera' },
+  tags: 'mercadolibre,original',
   images: [],
   attributes: [{ es: 'Color' }],
   variants: [
@@ -103,6 +104,7 @@ describe('TiendanubeSourceReplicationService', () => {
       priceMode: 'OVERRIDE',
       price: 77.5,
       categoryId: 88,
+      tagMode: 'KEEP_SOURCE',
     });
 
     const postCalls = api.post.mock.calls as unknown as Array<unknown[]>;
@@ -115,11 +117,43 @@ describe('TiendanubeSourceReplicationService', () => {
     await service.replicate(USER_ID, SOURCE_KEY, {
       priceMode: 'KEEP_SOURCE',
       categoryId: 88,
+      tagMode: 'KEEP_SOURCE',
     });
     const keepSourcePostCalls = api.post.mock.calls as unknown as Array<
       unknown[]
     >;
     expect(keepSourcePostCalls[0]?.[2]).toMatchObject({
+      categories: [88],
+      tags: 'mercadolibre,original',
+      variants: [{ price: '10.00' }, { price: '20.00' }],
+    });
+  });
+
+  it('KEEP_SOURCE conserva los tags provenientes de Mercado Libre', async () => {
+    await service.replicate(USER_ID, SOURCE_KEY, {
+      priceMode: 'KEEP_SOURCE',
+      categoryId: 88,
+      tagMode: 'KEEP_SOURCE',
+    });
+
+    const postCalls = api.post.mock.calls as unknown as Array<unknown[]>;
+    expect(postCalls[0]?.[2]).toMatchObject({
+      tags: 'mercadolibre,original',
+    });
+  });
+
+  it('OVERRIDE reemplaza, recorta y deduplica tags sin distinguir mayúsculas', async () => {
+    await service.replicate(USER_ID, SOURCE_KEY, {
+      priceMode: 'KEEP_SOURCE',
+      categoryId: 88,
+      tagMode: 'OVERRIDE',
+      tags: [' remera ', 'mujer', 'REMERA', ' algodón '],
+    });
+
+    const postCalls = api.post.mock.calls as unknown as Array<unknown[]>;
+    expect(postCalls[0]?.[2]).toMatchObject({
+      categories: [88],
+      tags: 'remera,mujer,algodón',
       variants: [{ price: '10.00' }, { price: '20.00' }],
     });
   });

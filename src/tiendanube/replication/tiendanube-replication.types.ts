@@ -69,6 +69,8 @@ export type TiendanubeReplicationOptions = Readonly<{
   priceMode: 'KEEP_SOURCE' | 'OVERRIDE';
   price?: number;
   categoryId: number;
+  tagMode: 'KEEP_SOURCE' | 'OVERRIDE';
+  tags?: string[];
 }>;
 
 export type TiendanubeUpdateProductDto = Readonly<{

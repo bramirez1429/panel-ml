@@ -70,6 +70,9 @@ export class TiendanubeSourceReplicationService {
                   price: options.price!.toFixed(2),
                 }))
               : source.product.variants,
+          ...(options.tagMode === 'OVERRIDE'
+            ? { tags: normalizeTags(options.tags) }
+            : {}),
         }
       : source.product;
     const links = this.linkRepository as unknown as SourceReservationRepository;
@@ -153,6 +156,19 @@ export class TiendanubeSourceReplicationService {
       tiendanubeProductId: createdId,
     };
   }
+}
+
+function normalizeTags(tags: readonly string[] | undefined): string {
+  const normalized: string[] = [];
+  const seen = new Set<string>();
+  for (const tag of tags ?? []) {
+    const trimmed = tag.trim();
+    const key = trimmed.toLowerCase();
+    if (!trimmed || seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(trimmed);
+  }
+  return normalized.join(',');
 }
 
 function parseProductId(value: CreatedProduct | undefined): string {

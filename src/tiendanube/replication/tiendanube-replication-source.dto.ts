@@ -1,4 +1,6 @@
 import {
+  ArrayMinSize,
+  IsArray,
   IsEnum,
   IsInt,
   IsNotEmpty,
@@ -9,9 +11,14 @@ import {
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type, type TransformFnParams } from 'class-transformer';
 
 export enum TiendanubePriceMode {
+  KEEP_SOURCE = 'KEEP_SOURCE',
+  OVERRIDE = 'OVERRIDE',
+}
+
+export enum TiendanubeTagMode {
   KEEP_SOURCE = 'KEEP_SOURCE',
   OVERRIDE = 'OVERRIDE',
 }
@@ -31,6 +38,26 @@ export class TiendanubeReplicationOptionsDto {
   @IsInt()
   @Min(1)
   categoryId!: number;
+
+  @IsEnum(TiendanubeTagMode)
+  tagMode!: TiendanubeTagMode;
+
+  @ValidateIf(
+    (o: TiendanubeReplicationOptionsDto) =>
+      o.tagMode === TiendanubeTagMode.OVERRIDE,
+  )
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsString({ each: true })
+  @IsNotEmpty({ each: true })
+  @Transform(({ value }: TransformFnParams) => trimTags(value as unknown))
+  tags?: string[];
+}
+
+function trimTags(value: unknown): unknown {
+  return Array.isArray(value)
+    ? value.map((tag: unknown) => (typeof tag === 'string' ? tag.trim() : tag))
+    : value;
 }
 
 export const TIENDANUBE_SOURCE_KEY_PATTERN =

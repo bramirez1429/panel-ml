@@ -30,12 +30,17 @@ describe('TiendanubeReplicationService sourceKey bridge', () => {
       service.replicateOrUpdateBySourceKey('user-a', 'family:123', {
         priceMode: 'KEEP_SOURCE',
         categoryId: 9,
+        tagMode: 'KEEP_SOURCE',
       }),
     ).resolves.toMatchObject({ action: 'updated' });
     expect(directReplication.replicate).toHaveBeenCalledWith(
       'user-a',
       'family:123',
-      { priceMode: 'KEEP_SOURCE', categoryId: 9 },
+      {
+        priceMode: 'KEEP_SOURCE',
+        categoryId: 9,
+        tagMode: 'KEEP_SOURCE',
+      },
     );
     expect(products.findByExternalKey).not.toHaveBeenCalled();
   });
