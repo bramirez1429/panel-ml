@@ -199,6 +199,7 @@ describe('TiendanubeReplicationService', () => {
           es: 'Primera &amp; &lt;b&gt;&quot;doble&quot; y &#39;simple&#39;&lt;/b&gt;<br>Segunda con &lt;br&gt; literal',
         },
         visibility: 'visible',
+        brand: 'SAEL',
         seo_title: SHARED_SOURCE.title,
         seo_description: SHARED_SOURCE.description,
         images: Array.from({ length: 9 }, (_, index) => ({
