@@ -14,3 +14,10 @@ export type MlPromotion = {
 
   [key: string]: unknown;
 };
+
+export type MlPromotions = Readonly<{
+  active: MlPromotion[];
+  candidates: MlPromotion[];
+  pending: MlPromotion[];
+  all: MlPromotion[];
+}>;

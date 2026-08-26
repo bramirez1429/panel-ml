@@ -2,14 +2,18 @@ import { Injectable } from '@nestjs/common';
 
 import { MercadolibreApiService } from '../../shared/mercadolibre-api.service';
 
-import { MlPromotion } from './promotions.types';
+import { MlPromotion, type MlPromotions } from './promotions.types';
 
 @Injectable()
 export class PromotionsService {
   constructor(private readonly apiService: MercadolibreApiService) {}
 
   /** Obtiene todas las promociones de un MLA. */
-  async getPromotions(userId: string, itemId: string, accessToken: string) {
+  async getPromotions(
+    userId: string,
+    itemId: string,
+    accessToken: string,
+  ): Promise<MlPromotions> {
     void userId;
     const promotions = await this.safeGet<MlPromotion[]>(
       `/seller-promotions/items/${itemId}?app_version=v2`,
