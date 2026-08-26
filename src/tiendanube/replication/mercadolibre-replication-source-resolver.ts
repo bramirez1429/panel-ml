@@ -128,10 +128,30 @@ export class MercadoLibreReplicationSourceResolver {
       this.assertSeller(item, sellerId);
       return family.userProductIds.includes(String(item.user_product_id));
     });
-    if (owned.length !== family.userProductIds.length)
+    const byUserProduct = new Map<string, MercadoLibrePublication[]>();
+    for (const item of owned) {
+      const id = String(item.user_product_id);
+      const group = byUserProduct.get(id) ?? [];
+      group.push(item);
+      byUserProduct.set(id, group);
+    }
+    if (family.userProductIds.some((id) => !byUserProduct.has(String(id))))
       throw new ConflictException(
         'La familia de Mercado Libre está incompleta',
       );
+    const representatives = family.userProductIds.map((id) => {
+      const group = byUserProduct.get(String(id));
+      if (!group || group.length === 0)
+        throw new ConflictException(
+          'La familia de Mercado Libre está incompleta',
+        );
+      const prices = new Set(group.map((item) => requirePrice(item.price)));
+      if (prices.size > 1)
+        throw new ConflictException(
+          'Una variante de Mercado Libre tiene múltiples precios de venta',
+        );
+      return group[0];
+    });
     const descriptions = await Promise.all(
       owned.map((item) =>
         this.descriptionService.getPlainTextByItemId(
@@ -149,23 +169,23 @@ export class MercadoLibreReplicationSourceResolver {
       throw new ConflictException(
         'La familia tiene descripciones incompatibles',
       );
-    const attributes = varyingAttributes(owned);
+    const attributes = varyingAttributes(representatives);
     const userProducts = await Promise.all(
       family.userProductIds.map((id) =>
         this.familyService.getUserProduct(id, accessToken, cache),
       ),
     );
     const rawProduct: ReplicableProduct = {
-      title: requireText(owned[0].title),
+      title: requireText(representatives[0].title),
       description: distinctDescriptions[0] ?? null,
       images: userProducts.flatMap((userProduct) =>
         pictures(userProduct.pictures),
       ),
       attributes,
-      variants: owned.map((item) =>
+      variants: representatives.map((item) =>
         variant(item, valuesFor(item, attributes), requirePrice(item.price)),
       ),
-      ...metadata(owned[0]),
+      ...metadata(representatives[0]),
     };
     const product = MercadoLibreToTiendanubeMapper.map(rawProduct);
     return { sourceKey, product, skus: collectSkus(rawProduct) };
