@@ -6,6 +6,8 @@ import { ItemsService } from '../items/items.service';
 import { FamiliesService } from '../families/families.service';
 import { PublicationsSearchService } from './publications-search.service';
 import { PublicationsMapper } from './publications.mapper';
+import { PublicationsGlobalSearchService } from './publications-global-search.service';
+import { hasTitleSearch } from './publication-title-search.helpers';
 
 @Injectable()
 export class PublicationsService {
@@ -14,6 +16,7 @@ export class PublicationsService {
     private readonly searchService: PublicationsSearchService,
     private readonly itemsService: ItemsService,
     private readonly familiesService: FamiliesService,
+    private readonly globalSearchService: PublicationsGlobalSearchService,
   ) {}
 
   /** Listado directo sin agrupar. */
@@ -45,7 +48,12 @@ export class PublicationsService {
   }
 
   /** Listado agrupado para el frontend. */
-  async getGrouped(userId: string, limit = 20, cursor?: string) {
+  async getGrouped(
+    userId: string,
+    limit = 20,
+    cursor?: string,
+    search?: string,
+  ) {
     this.validateLimit(limit);
 
     const connection = await this.tokenService.getStoredConnection(userId);
@@ -53,6 +61,17 @@ export class PublicationsService {
       userId,
       connection,
     );
+
+    if (hasTitleSearch(search)) {
+      return this.globalSearchService.search(
+        userId,
+        connection.seller_id,
+        accessToken,
+        search,
+        limit,
+        cursor,
+      );
+    }
 
     const scan = await this.searchService.scanPage(
       connection.seller_id,

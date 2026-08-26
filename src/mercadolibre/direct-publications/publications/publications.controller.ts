@@ -20,8 +20,9 @@ export class PublicationsController {
     @CurrentUser() user: SafeUser,
     @Query('limit') limit = '20',
     @Query('cursor') cursor?: string,
+    @Query('search') search?: string,
   ) {
-    return this.service.getGrouped(user.id, Number(limit), cursor);
+    return this.service.getGrouped(user.id, Number(limit), cursor, search);
   }
 
   /** Detalle de una sola publicación MLA. */

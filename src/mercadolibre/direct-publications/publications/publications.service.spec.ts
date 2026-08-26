@@ -3,6 +3,7 @@ import { MercadolibreTokenService } from '../../auth/mercadolibre-token.service'
 import { FamiliesService } from '../families/families.service';
 import { ItemsService } from '../items/items.service';
 import { PublicationsSearchService } from './publications-search.service';
+import { PublicationsGlobalSearchService } from './publications-global-search.service';
 import { PublicationsService } from './publications.service';
 
 const USER_A = '11111111-1111-4111-8111-111111111111';
@@ -51,6 +52,7 @@ describe('Direct PublicationsService', () => {
       searchService as unknown as PublicationsSearchService,
       itemsService as unknown as ItemsService,
       {} as FamiliesService,
+      {} as PublicationsGlobalSearchService,
     );
 
     await service.getPage(USER_A);
@@ -84,5 +86,80 @@ describe('Direct PublicationsService', () => {
     );
     expect(itemsService.getMany).toHaveBeenNthCalledWith(1, [], 'access-a');
     expect(itemsService.getMany).toHaveBeenNthCalledWith(2, [], 'access-b');
+  });
+
+  it('search vacío conserva exactamente el flujo scan actual', async () => {
+    const connectionA = connection(USER_A, 101, 'access-a');
+    const tokenService = {
+      getStoredConnection: jest.fn().mockResolvedValue(connectionA),
+      getValidAccessToken: jest.fn().mockResolvedValue('access-a'),
+    };
+    const searchService = {
+      scanPage: jest.fn().mockResolvedValue({ results: [], scroll_id: null }),
+    };
+    const itemsService = { getMany: jest.fn() };
+    const globalSearch = { search: jest.fn() };
+    const service = new PublicationsService(
+      tokenService as unknown as MercadolibreTokenService,
+      searchService as unknown as PublicationsSearchService,
+      itemsService as unknown as ItemsService,
+      {} as FamiliesService,
+      globalSearch as unknown as PublicationsGlobalSearchService,
+    );
+
+    await expect(
+      service.getGrouped(USER_A, 20, 'ml-scroll', '  !!!  '),
+    ).resolves.toEqual({
+      done: true,
+      nextCursor: null,
+      rawItemsCount: 0,
+      productsCount: 0,
+      products: [],
+    });
+    expect(searchService.scanPage).toHaveBeenCalledWith(
+      connectionA.seller_id,
+      'access-a',
+      20,
+      'ml-scroll',
+    );
+    expect(globalSearch.search).not.toHaveBeenCalled();
+    expect(itemsService.getMany).not.toHaveBeenCalled();
+  });
+
+  it('search con texto usa el catálogo global y conserva su cursor', async () => {
+    const connectionA = connection(USER_A, 101, 'access-a');
+    const tokenService = {
+      getStoredConnection: jest.fn().mockResolvedValue(connectionA),
+      getValidAccessToken: jest.fn().mockResolvedValue('access-a'),
+    };
+    const searchService = { scanPage: jest.fn() };
+    const expected = {
+      done: true,
+      nextCursor: null,
+      rawItemsCount: 1,
+      productsCount: 1,
+      products: [{ key: 'item:MLA1' }],
+    };
+    const globalSearch = { search: jest.fn().mockResolvedValue(expected) };
+    const service = new PublicationsService(
+      tokenService as unknown as MercadolibreTokenService,
+      searchService as unknown as PublicationsSearchService,
+      {} as ItemsService,
+      {} as FamiliesService,
+      globalSearch as unknown as PublicationsGlobalSearchService,
+    );
+
+    await expect(
+      service.getGrouped(USER_A, 20, 'title-search:20', 'algodon nena'),
+    ).resolves.toBe(expected);
+    expect(globalSearch.search).toHaveBeenCalledWith(
+      USER_A,
+      connectionA.seller_id,
+      'access-a',
+      'algodon nena',
+      20,
+      'title-search:20',
+    );
+    expect(searchService.scanPage).not.toHaveBeenCalled();
   });
 });

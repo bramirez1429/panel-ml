@@ -34,6 +34,7 @@ import { FamiliesService } from './direct-publications/families/families.service
 import { FamiliesDetailService } from './direct-publications/families/families-detail.service';
 import { ItemsService } from './direct-publications/items/items.service';
 import { PublicationsSearchService } from './direct-publications/publications/publications-search.service';
+import { PublicationsGlobalSearchService } from './direct-publications/publications/publications-global-search.service';
 import { PricingService } from './direct-publications/pricing/pricing.service';
 import { PromotionsService } from './direct-publications/promotions/promotions.service';
 import { PublicationDetailService } from './direct-publications/publications/publication-detail.service';
@@ -106,6 +107,7 @@ import { ShippingController } from './direct-publications/shipping/shipping.cont
     FamiliesDetailService,
     ItemsService,
     PublicationsSearchService,
+    PublicationsGlobalSearchService,
     PricingService,
     PromotionsService,
     PublicationDetailService,
