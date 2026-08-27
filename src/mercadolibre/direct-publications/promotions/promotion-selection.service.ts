@@ -5,11 +5,9 @@ import { ItemsService } from '../items/items.service';
 import { PublicationsMapper } from '../publications/publications.mapper';
 
 import { PromotionManagerService } from './promotion-manager.service';
+import { findRequestedCandidate } from './promotion-candidate.helpers';
 import { promotionError } from './promotion-errors';
-import type {
-  ManagedActivePromotion,
-  PromotionSwitchRequest,
-} from './promotion-manager.types';
+import type { PromotionSwitchRequest } from './promotion-manager.types';
 import type { PromotionPublication } from './promotion-publication.types';
 import { PromotionsService } from './promotions.service';
 
@@ -36,14 +34,16 @@ export class PromotionSelectionService {
         itemId,
         token,
       );
-      const candidate = this.findCandidate(promotions.candidates, request);
-      if (!candidate) {
+      const candidateOfType = promotions.candidates.find(
+        (candidate) => candidate.type === request.type,
+      );
+      if (!candidateOfType) {
         throw promotionError(
           'PROMOTION_NOT_FOUND',
           'La promoción elegida no existe entre las candidates actuales',
         );
       }
-      if (!this.matchesRequest(candidate, request)) {
+      if (!findRequestedCandidate(promotions.candidates, request)) {
         throw promotionError(
           'PROMOTION_NOT_APPLICABLE',
           'La promoción elegida ya no está disponible',
@@ -58,39 +58,6 @@ export class PromotionSelectionService {
         'No se pudo aplicar la promoción',
       );
     }
-  }
-
-  private findCandidate(
-    candidates: readonly ManagedActivePromotion[],
-    request: PromotionSwitchRequest,
-  ): ManagedActivePromotion | undefined {
-    return candidates.find((candidate) => candidate.type === request.type);
-  }
-
-  private matchesRequest(
-    candidate: ManagedActivePromotion,
-    request: PromotionSwitchRequest,
-  ): boolean {
-    if (
-      request.type !== 'PRICE_DISCOUNT' &&
-      candidate.id !== request.promotionId
-    )
-      return false;
-    if (request.type === 'SMART') {
-      const offerId = candidate.ref_id ?? candidate.offer_id;
-      if (offerId !== request.offerId) return false;
-    }
-    if ('dealPrice' in request) {
-      if (!Number.isFinite(request.dealPrice) || request.dealPrice <= 0)
-        return false;
-      if (candidate.price !== null && candidate.price !== undefined) {
-        if (candidate.price !== request.dealPrice) return false;
-      }
-    }
-    if (request.type === 'PRICE_DISCOUNT') {
-      return datesAreValid(candidate, request.startDate, request.finishDate);
-    }
-    return true;
   }
 
   private async managerServiceSwitch(
@@ -127,23 +94,6 @@ function publicationOf(item: {
     return { type: 'NEW', itemId: item.id, familyId: String(item.family_id) };
   }
   return { type: 'CLASSIC', itemId: item.id };
-}
-
-function datesAreValid(
-  candidate: ManagedActivePromotion,
-  startDate: string,
-  finishDate: string,
-): boolean {
-  const start = Date.parse(startDate);
-  const finish = Date.parse(finishDate);
-  if (!Number.isFinite(start) || !Number.isFinite(finish) || finish < start)
-    return false;
-  const candidateStart = Date.parse(candidate.start_date ?? '');
-  const candidateFinish = Date.parse(candidate.finish_date ?? '');
-  return (
-    (!Number.isFinite(candidateStart) || start >= candidateStart) &&
-    (!Number.isFinite(candidateFinish) || finish <= candidateFinish)
-  );
 }
 
 function isPromotionException(error: unknown): boolean {

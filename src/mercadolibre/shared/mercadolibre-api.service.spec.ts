@@ -41,6 +41,18 @@ describe('MercadolibreApiService', () => {
     expect(init?.signal).toBeDefined();
   });
 
+  it('acepta timeout positivo por request y rechaza valores inválidos', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 123 }));
+
+    await service.get('/users/me', 'token', undefined, { timeoutMs: 30_000 });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await expect(
+      service.get('/users/me', 'token', undefined, { timeoutMs: 0 }),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('envía JSON y formularios con su Content-Type correcto', async () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ ok: true }))

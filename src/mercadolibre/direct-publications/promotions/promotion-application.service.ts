@@ -1,5 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 
+import type { MercadolibreApiRequestOptions } from '../../shared/mercadolibre-api.service';
+
 import { DealService } from './deal.service';
 import { PriceDiscountService } from './price-discount.service';
 import type { PromotionPublication } from './promotion-publication.types';
@@ -20,6 +22,7 @@ export class PromotionApplicationService {
     userId: string,
     publication: PromotionPublication,
     request: PromotionSwitchRequest,
+    options?: MercadolibreApiRequestOptions,
   ): Promise<void> {
     switch (request.type) {
       case 'PRICE_DISCOUNT':
@@ -28,6 +31,7 @@ export class PromotionApplicationService {
             userId,
             publication.itemId,
             request,
+            options,
           );
         } else {
           await this.priceDiscountService.createNewPriceDiscount(
@@ -35,6 +39,7 @@ export class PromotionApplicationService {
             publication.familyId,
             publication.itemId,
             request,
+            options,
           );
         }
         return;
@@ -44,6 +49,7 @@ export class PromotionApplicationService {
             userId,
             publication.itemId,
             request,
+            options,
           );
         } else {
           await this.dealService.createNew(
@@ -51,6 +57,7 @@ export class PromotionApplicationService {
             publication.familyId,
             publication.itemId,
             request,
+            options,
           );
         }
         return;
@@ -60,6 +67,7 @@ export class PromotionApplicationService {
             userId,
             publication.itemId,
             request,
+            options,
           );
         } else {
           await this.sellerCampaignService.createNew(
@@ -67,6 +75,7 @@ export class PromotionApplicationService {
             publication.familyId,
             publication.itemId,
             request,
+            options,
           );
         }
         return;
@@ -76,6 +85,7 @@ export class PromotionApplicationService {
             userId,
             publication.itemId,
             request,
+            options,
           );
         } else {
           await this.smartPromotionService.createNew(
@@ -83,6 +93,7 @@ export class PromotionApplicationService {
             publication.familyId,
             publication.itemId,
             request,
+            options,
           );
         }
         return;

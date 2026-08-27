@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
 
 import { MercadolibreTokenService } from '../../auth/mercadolibre-token.service';
-import { MercadolibreApiService } from '../../shared/mercadolibre-api.service';
+import {
+  MercadolibreApiService,
+  type MercadolibreApiRequestOptions,
+} from '../../shared/mercadolibre-api.service';
 import { ItemsService } from '../items/items.service';
 import { PublicationsMapper } from '../publications/publications.mapper';
 import type { MlItem } from '../items/items.types';
@@ -56,6 +59,7 @@ export class PromotionRemovalService {
     userId: string,
     publication: PromotionPublication,
     promotion: ManagedActivePromotion,
+    options?: MercadolibreApiRequestOptions,
   ): Promise<void> {
     switch (promotion.type) {
       case 'PRICE_DISCOUNT':
@@ -63,25 +67,27 @@ export class PromotionRemovalService {
           await this.priceDiscountService.deleteClassicPriceDiscount(
             userId,
             publication.itemId,
+            options,
           );
         else
           await this.priceDiscountService.deleteNewPriceDiscount(
             userId,
             publication.familyId,
             publication.itemId,
+            options,
           );
         return;
       case 'DEAL':
-        await this.removeDeal(userId, publication, promotion);
+        await this.removeDeal(userId, publication, promotion, options);
         return;
       case 'SELLER_CAMPAIGN':
-        await this.removeCampaign(userId, publication, promotion);
+        await this.removeCampaign(userId, publication, promotion, options);
         return;
       case 'SMART':
-        await this.removeSmart(userId, publication, promotion);
+        await this.removeSmart(userId, publication, promotion, options);
         return;
       default:
-        await this.deleteAllOffers(userId, publication.itemId);
+        await this.deleteAllOffers(userId, publication.itemId, options);
     }
   }
 
@@ -102,6 +108,7 @@ export class PromotionRemovalService {
     userId: string,
     publication: PromotionPublication,
     promotion: ManagedActivePromotion,
+    options?: MercadolibreApiRequestOptions,
   ) {
     const promotionId = this.requireId(promotion);
     if (publication.type === 'CLASSIC')
@@ -109,6 +116,7 @@ export class PromotionRemovalService {
         userId,
         publication.itemId,
         promotionId,
+        options,
       );
     else
       await this.dealService.deleteNew(
@@ -116,6 +124,7 @@ export class PromotionRemovalService {
         publication.familyId,
         publication.itemId,
         promotionId,
+        options,
       );
   }
 
@@ -123,6 +132,7 @@ export class PromotionRemovalService {
     userId: string,
     publication: PromotionPublication,
     promotion: ManagedActivePromotion,
+    options?: MercadolibreApiRequestOptions,
   ) {
     const promotionId = this.requireId(promotion);
     if (publication.type === 'CLASSIC')
@@ -130,6 +140,7 @@ export class PromotionRemovalService {
         userId,
         publication.itemId,
         promotionId,
+        options,
       );
     else
       await this.sellerCampaignService.deleteNew(
@@ -137,6 +148,7 @@ export class PromotionRemovalService {
         publication.familyId,
         publication.itemId,
         promotionId,
+        options,
       );
   }
 
@@ -144,6 +156,7 @@ export class PromotionRemovalService {
     userId: string,
     publication: PromotionPublication,
     promotion: ManagedActivePromotion,
+    options?: MercadolibreApiRequestOptions,
   ) {
     const promotionId = this.requireId(promotion);
     const offerId = this.requireOfferId(promotion);
@@ -153,6 +166,7 @@ export class PromotionRemovalService {
         publication.itemId,
         promotionId,
         offerId,
+        options,
       );
     else
       await this.smartPromotionService.deleteNew(
@@ -161,14 +175,21 @@ export class PromotionRemovalService {
         publication.itemId,
         promotionId,
         offerId,
+        options,
       );
   }
 
-  private async deleteAllOffers(userId: string, itemId: string): Promise<void> {
+  private async deleteAllOffers(
+    userId: string,
+    itemId: string,
+    options?: MercadolibreApiRequestOptions,
+  ): Promise<void> {
     const token = await this.tokenService.getValidAccessToken(userId);
     await this.apiService.delete(
       `/seller-promotions/items/${itemId}?app_version=v2`,
       token,
+      'promotion',
+      options,
     );
   }
 
@@ -213,12 +234,13 @@ export class PromotionRemovalService {
   }
 
   private requireOfferId(promotion: ManagedActivePromotion): string {
-    if (typeof promotion.ref_id !== 'string' || !promotion.ref_id.trim())
+    const offerId = promotion.ref_id ?? promotion.offer_id;
+    if (typeof offerId !== 'string' || !offerId.trim())
       throw promotionError(
         'PROMOTION_REMOVAL_FAILED',
         'Oferta sin identificador',
       );
-    return promotion.ref_id;
+    return offerId;
   }
 }
 

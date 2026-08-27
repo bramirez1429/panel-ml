@@ -1,7 +1,10 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 
 import { MercadolibreTokenService } from '../../auth/mercadolibre-token.service';
-import { MercadolibreApiService } from '../../shared/mercadolibre-api.service';
+import {
+  MercadolibreApiService,
+  type MercadolibreApiRequestOptions,
+} from '../../shared/mercadolibre-api.service';
 
 import { ItemsService } from '../items/items.service';
 import { PublicationsMapper } from '../publications/publications.mapper';
@@ -23,14 +26,20 @@ export class SellerCampaignService {
     userId: string,
     itemId: string,
     changes: SellerCampaignUpdate,
+    options?: MercadolibreApiRequestOptions,
   ) {
     const accessToken = await this.tokenService.getValidAccessToken(userId);
 
-    const item = await this.itemsService.getOne(itemId, accessToken);
+    const item = await this.itemsService.getOne(
+      itemId,
+      accessToken,
+      'promotion',
+      options,
+    );
 
     this.validateClassic(item);
 
-    return this.create(item.id, changes, accessToken);
+    return this.create(item.id, changes, accessToken, options);
   }
 
   async updateClassic(
@@ -47,14 +56,24 @@ export class SellerCampaignService {
     return this.update(item.id, changes, accessToken);
   }
 
-  async deleteClassic(userId: string, itemId: string, promotionId: string) {
+  async deleteClassic(
+    userId: string,
+    itemId: string,
+    promotionId: string,
+    options?: MercadolibreApiRequestOptions,
+  ) {
     const accessToken = await this.tokenService.getValidAccessToken(userId);
 
-    const item = await this.itemsService.getOne(itemId, accessToken);
+    const item = await this.itemsService.getOne(
+      itemId,
+      accessToken,
+      'promotion',
+      options,
+    );
 
     this.validateClassic(item);
 
-    return this.remove(item.id, promotionId, accessToken);
+    return this.remove(item.id, promotionId, accessToken, options);
   }
 
   async createNew(
@@ -62,14 +81,20 @@ export class SellerCampaignService {
     familyId: string,
     itemId: string,
     changes: SellerCampaignUpdate,
+    options?: MercadolibreApiRequestOptions,
   ) {
     const accessToken = await this.tokenService.getValidAccessToken(userId);
 
-    const item = await this.itemsService.getOne(itemId, accessToken);
+    const item = await this.itemsService.getOne(
+      itemId,
+      accessToken,
+      'promotion',
+      options,
+    );
 
     this.validateNew(familyId, item);
 
-    return this.create(item.id, changes, accessToken);
+    return this.create(item.id, changes, accessToken, options);
   }
 
   async updateNew(
@@ -92,20 +117,27 @@ export class SellerCampaignService {
     familyId: string,
     itemId: string,
     promotionId: string,
+    options?: MercadolibreApiRequestOptions,
   ) {
     const accessToken = await this.tokenService.getValidAccessToken(userId);
 
-    const item = await this.itemsService.getOne(itemId, accessToken);
+    const item = await this.itemsService.getOne(
+      itemId,
+      accessToken,
+      'promotion',
+      options,
+    );
 
     this.validateNew(familyId, item);
 
-    return this.remove(item.id, promotionId, accessToken);
+    return this.remove(item.id, promotionId, accessToken, options);
   }
 
   private create(
     itemId: string,
     changes: SellerCampaignUpdate,
     accessToken: string,
+    options?: MercadolibreApiRequestOptions,
   ) {
     this.validateChanges(changes);
 
@@ -119,6 +151,8 @@ export class SellerCampaignService {
         deal_price: changes.dealPrice,
       },
       accessToken,
+      'promotion',
+      options,
     );
   }
 
@@ -142,7 +176,12 @@ export class SellerCampaignService {
     );
   }
 
-  private remove(itemId: string, promotionId: string, accessToken: string) {
+  private remove(
+    itemId: string,
+    promotionId: string,
+    accessToken: string,
+    options?: MercadolibreApiRequestOptions,
+  ) {
     this.validatePromotionId(promotionId);
 
     return this.apiService.delete(
@@ -151,6 +190,8 @@ export class SellerCampaignService {
         `&promotion_id=${encodeURIComponent(promotionId)}` +
         `&app_version=v2`,
       accessToken,
+      'promotion',
+      options,
     );
   }
 

@@ -42,6 +42,7 @@ export class FamiliesService {
   ): Promise<{
     family: MlFamilyResponse;
     items: MlItem[];
+    itemIds: string[];
     accessToken: string;
   }> {
     this.validateFamilyId(familyId);
@@ -73,6 +74,7 @@ export class FamiliesService {
     return {
       family,
       items,
+      itemIds,
       accessToken,
     };
   }

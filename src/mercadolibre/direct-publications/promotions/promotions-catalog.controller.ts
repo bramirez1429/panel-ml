@@ -16,6 +16,8 @@ import { CurrentUser } from '../../../auth/presentation/current-user.decorator';
 import { PromotionsCatalogQueryDto } from './promotions-catalog-query.dto';
 import { PromotionsCatalogService } from './promotions-catalog.service';
 import { PromotionOptionsService } from './promotion-options.service';
+import { parsePromotionRequest } from './publication-promotion-request';
+import { PublicationPromotionService } from './publication-promotion.service';
 import { PromotionRemovalService } from './promotion-removal.service';
 import { PromotionSelectionService } from './promotion-selection.service';
 import type { PromotionSwitchRequest } from './promotion-manager.types';
@@ -28,6 +30,7 @@ export class PromotionsCatalogController {
     private readonly optionsService: PromotionOptionsService,
     private readonly removalService: PromotionRemovalService,
     private readonly selectionService: PromotionSelectionService,
+    private readonly publicationPromotionService: PublicationPromotionService,
   ) {}
 
   @Get()
@@ -36,6 +39,40 @@ export class PromotionsCatalogController {
     @Query() query: PromotionsCatalogQueryDto,
   ) {
     return this.catalogService.getCatalog(user.id, query);
+  }
+
+  @Get('publicacion/:sourceKey/preview')
+  previewPublication(
+    @CurrentUser() user: SafeUser,
+    @Param('sourceKey') sourceKey: string,
+    @Query() query: unknown,
+  ) {
+    return this.publicationPromotionService.preview(
+      user.id,
+      sourceKey,
+      parsePromotionRequest(query),
+    );
+  }
+
+  @Post('publicacion/:sourceKey/aplicar')
+  applyPublication(
+    @CurrentUser() user: SafeUser,
+    @Param('sourceKey') sourceKey: string,
+    @Body() body: unknown,
+  ) {
+    return this.publicationPromotionService.apply(
+      user.id,
+      sourceKey,
+      parsePromotionRequest(body),
+    );
+  }
+
+  @Delete('publicacion/:sourceKey')
+  removePublication(
+    @CurrentUser() user: SafeUser,
+    @Param('sourceKey') sourceKey: string,
+  ) {
+    return this.publicationPromotionService.remove(user.id, sourceKey);
   }
 
   @Get(':itemId/opciones')

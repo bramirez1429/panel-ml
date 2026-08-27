@@ -1,7 +1,10 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 
 import { MercadolibreTokenService } from '../../auth/mercadolibre-token.service';
-import { MercadolibreApiService } from '../../shared/mercadolibre-api.service';
+import {
+  MercadolibreApiService,
+  type MercadolibreApiRequestOptions,
+} from '../../shared/mercadolibre-api.service';
 
 import { ItemsService } from '../items/items.service';
 import { PublicationsMapper } from '../publications/publications.mapper';
@@ -23,14 +26,20 @@ export class SmartPromotionService {
     userId: string,
     itemId: string,
     changes: SmartPromotionUpdate,
+    options?: MercadolibreApiRequestOptions,
   ) {
     const accessToken = await this.tokenService.getValidAccessToken(userId);
 
-    const item = await this.itemsService.getOne(itemId, accessToken);
+    const item = await this.itemsService.getOne(
+      itemId,
+      accessToken,
+      'promotion',
+      options,
+    );
 
     this.validateClassic(item);
 
-    return this.create(item.id, changes, accessToken);
+    return this.create(item.id, changes, accessToken, options);
   }
 
   async deleteClassic(
@@ -38,14 +47,20 @@ export class SmartPromotionService {
     itemId: string,
     promotionId: string,
     offerId: string,
+    options?: MercadolibreApiRequestOptions,
   ) {
     const accessToken = await this.tokenService.getValidAccessToken(userId);
 
-    const item = await this.itemsService.getOne(itemId, accessToken);
+    const item = await this.itemsService.getOne(
+      itemId,
+      accessToken,
+      'promotion',
+      options,
+    );
 
     this.validateClassic(item);
 
-    return this.remove(item.id, promotionId, offerId, accessToken);
+    return this.remove(item.id, promotionId, offerId, accessToken, options);
   }
 
   async createNew(
@@ -53,14 +68,20 @@ export class SmartPromotionService {
     familyId: string,
     itemId: string,
     changes: SmartPromotionUpdate,
+    options?: MercadolibreApiRequestOptions,
   ) {
     const accessToken = await this.tokenService.getValidAccessToken(userId);
 
-    const item = await this.itemsService.getOne(itemId, accessToken);
+    const item = await this.itemsService.getOne(
+      itemId,
+      accessToken,
+      'promotion',
+      options,
+    );
 
     this.validateNew(familyId, item);
 
-    return this.create(item.id, changes, accessToken);
+    return this.create(item.id, changes, accessToken, options);
   }
 
   async deleteNew(
@@ -69,20 +90,27 @@ export class SmartPromotionService {
     itemId: string,
     promotionId: string,
     offerId: string,
+    options?: MercadolibreApiRequestOptions,
   ) {
     const accessToken = await this.tokenService.getValidAccessToken(userId);
 
-    const item = await this.itemsService.getOne(itemId, accessToken);
+    const item = await this.itemsService.getOne(
+      itemId,
+      accessToken,
+      'promotion',
+      options,
+    );
 
     this.validateNew(familyId, item);
 
-    return this.remove(item.id, promotionId, offerId, accessToken);
+    return this.remove(item.id, promotionId, offerId, accessToken, options);
   }
 
   private create(
     itemId: string,
     changes: SmartPromotionUpdate,
     accessToken: string,
+    options?: MercadolibreApiRequestOptions,
   ) {
     this.validateChanges(changes);
 
@@ -96,6 +124,8 @@ export class SmartPromotionService {
         offer_id: changes.offerId,
       },
       accessToken,
+      'promotion',
+      options,
     );
   }
 
@@ -104,6 +134,7 @@ export class SmartPromotionService {
     promotionId: string,
     offerId: string,
     accessToken: string,
+    options?: MercadolibreApiRequestOptions,
   ) {
     this.validatePromotionId(promotionId);
 
@@ -116,6 +147,8 @@ export class SmartPromotionService {
         `&offer_id=${encodeURIComponent(offerId)}` +
         `&app_version=v2`,
       accessToken,
+      'promotion',
+      options,
     );
   }
 

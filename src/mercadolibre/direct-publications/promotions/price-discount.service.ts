@@ -1,7 +1,10 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 
 import { MercadolibreTokenService } from '../../auth/mercadolibre-token.service';
-import { MercadolibreApiService } from '../../shared/mercadolibre-api.service';
+import {
+  MercadolibreApiService,
+  type MercadolibreApiRequestOptions,
+} from '../../shared/mercadolibre-api.service';
 
 import { ItemsService } from '../items/items.service';
 import { PublicationsMapper } from '../publications/publications.mapper';
@@ -27,28 +30,43 @@ export class PriceDiscountService {
     userId: string,
     itemId: string,
     changes: PriceDiscountUpdate,
+    options?: MercadolibreApiRequestOptions,
   ) {
     const accessToken = await this.tokenService.getValidAccessToken(userId);
 
-    const item = await this.itemsService.getOne(itemId, accessToken);
+    const item = await this.itemsService.getOne(
+      itemId,
+      accessToken,
+      'promotion',
+      options,
+    );
 
     if (PublicationsMapper.getModel(item) !== 'SHARED') {
       throw new BadRequestException('La publicación no es versión clásica');
     }
 
-    return this.createPriceDiscount(item.id, changes, accessToken);
+    return this.createPriceDiscount(item.id, changes, accessToken, options);
   }
 
-  async deleteClassicPriceDiscount(userId: string, itemId: string) {
+  async deleteClassicPriceDiscount(
+    userId: string,
+    itemId: string,
+    options?: MercadolibreApiRequestOptions,
+  ) {
     const accessToken = await this.tokenService.getValidAccessToken(userId);
 
-    const item = await this.itemsService.getOne(itemId, accessToken);
+    const item = await this.itemsService.getOne(
+      itemId,
+      accessToken,
+      'promotion',
+      options,
+    );
 
     if (PublicationsMapper.getModel(item) !== 'SHARED') {
       throw new BadRequestException('La publicación no es versión clásica');
     }
 
-    return this.deletePriceDiscount(item.id, accessToken);
+    return this.deletePriceDiscount(item.id, accessToken, options);
   }
 
   async createNewPriceDiscount(
@@ -56,34 +74,47 @@ export class PriceDiscountService {
     familyId: string,
     itemId: string,
     changes: PriceDiscountUpdate,
+    options?: MercadolibreApiRequestOptions,
   ) {
     const accessToken = await this.tokenService.getValidAccessToken(userId);
 
-    const item = await this.itemsService.getOne(itemId, accessToken);
+    const item = await this.itemsService.getOne(
+      itemId,
+      accessToken,
+      'promotion',
+      options,
+    );
 
     this.validateNew(familyId, item);
 
-    return this.createPriceDiscount(item.id, changes, accessToken);
+    return this.createPriceDiscount(item.id, changes, accessToken, options);
   }
 
   async deleteNewPriceDiscount(
     userId: string,
     familyId: string,
     itemId: string,
+    options?: MercadolibreApiRequestOptions,
   ) {
     const accessToken = await this.tokenService.getValidAccessToken(userId);
 
-    const item = await this.itemsService.getOne(itemId, accessToken);
+    const item = await this.itemsService.getOne(
+      itemId,
+      accessToken,
+      'promotion',
+      options,
+    );
 
     this.validateNew(familyId, item);
 
-    return this.deletePriceDiscount(item.id, accessToken);
+    return this.deletePriceDiscount(item.id, accessToken, options);
   }
 
   private createPriceDiscount(
     itemId: string,
     changes: PriceDiscountUpdate,
     accessToken: string,
+    options?: MercadolibreApiRequestOptions,
   ) {
     this.validateChanges(changes);
 
@@ -105,15 +136,23 @@ export class PriceDiscountService {
         promotion_type: 'PRICE_DISCOUNT',
       },
       accessToken,
+      'promotion',
+      options,
     );
   }
 
-  private deletePriceDiscount(itemId: string, accessToken: string) {
+  private deletePriceDiscount(
+    itemId: string,
+    accessToken: string,
+    options?: MercadolibreApiRequestOptions,
+  ) {
     return this.apiService.delete<unknown>(
       `/seller-promotions/items/${itemId}` +
         '?promotion_type=PRICE_DISCOUNT' +
         '&app_version=v2',
       accessToken,
+      'promotion',
+      options,
     );
   }
 

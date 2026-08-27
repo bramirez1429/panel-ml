@@ -8,6 +8,7 @@ import type { PromotionsCatalogService } from './promotions-catalog.service';
 import type { PromotionOptionsService } from './promotion-options.service';
 import type { PromotionRemovalService } from './promotion-removal.service';
 import type { PromotionSelectionService } from './promotion-selection.service';
+import type { PublicationPromotionService } from './publication-promotion.service';
 
 const USER: SafeUser = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -33,6 +34,7 @@ describe('PromotionsCatalogController', () => {
       options as unknown as PromotionOptionsService,
       removal as unknown as PromotionRemovalService,
       selection as unknown as PromotionSelectionService,
+      {} as PublicationPromotionService,
     );
 
     await controller.getCatalog(USER, { limit: 20 });

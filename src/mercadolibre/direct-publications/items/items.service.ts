@@ -1,5 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { MercadolibreApiService } from '../../shared/mercadolibre-api.service';
+import {
+  MercadolibreApiService,
+  type MercadolibreApiRequestOptions,
+} from '../../shared/mercadolibre-api.service';
+import type { MercadoLibreRequestKind } from '../../shared/mercadolibre.types';
 
 import { MlItem, MlMultiGetResponse } from './items.types';
 
@@ -8,8 +12,18 @@ export class ItemsService {
   constructor(private readonly apiService: MercadolibreApiService) {}
 
   /** Trae un MLA directamente desde Mercado Libre. */
-  getOne(itemId: string, accessToken: string): Promise<MlItem> {
-    return this.apiService.get<MlItem>(`/items/${itemId}`, accessToken);
+  getOne(
+    itemId: string,
+    accessToken: string,
+    kind?: MercadoLibreRequestKind,
+    options?: MercadolibreApiRequestOptions,
+  ): Promise<MlItem> {
+    return this.apiService.get<MlItem>(
+      `/items/${itemId}`,
+      accessToken,
+      kind,
+      options,
+    );
   }
 
   /** Trae varios MLA en lotes de máximo 20. */

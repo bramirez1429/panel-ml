@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 
-import { MercadolibreApiService } from '../../shared/mercadolibre-api.service';
+import {
+  MercadolibreApiService,
+  type MercadolibreApiRequestOptions,
+} from '../../shared/mercadolibre-api.service';
 
 import { MlPromotion, type MlPromotions } from './promotions.types';
 
@@ -28,11 +31,14 @@ export class PromotionsService {
     userId: string,
     itemId: string,
     accessToken: string,
+    options?: MercadolibreApiRequestOptions,
   ): Promise<MlPromotions> {
     void userId;
     const promotions = await this.apiService.get<MlPromotion[]>(
       `/seller-promotions/items/${itemId}?app_version=v2`,
       accessToken,
+      'promotion',
+      options,
     );
     return this.groupPromotions(promotions);
   }
