@@ -1,6 +1,8 @@
 export type MlPromotion = {
   id?: string;
   type?: string;
+  ref_id?: string | null;
+  offer_id?: string | null;
   sub_type?: string;
   status?: string;
 

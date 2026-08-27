@@ -15,6 +15,7 @@ export type PromotionCatalogQuery = Readonly<{
 
 export type NormalizedPromotion = Readonly<{
   id: string | null;
+  offerId: string | null;
   type: string | null;
   name: string | null;
   originalPrice: number | null;
@@ -23,6 +24,15 @@ export type NormalizedPromotion = Readonly<{
   startDate: string | null;
   finishDate: string | null;
 }>;
+
+export type PromotionOption = NormalizedPromotion &
+  Readonly<{
+    canApply: boolean;
+    saleEstimate: Readonly<{
+      saleFeeAmount: number;
+      estimatedNetAmount: number;
+    }> | null;
+  }>;
 
 export type PromotionCatalogCandidate = Readonly<{
   itemId: string;
@@ -58,10 +68,7 @@ export type PromotionCatalogRow = Readonly<{
   productGroup: PromotionProductGroup;
   price: number;
   currentPromotion: NormalizedPromotion | null;
-  availablePromotions: readonly NormalizedPromotion[];
+  hasActivePromotion: boolean;
+  availablePromotionsCount: number;
   promotionStatus: PromotionCatalogStatus;
-  saleEstimate: Readonly<{
-    saleFeeAmount: number;
-    estimatedNetAmount: number;
-  }> | null;
 }>;

@@ -5,6 +5,9 @@ import { AccessTokenGuard } from '../../../auth/presentation/access-token.guard'
 
 import { PromotionsCatalogController } from './promotions-catalog.controller';
 import type { PromotionsCatalogService } from './promotions-catalog.service';
+import type { PromotionOptionsService } from './promotion-options.service';
+import type { PromotionRemovalService } from './promotion-removal.service';
+import type { PromotionSelectionService } from './promotion-selection.service';
 
 const USER: SafeUser = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -20,8 +23,16 @@ describe('PromotionsCatalogController', () => {
     const service = {
       getCatalog: jest.fn().mockResolvedValue({ publications: [] }),
     };
+    const options = { getOptions: jest.fn().mockResolvedValue([]) };
+    const removal = {
+      removeAll: jest.fn().mockResolvedValue({ success: true }),
+    };
+    const selection = { apply: jest.fn().mockResolvedValue({ success: true }) };
     const controller = new PromotionsCatalogController(
       service as unknown as PromotionsCatalogService,
+      options as unknown as PromotionOptionsService,
+      removal as unknown as PromotionRemovalService,
+      selection as unknown as PromotionSelectionService,
     );
 
     await controller.getCatalog(USER, { limit: 20 });

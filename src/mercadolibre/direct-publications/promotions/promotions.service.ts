@@ -21,6 +21,23 @@ export class PromotionsService {
       [],
     );
 
+    return this.groupPromotions(promotions);
+  }
+
+  async getPromotionsStrict(
+    userId: string,
+    itemId: string,
+    accessToken: string,
+  ): Promise<MlPromotions> {
+    void userId;
+    const promotions = await this.apiService.get<MlPromotion[]>(
+      `/seller-promotions/items/${itemId}?app_version=v2`,
+      accessToken,
+    );
+    return this.groupPromotions(promotions);
+  }
+
+  private groupPromotions(promotions: MlPromotion[]): MlPromotions {
     return {
       active: promotions.filter((promotion) => promotion.status === 'started'),
 

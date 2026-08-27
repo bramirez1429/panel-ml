@@ -114,13 +114,11 @@ describe('promociones por usuario', () => {
           active: [{ id: 'deal-1', type: 'DEAL' }],
         },
       });
-    const createClassic = jest.fn().mockResolvedValue({ ok: true });
+    const apply = jest.fn().mockResolvedValue(undefined);
     const service = new PromotionManagerService(
       { getDetail } as unknown as PublicationDetailService,
-      {} as PriceDiscountService,
-      { createClassic } as unknown as DealService,
-      {} as SellerCampaignService,
-      {} as SmartPromotionService,
+      { removePromotion: jest.fn() } as never,
+      { apply } as never,
     );
 
     const result = await service.switchClassic(USER_ID, ITEM_ID, {
@@ -134,11 +132,18 @@ describe('promociones por usuario', () => {
       [USER_ID, ITEM_ID],
       [USER_ID, ITEM_ID],
     ]);
-    expect(createClassic).toHaveBeenCalledWith(USER_ID, ITEM_ID, {
-      promotionId: 'deal-1',
-      dealPrice: 100,
-      topDealPrice: undefined,
-    });
+    expect(apply).toHaveBeenCalledWith(
+      USER_ID,
+      {
+        type: 'CLASSIC',
+        itemId: ITEM_ID,
+      },
+      {
+        type: 'DEAL',
+        promotionId: 'deal-1',
+        dealPrice: 100,
+      },
+    );
     expect(result.verified).toBe(true);
   });
 });

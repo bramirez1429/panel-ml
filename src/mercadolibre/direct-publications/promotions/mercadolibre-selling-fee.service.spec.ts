@@ -1,7 +1,7 @@
 import type { MercadolibreApiService } from '../../shared/mercadolibre-api.service';
 
 import { MercadoLibreSellingFeeService } from './mercadolibre-selling-fee.service';
-import type { PromotionCatalogMatch } from './promotions-catalog.types';
+import type { SellingFeeRequest } from './mercadolibre-selling-fee.service';
 
 describe('MercadoLibreSellingFeeService', () => {
   it('consulta listing_prices con el precio efectivo y calcula estimatedNetAmount', async () => {
@@ -34,7 +34,7 @@ describe('MercadoLibreSellingFeeService', () => {
   });
 });
 
-function match(): PromotionCatalogMatch {
+function match(): SellingFeeRequest {
   return {
     candidate: {
       itemId: 'MLA1',
@@ -48,12 +48,6 @@ function match(): PromotionCatalogMatch {
       shippingMode: 'me2',
       logisticType: 'self_service',
     },
-    promotions: { active: [], candidates: [], pending: [], all: [] },
-    summary: {
-      status: 'NONE',
-      activeTypes: [],
-      candidateTypes: [],
-      pendingTypes: [],
-    },
+    effectivePrice: 100,
   };
 }

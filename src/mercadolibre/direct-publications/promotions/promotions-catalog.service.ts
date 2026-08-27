@@ -7,7 +7,6 @@ import { ItemsService } from '../items/items.service';
 import type { MlItem } from '../items/items.types';
 
 import {
-  availablePromotions,
   currentPromotion,
   decodePromotionsCursor,
   encodePromotionsCursor,
@@ -21,7 +20,6 @@ import type {
   PromotionCatalogQuery,
   PromotionCatalogRow,
 } from './promotions-catalog.types';
-import { MercadoLibreSellingFeeService } from './mercadolibre-selling-fee.service';
 import { PromotionsService } from './promotions.service';
 
 @Injectable()
@@ -31,7 +29,6 @@ export class PromotionsCatalogService {
     private readonly publicationSource: PublicationSourceService,
     private readonly itemsService: ItemsService,
     private readonly promotionsService: PromotionsService,
-    private readonly sellingFeeService: MercadoLibreSellingFeeService,
   ) {}
 
   async getCatalog(userId: string, query: PromotionCatalogQuery) {
@@ -58,13 +55,7 @@ export class PromotionsCatalogService {
       offset,
       target,
     );
-    const saleEstimates = await this.sellingFeeService.getMany(
-      collected.matches,
-      accessToken,
-    );
-    const publications = collected.matches.map((match, index) =>
-      this.toRow(match, saleEstimates[index] ?? null),
-    );
+    const publications = collected.matches.map((match) => this.toRow(match));
     const nextOffset = offset + publications.length;
     return {
       done: collected.reachedEnd,
@@ -157,13 +148,7 @@ export class PromotionsCatalogService {
     });
   }
 
-  private toRow(
-    match: PromotionCatalogMatch,
-    saleEstimate: Readonly<{
-      saleFeeAmount: number;
-      estimatedNetAmount: number;
-    }> | null,
-  ): PromotionCatalogRow {
+  private toRow(match: PromotionCatalogMatch): PromotionCatalogRow {
     return {
       itemId: match.candidate.itemId,
       familyId: match.candidate.familyId,
@@ -172,9 +157,9 @@ export class PromotionsCatalogService {
       productGroup: match.candidate.productGroup,
       price: match.candidate.price,
       currentPromotion: currentPromotion(match.promotions),
-      availablePromotions: availablePromotions(match.promotions),
+      hasActivePromotion: match.promotions.active.length > 0,
+      availablePromotionsCount: match.promotions.candidates.length,
       promotionStatus: match.summary.status,
-      saleEstimate,
     };
   }
 }

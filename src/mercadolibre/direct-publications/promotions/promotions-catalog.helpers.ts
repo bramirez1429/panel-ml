@@ -117,6 +117,7 @@ export function normalizePromotion(
       : null;
   return {
     id: textOrNull(promotion.id),
+    offerId: textOrNull(promotion.ref_id ?? promotion.offer_id),
     type: textOrNull(promotion.type),
     name: textOrNull(promotion.name),
     originalPrice,

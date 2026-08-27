@@ -3,9 +3,7 @@ import type { PublicationSourceService } from '../../publications/sync/publicati
 import type { ItemsService } from '../items/items.service';
 import type { MlItem } from '../items/items.types';
 
-import type { MercadoLibreSellingFeeService } from './mercadolibre-selling-fee.service';
 import { PromotionProductGroup } from './promotions-product-group';
-import type { PromotionCatalogMatch } from './promotions-catalog.types';
 import { PromotionsCatalogService } from './promotions-catalog.service';
 import type { PromotionsService } from './promotions.service';
 import type { MlPromotion, MlPromotions } from './promotions.types';
@@ -101,7 +99,8 @@ describe('PromotionsCatalogService', () => {
     });
     expect(result.publications[1]).toMatchObject({
       promotionStatus: 'AVAILABLE',
-      availablePromotions: [{ type: 'FLASH_SALE' }],
+      hasActivePromotion: false,
+      availablePromotionsCount: 1,
     });
   });
 
@@ -125,14 +124,14 @@ describe('PromotionsCatalogService', () => {
     expect(
       result.publications.map(({ promotionStatus }) => promotionStatus),
     ).toEqual(['PENDING', 'NONE']);
-    expect(result.publications[1]?.availablePromotions).toEqual([]);
+    expect(result.publications[1]?.availablePromotionsCount).toBe(0);
   });
 
   it('se detiene al completar limit y pagina con cursor', async () => {
     const catalog = ['MLA1', 'MLA2', 'MLA3'].map((id) =>
       item(id, id, 'MLA-WOMEN_TSHIRTS'),
     );
-    const { service, source, fees } = createService(
+    const { service, source } = createService(
       [catalog.map(({ id }) => id)],
       catalog,
     );
@@ -147,19 +146,6 @@ describe('PromotionsCatalogService', () => {
     expect(first.nextCursor).toBe('promotions:2');
     expect(second.publications.map(({ itemId }) => itemId)).toEqual(['MLA3']);
     expect(source.fetchNextScanPage).toHaveBeenCalledTimes(3);
-    expect(fees.getMany).toHaveBeenCalledTimes(2);
-  });
-
-  it('no falla si listing_prices no responde para la página final', async () => {
-    const { service, fees } = createService(
-      [['MLA1']],
-      [item('MLA1', 'Remera', 'MLA-WOMEN_TSHIRTS')],
-    );
-    fees.getMany.mockResolvedValue([null]);
-
-    const result = await service.getCatalog(USER_ID, { limit: 20 });
-
-    expect(result.publications[0]?.saleEstimate).toBeNull();
   });
 });
 
@@ -200,23 +186,14 @@ function createService(
       Promise.resolve(promotionMap.get(itemId) ?? groups()),
     ),
   };
-  const fees = {
-    getMany: jest.fn((matches: readonly PromotionCatalogMatch[]) =>
-      Promise.resolve(
-        matches.map(() => ({ saleFeeAmount: 10, estimatedNetAmount: 60 })),
-      ),
-    ),
-  };
   return {
     source,
     promotions,
-    fees,
     service: new PromotionsCatalogService(
       token as unknown as MercadolibreTokenService,
       source as unknown as PublicationSourceService,
       items as unknown as ItemsService,
       promotions as unknown as PromotionsService,
-      fees as unknown as MercadoLibreSellingFeeService,
     ),
   };
 }

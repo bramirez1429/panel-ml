@@ -38,9 +38,12 @@ export type ManagedActivePromotion = {
   id?: string | null;
   type?: string | null;
   ref_id?: string | null;
+  offer_id?: string | null;
   status?: string | null;
   price?: number | null;
   original_price?: number | null;
+  start_date?: string | null;
+  finish_date?: string | null;
 };
 
 export type PromotionManagerResult = {

@@ -3,11 +3,16 @@ import { Injectable } from '@nestjs/common';
 import { PUBLICATION_REQUEST_CONCURRENCY } from '../../publications/publication.constants';
 import { MercadolibreApiService } from '../../shared/mercadolibre-api.service';
 
-import type { PromotionCatalogMatch } from './promotions-catalog.types';
+import type { PromotionCatalogCandidate } from './promotions-catalog.types';
 
-type SellingFeeResult = Readonly<{
+export type SellingFeeResult = Readonly<{
   saleFeeAmount: number;
   estimatedNetAmount: number;
+}>;
+
+export type SellingFeeRequest = Readonly<{
+  candidate: PromotionCatalogCandidate;
+  effectivePrice: number;
 }>;
 
 @Injectable()
@@ -15,22 +20,22 @@ export class MercadoLibreSellingFeeService {
   constructor(private readonly apiService: MercadolibreApiService) {}
 
   async getMany(
-    matches: readonly PromotionCatalogMatch[],
+    requests: readonly SellingFeeRequest[],
     accessToken: string,
   ): Promise<Array<SellingFeeResult | null>> {
     const results: Array<SellingFeeResult | null> = [];
     for (
       let index = 0;
-      index < matches.length;
+      index < requests.length;
       index += PUBLICATION_REQUEST_CONCURRENCY
     ) {
-      const batch = matches.slice(
+      const batch = requests.slice(
         index,
         index + PUBLICATION_REQUEST_CONCURRENCY,
       );
       results.push(
         ...(await Promise.all(
-          batch.map((match) => this.getOne(match, accessToken)),
+          batch.map((request) => this.getOne(request, accessToken)),
         )),
       );
     }
@@ -38,11 +43,11 @@ export class MercadoLibreSellingFeeService {
   }
 
   private async getOne(
-    match: PromotionCatalogMatch,
+    request: SellingFeeRequest,
     accessToken: string,
   ): Promise<SellingFeeResult | null> {
-    const candidate = match.candidate;
-    const effectivePrice = match.promotions.active[0]?.price ?? candidate.price;
+    const candidate = request.candidate;
+    const effectivePrice = request.effectivePrice;
     const params = new URLSearchParams({
       price: String(effectivePrice),
       category_id: candidate.categoryId,
