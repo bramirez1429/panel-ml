@@ -53,8 +53,7 @@ import { SmartPromotionController } from './direct-publications/promotions/smart
 import { PromotionManagerController } from './direct-publications/promotions/promotion-manager.controller';
 import { PromotionsCatalogController } from './direct-publications/promotions/promotions-catalog.controller';
 import { PromotionsCatalogService } from './direct-publications/promotions/promotions-catalog.service';
-import { PromotionsFacetsService } from './direct-publications/promotions/promotions-facets.service';
-import { MercadoLibreCategoriesService } from './direct-publications/promotions/mercadolibre-categories.service';
+import { MercadoLibreSellingFeeService } from './direct-publications/promotions/mercadolibre-selling-fee.service';
 import { StockService } from './direct-publications/stock/stock.service';
 import { SkuService } from './direct-publications/sku/sku.service';
 import { PicturesService } from './direct-publications/pictures/pictures.service';
@@ -130,8 +129,7 @@ import { ShippingController } from './direct-publications/shipping/shipping.cont
     SmartPromotionService,
     PromotionManagerService,
     PromotionsCatalogService,
-    PromotionsFacetsService,
-    MercadoLibreCategoriesService,
+    MercadoLibreSellingFeeService,
   ],
   exports: [
     MercadolibreProductsRepository,

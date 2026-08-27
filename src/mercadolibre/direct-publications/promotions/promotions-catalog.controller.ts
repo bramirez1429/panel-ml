@@ -6,15 +6,11 @@ import { CurrentUser } from '../../../auth/presentation/current-user.decorator';
 
 import { PromotionsCatalogQueryDto } from './promotions-catalog-query.dto';
 import { PromotionsCatalogService } from './promotions-catalog.service';
-import { PromotionsFacetsService } from './promotions-facets.service';
 
 @Controller('mercadolibre/direct/promociones')
 @UseGuards(AccessTokenGuard)
 export class PromotionsCatalogController {
-  constructor(
-    private readonly catalogService: PromotionsCatalogService,
-    private readonly facetsService: PromotionsFacetsService,
-  ) {}
+  constructor(private readonly catalogService: PromotionsCatalogService) {}
 
   @Get()
   getCatalog(
@@ -22,10 +18,5 @@ export class PromotionsCatalogController {
     @Query() query: PromotionsCatalogQueryDto,
   ) {
     return this.catalogService.getCatalog(user.id, query);
-  }
-
-  @Get('facets')
-  getFacets(@CurrentUser() user: SafeUser) {
-    return this.facetsService.getFacets(user.id);
   }
 }

@@ -1,8 +1,4 @@
-import {
-  BadGatewayException,
-  BadRequestException,
-  Injectable,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 
 import { MercadolibreTokenService } from '../../auth/mercadolibre-token.service';
 import { PUBLICATION_REQUEST_CONCURRENCY } from '../../publications/publication.constants';
@@ -10,8 +6,9 @@ import { PublicationSourceService } from '../../publications/sync/publication-so
 import { ItemsService } from '../items/items.service';
 import type { MlItem } from '../items/items.types';
 
-import { MercadoLibreCategoriesService } from './mercadolibre-categories.service';
 import {
+  availablePromotions,
+  currentPromotion,
   decodePromotionsCursor,
   encodePromotionsCursor,
   matchesProductFilters,
@@ -24,6 +21,7 @@ import type {
   PromotionCatalogQuery,
   PromotionCatalogRow,
 } from './promotions-catalog.types';
+import { MercadoLibreSellingFeeService } from './mercadolibre-selling-fee.service';
 import { PromotionsService } from './promotions.service';
 
 @Injectable()
@@ -33,7 +31,7 @@ export class PromotionsCatalogService {
     private readonly publicationSource: PublicationSourceService,
     private readonly itemsService: ItemsService,
     private readonly promotionsService: PromotionsService,
-    private readonly categoriesService: MercadoLibreCategoriesService,
+    private readonly sellingFeeService: MercadoLibreSellingFeeService,
   ) {}
 
   async getCatalog(userId: string, query: PromotionCatalogQuery) {
@@ -60,19 +58,19 @@ export class PromotionsCatalogService {
       offset,
       target,
     );
-    const categories = await this.categoriesService.getMany(
-      collected.matches.map(({ candidate }) => candidate.categoryId),
+    const saleEstimates = await this.sellingFeeService.getMany(
+      collected.matches,
       accessToken,
     );
-    const publications = collected.matches.map((match) =>
-      this.toRow(match, categories),
+    const publications = collected.matches.map((match, index) =>
+      this.toRow(match, saleEstimates[index] ?? null),
     );
     const nextOffset = offset + publications.length;
-    const done = collected.reachedEnd;
-
     return {
-      done,
-      nextCursor: done ? null : encodePromotionsCursor(nextOffset),
+      done: collected.reachedEnd,
+      nextCursor: collected.reachedEnd
+        ? null
+        : encodePromotionsCursor(nextOffset),
       count: publications.length,
       publications,
     };
@@ -85,15 +83,11 @@ export class PromotionsCatalogService {
     query: PromotionCatalogQuery,
     offset: number,
     target: number,
-  ): Promise<{
-    matches: PromotionCatalogMatch[];
-    reachedEnd: boolean;
-  }> {
+  ): Promise<{ matches: PromotionCatalogMatch[]; reachedEnd: boolean }> {
     const matches: PromotionCatalogMatch[] = [];
     const seenItems = new Set<string>();
     let matchedCount = 0;
     let scrollId: string | undefined;
-
     while (matchedCount < target) {
       const scan = await this.publicationSource.fetchNextScanPage(
         sellerId,
@@ -101,7 +95,6 @@ export class PromotionsCatalogService {
         scrollId,
       );
       if (scan.itemIds.length === 0) return { matches, reachedEnd: true };
-
       const items = await this.itemsService.getMany(scan.itemIds, accessToken);
       const candidates = this.cheapCandidates(
         scan.itemIds,
@@ -166,22 +159,22 @@ export class PromotionsCatalogService {
 
   private toRow(
     match: PromotionCatalogMatch,
-    categories: ReadonlyMap<string, PromotionCatalogRow['category']>,
+    saleEstimate: Readonly<{
+      saleFeeAmount: number;
+      estimatedNetAmount: number;
+    }> | null,
   ): PromotionCatalogRow {
-    const category = categories.get(match.candidate.categoryId);
-    if (!category)
-      throw new BadGatewayException('Mercado Libre no devolvió la categoría');
     return {
       itemId: match.candidate.itemId,
       familyId: match.candidate.familyId,
       title: match.candidate.title,
       thumbnail: match.candidate.thumbnail,
-      category,
+      productGroup: match.candidate.productGroup,
       price: match.candidate.price,
-      publicationStatus: match.candidate.publicationStatus,
-      attributes: match.candidate.attributes,
-      promotions: match.promotions,
-      promotionSummary: match.summary,
+      currentPromotion: currentPromotion(match.promotions),
+      availablePromotions: availablePromotions(match.promotions),
+      promotionStatus: match.summary.status,
+      saleEstimate,
     };
   }
 }

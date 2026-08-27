@@ -3,81 +3,46 @@ import type { PublicationSourceService } from '../../publications/sync/publicati
 import type { ItemsService } from '../items/items.service';
 import type { MlItem } from '../items/items.types';
 
-import type { MercadoLibreCategoriesService } from './mercadolibre-categories.service';
+import type { MercadoLibreSellingFeeService } from './mercadolibre-selling-fee.service';
+import { PromotionProductGroup } from './promotions-product-group';
+import type { PromotionCatalogMatch } from './promotions-catalog.types';
 import { PromotionsCatalogService } from './promotions-catalog.service';
 import type { PromotionsService } from './promotions.service';
 import type { MlPromotion, MlPromotions } from './promotions.types';
 
 const USER_ID = '11111111-1111-4111-8111-111111111111';
-const SELLER_ID = 42;
-const ACCESS_TOKEN = 'private-token';
+const TOKEN = 'token';
 
 describe('PromotionsCatalogService', () => {
-  it('devuelve MLA clásicos y cada MLA de una familia como filas separadas', async () => {
+  it('incluye sólo los cuatro grupos fijos y conserva cada MLA de una familia', async () => {
     const catalog = [
-      item('MLA1', 'Clásica'),
-      ...Array.from({ length: 4 }, (_, index) =>
-        item(`MLA${index + 2}`, `Familiar ${index + 1}`, {
-          family_id: '900',
-        }),
-      ),
+      item('MLA1', 'Remera', 'MLA-WOMEN_TSHIRTS'),
+      item('MLA2', 'Buzo', 'MLA-WOMEN_SWEATSHIRTS', { family_id: '900' }),
+      item('MLA3', 'Remera', 'MLA-GIRLS_TSHIRTS', { family_id: '900' }),
+      item('MLA4', 'Buzo', 'MLA-GIRLS_SWEATSHIRTS', { family_id: '900' }),
+      item('MLA5', 'Zapato', 'MLA-WOMEN_SHOES'),
     ];
     const { service } = createService([catalog.map(({ id }) => id)], catalog);
 
     const result = await service.getCatalog(USER_ID, { limit: 20 });
 
-    expect(result.publications).toHaveLength(5);
-    expect(result.publications[0]).toMatchObject({
-      itemId: 'MLA1',
-      familyId: null,
-    });
-    expect(result.publications.slice(1).map(({ itemId }) => itemId)).toEqual([
+    expect(result.publications).toHaveLength(4);
+    expect(result.publications.map(({ itemId }) => itemId)).toEqual([
+      'MLA1',
       'MLA2',
       'MLA3',
       'MLA4',
-      'MLA5',
     ]);
-    expect(
-      result.publications.slice(1).every(({ familyId }) => familyId === '900'),
-    ).toBe(true);
-  });
-
-  it('resume started, candidate, pending y ausencia de promociones', async () => {
-    const catalog = ['MLA1', 'MLA2', 'MLA3', 'MLA4'].map((id) => item(id, id));
-    const promotionMap = new Map<string, MlPromotions>([
-      ['MLA1', groups({ status: 'started', type: 'DEAL' })],
-      ['MLA2', groups({ status: 'candidate', type: 'CUSTOM_TYPE' })],
-      ['MLA3', groups({ status: 'pending', type: 'SMART' })],
-      ['MLA4', groups()],
-    ]);
-    const { service } = createService(
-      [catalog.map(({ id }) => id)],
-      catalog,
-      promotionMap,
+    expect(result.publications.map(({ productGroup }) => productGroup)).toEqual(
+      ['WOMEN_TSHIRT', 'WOMEN_SWEATSHIRT', 'GIRLS_TSHIRT', 'GIRLS_SWEATSHIRT'],
     );
-
-    const result = await service.getCatalog(USER_ID, { limit: 20 });
-
-    expect(
-      result.publications.map((row) => row.promotionSummary.status),
-    ).toEqual(['ACTIVE', 'AVAILABLE', 'PENDING', 'NONE']);
-    expect(result.publications[1]?.promotionSummary.candidateTypes).toEqual([
-      'CUSTOM_TYPE',
-    ]);
   });
 
-  it('aplica search, categoryId y facets antes de consultar promociones', async () => {
+  it('filtra productGroup y search antes de consultar promociones', async () => {
     const catalog = [
-      item('MLA1', 'Reméra Algodón Mujer', {
-        attributes: [attribute('GENDER', 'Género', 'Mujer')],
-      }),
-      item('MLA2', 'Remera Algodón Hombre', {
-        attributes: [attribute('GENDER', 'Género', 'Hombre')],
-      }),
-      item('MLA3', 'Remera Algodón Mujer', {
-        category_id: 'MLA-CAT-2',
-        attributes: [attribute('GENDER', 'Género', 'Mujer')],
-      }),
+      item('MLA1', 'Producto Mujer', 'MLA-WOMEN_TSHIRTS'),
+      item('MLA2', 'Producto Niña', 'MLA-GIRLS_TSHIRTS'),
+      item('MLA3', 'Otro', 'MLA-WOMEN_SHOES'),
     ];
     const { service, promotions } = createService(
       [catalog.map(({ id }) => id)],
@@ -86,26 +51,38 @@ describe('PromotionsCatalogService', () => {
 
     const result = await service.getCatalog(USER_ID, {
       limit: 20,
-      search: 'algodon reme',
-      categoryId: 'MLA-CAT-1',
-      facetFilters: [{ attributeId: 'GENDER', value: 'mujer' }],
+      productGroup: PromotionProductGroup.WOMEN_TSHIRT,
+      search: 'mujer',
     });
 
     expect(result.publications.map(({ itemId }) => itemId)).toEqual(['MLA1']);
     expect(promotions.getPromotions).toHaveBeenCalledTimes(1);
-    expect(promotions.getPromotions).toHaveBeenCalledWith(
-      USER_ID,
-      'MLA1',
-      ACCESS_TOKEN,
-    );
   });
 
-  it('filtra promotionStatus y promotionType sobre tipos dinámicos', async () => {
-    const catalog = ['MLA1', 'MLA2', 'MLA3'].map((id) => item(id, id));
+  it('resume active y candidates, calcula descuento y mantiene estado', async () => {
+    const catalog = [
+      item('MLA1', 'Remera', 'MLA-WOMEN_TSHIRTS'),
+      item('MLA2', 'Buzo', 'MLA-WOMEN_SWEATSHIRTS'),
+    ];
     const promotionMap = new Map<string, MlPromotions>([
-      ['MLA1', groups({ status: 'candidate', type: 'FLASH_SALE' })],
-      ['MLA2', groups({ status: 'candidate', type: 'DEAL' })],
-      ['MLA3', groups({ status: 'started', type: 'FLASH_SALE' })],
+      [
+        'MLA1',
+        groups({
+          status: 'started',
+          type: 'DEAL',
+          price: 70,
+          original_price: 100,
+        }),
+      ],
+      [
+        'MLA2',
+        groups({
+          status: 'candidate',
+          type: 'FLASH_SALE',
+          price: 80,
+          original_price: 100,
+        }),
+      ],
     ]);
     const { service } = createService(
       [catalog.map(({ id }) => id)],
@@ -113,18 +90,52 @@ describe('PromotionsCatalogService', () => {
       promotionMap,
     );
 
-    const result = await service.getCatalog(USER_ID, {
-      limit: 20,
-      promotionStatus: 'AVAILABLE',
-      promotionType: 'FLASH_SALE',
-    });
+    const result = await service.getCatalog(USER_ID, { limit: 20 });
 
-    expect(result.publications.map(({ itemId }) => itemId)).toEqual(['MLA1']);
+    expect(result.publications[0]).toMatchObject({
+      promotionStatus: 'ACTIVE',
+      currentPromotion: {
+        type: 'DEAL',
+        discountPercent: 30,
+      },
+    });
+    expect(result.publications[1]).toMatchObject({
+      promotionStatus: 'AVAILABLE',
+      availablePromotions: [{ type: 'FLASH_SALE' }],
+    });
   });
 
-  it('pagina con cursor y conserva el orden determinístico del scan', async () => {
-    const catalog = ['MLA1', 'MLA2', 'MLA3'].map((id) => item(id, id));
-    const { service } = createService([catalog.map(({ id }) => id)], catalog);
+  it('marca pending y NONE sin inventar promociones', async () => {
+    const catalog = [
+      item('MLA1', 'Buzo', 'MLA-WOMEN_SWEATSHIRTS'),
+      item('MLA2', 'Remera', 'MLA-GIRLS_TSHIRTS'),
+    ];
+    const promotionMap = new Map<string, MlPromotions>([
+      ['MLA1', groups({ status: 'pending', type: 'DEAL' })],
+      ['MLA2', groups()],
+    ]);
+    const { service } = createService(
+      [catalog.map(({ id }) => id)],
+      catalog,
+      promotionMap,
+    );
+
+    const result = await service.getCatalog(USER_ID, { limit: 20 });
+
+    expect(
+      result.publications.map(({ promotionStatus }) => promotionStatus),
+    ).toEqual(['PENDING', 'NONE']);
+    expect(result.publications[1]?.availablePromotions).toEqual([]);
+  });
+
+  it('se detiene al completar limit y pagina con cursor', async () => {
+    const catalog = ['MLA1', 'MLA2', 'MLA3'].map((id) =>
+      item(id, id, 'MLA-WOMEN_TSHIRTS'),
+    );
+    const { service, source, fees } = createService(
+      [catalog.map(({ id }) => id)],
+      catalog,
+    );
 
     const first = await service.getCatalog(USER_ID, { limit: 2 });
     const second = await service.getCatalog(USER_ID, {
@@ -132,33 +143,23 @@ describe('PromotionsCatalogService', () => {
       cursor: 'promotions:2',
     });
 
-    expect(first).toMatchObject({ done: false, nextCursor: 'promotions:2' });
-    expect(first.publications.map(({ itemId }) => itemId)).toEqual([
-      'MLA1',
-      'MLA2',
-    ]);
-    expect(second).toMatchObject({ done: true, nextCursor: null });
+    expect(first.publications).toHaveLength(2);
+    expect(first.nextCursor).toBe('promotions:2');
     expect(second.publications.map(({ itemId }) => itemId)).toEqual(['MLA3']);
+    expect(source.fetchNextScanPage).toHaveBeenCalledTimes(3);
+    expect(fees.getMany).toHaveBeenCalledTimes(2);
   });
 
-  it('resuelve conexión, token y promociones exclusivamente para el usuario actual', async () => {
-    const { service, token, promotions } = createService(
+  it('no falla si listing_prices no responde para la página final', async () => {
+    const { service, fees } = createService(
       [['MLA1']],
-      [item('MLA1', 'Producto')],
+      [item('MLA1', 'Remera', 'MLA-WOMEN_TSHIRTS')],
     );
+    fees.getMany.mockResolvedValue([null]);
 
-    await service.getCatalog(USER_ID, { limit: 20 });
+    const result = await service.getCatalog(USER_ID, { limit: 20 });
 
-    expect(token.getStoredConnection).toHaveBeenCalledWith(USER_ID);
-    expect(token.getValidAccessToken).toHaveBeenCalledWith(
-      USER_ID,
-      expect.objectContaining({ user_id: USER_ID, seller_id: SELLER_ID }),
-    );
-    expect(promotions.getPromotions).toHaveBeenCalledWith(
-      USER_ID,
-      'MLA1',
-      ACCESS_TOKEN,
-    );
+    expect(result.publications[0]?.saleEstimate).toBeNull();
   });
 });
 
@@ -171,9 +172,9 @@ function createService(
   const token = {
     getStoredConnection: jest.fn().mockResolvedValue({
       user_id: USER_ID,
-      seller_id: SELLER_ID,
+      seller_id: 42,
     }),
-    getValidAccessToken: jest.fn().mockResolvedValue(ACCESS_TOKEN),
+    getValidAccessToken: jest.fn().mockResolvedValue(TOKEN),
   };
   const source = {
     fetchNextScanPage: jest.fn(
@@ -189,7 +190,9 @@ function createService(
   };
   const items = {
     getMany: jest.fn((ids: string[]) =>
-      Promise.resolve(ids.flatMap((id) => byId.get(id) ?? [])),
+      Promise.resolve(
+        ids.flatMap((id) => (byId.get(id) ? [byId.get(id)] : [])),
+      ),
     ),
   };
   const promotions = {
@@ -197,30 +200,23 @@ function createService(
       Promise.resolve(promotionMap.get(itemId) ?? groups()),
     ),
   };
-  const categories = {
-    getMany: jest.fn((ids: string[]) =>
+  const fees = {
+    getMany: jest.fn((matches: readonly PromotionCatalogMatch[]) =>
       Promise.resolve(
-        new Map(
-          [...new Set(ids)].map((id) => [
-            id,
-            { id, name: `Categoría ${id}`, path: ['Ropa', `Categoría ${id}`] },
-          ]),
-        ),
+        matches.map(() => ({ saleFeeAmount: 10, estimatedNetAmount: 60 })),
       ),
     ),
   };
   return {
-    token,
     source,
-    items,
     promotions,
-    categories,
+    fees,
     service: new PromotionsCatalogService(
       token as unknown as MercadolibreTokenService,
       source as unknown as PublicationSourceService,
       items as unknown as ItemsService,
       promotions as unknown as PromotionsService,
-      categories as unknown as MercadoLibreCategoriesService,
+      fees as unknown as MercadoLibreSellingFeeService,
     ),
   };
 }
@@ -228,23 +224,21 @@ function createService(
 function item(
   id: string,
   title: string,
+  domain_id: string,
   override: Partial<MlItem> = {},
 ): MlItem {
   return {
     id,
     title,
-    category_id: 'MLA-CAT-1',
+    domain_id,
+    category_id: 'MLA-CAT',
     price: 100,
     status: 'active',
     thumbnail: `https://img/${id}.jpg`,
-    attributes: [],
-    variations: [],
+    listing_type_id: 'gold_special',
+    shipping: { mode: 'me2', logistic_type: 'self_service' },
     ...override,
   };
-}
-
-function attribute(id: string, name: string, value: string) {
-  return { id, name, value_name: value };
 }
 
 function groups(promotion?: MlPromotion): MlPromotions {

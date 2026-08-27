@@ -1,6 +1,5 @@
 import { Transform, type TransformFnParams } from 'class-transformer';
 import {
-  IsArray,
   IsEnum,
   IsInt,
   IsNotEmpty,
@@ -8,31 +7,22 @@ import {
   IsString,
   Max,
   Min,
-  ValidateNested,
 } from 'class-validator';
 
 import type {
   PromotionCatalogQuery,
   PromotionCatalogStatus,
 } from './promotions-catalog.types';
+import {
+  PromotionProductGroup,
+  type PromotionProductGroup as PromotionProductGroupType,
+} from './promotions-product-group';
 
 export enum PromotionCatalogStatusDto {
   ACTIVE = 'ACTIVE',
   AVAILABLE = 'AVAILABLE',
   PENDING = 'PENDING',
   NONE = 'NONE',
-}
-
-export class PromotionFacetFilterDto {
-  @Transform(({ value }: TransformFnParams) => trimString(value as unknown))
-  @IsString()
-  @IsNotEmpty()
-  attributeId!: string;
-
-  @Transform(({ value }: TransformFnParams) => trimString(value as unknown))
-  @IsString()
-  @IsNotEmpty()
-  value!: string;
 }
 
 export class PromotionsCatalogQueryDto implements PromotionCatalogQuery {
@@ -51,10 +41,8 @@ export class PromotionsCatalogQueryDto implements PromotionCatalogQuery {
   search?: string;
 
   @IsOptional()
-  @Transform(({ value }: TransformFnParams) => trimString(value as unknown))
-  @IsString()
-  @IsNotEmpty()
-  categoryId?: string;
+  @IsEnum(PromotionProductGroup)
+  productGroup?: PromotionProductGroupType;
 
   @IsOptional()
   @IsEnum(PromotionCatalogStatusDto)
@@ -65,12 +53,6 @@ export class PromotionsCatalogQueryDto implements PromotionCatalogQuery {
   @IsString()
   @IsNotEmpty()
   promotionType?: string;
-
-  @IsOptional()
-  @Transform(({ value }: TransformFnParams) => parseFacetFilters(value))
-  @IsArray()
-  @ValidateNested({ each: true })
-  facetFilters?: PromotionFacetFilterDto[];
 }
 
 function parseLimit(value: unknown): unknown {
@@ -81,35 +63,4 @@ function parseLimit(value: unknown): unknown {
 
 function trimString(value: unknown): unknown {
   return typeof value === 'string' ? value.trim() : value;
-}
-
-function parseFacetFilters(value: unknown): unknown {
-  const parsed = parseJsonArray(value);
-  const entries = Array.isArray(parsed)
-    ? parsed
-    : isObject(parsed)
-      ? [parsed]
-      : null;
-  if (!entries) return parsed;
-  return entries.map((entry: unknown) => {
-    if (!isObject(entry)) return entry;
-    const filter = new PromotionFacetFilterDto();
-    filter.attributeId = trimString(entry.attributeId) as string;
-    filter.value = trimString(entry.value) as string;
-    return filter;
-  });
-}
-
-function parseJsonArray(value: unknown): unknown {
-  if (Array.isArray(value)) return value;
-  if (typeof value !== 'string') return value;
-  try {
-    return JSON.parse(value) as unknown;
-  } catch {
-    return value;
-  }
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

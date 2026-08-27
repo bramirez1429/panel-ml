@@ -1,25 +1,17 @@
 import type { MlItem } from '../items/items.types';
-import {
-  normalizeTitleSearch,
-  titleMatchesSearch,
-} from '../publications/publication-title-search.helpers';
+import { titleMatchesSearch } from '../publications/publication-title-search.helpers';
 
 import type {
-  PromotionCatalogAttribute,
   PromotionCatalogCandidate,
   PromotionCatalogQuery,
   PromotionCatalogStatus,
   PromotionSummary,
+  NormalizedPromotion,
 } from './promotions-catalog.types';
 import type { MlPromotion, MlPromotions } from './promotions.types';
+import { classifyPromotionProductGroup } from './promotions-product-group';
 
 const CURSOR_PREFIX = 'promotions:';
-const TECHNICAL_ATTRIBUTE_IDS = new Set([
-  'SELLER_SKU',
-  'GTIN',
-  'EMPTY_GTIN_REASON',
-  'MPN',
-]);
 
 export function encodePromotionsCursor(offset: number): string {
   return `${CURSOR_PREFIX}${offset}`;
@@ -36,11 +28,12 @@ export function decodePromotionsCursor(cursor?: string): number | null {
 export function toPromotionCandidate(
   item: MlItem,
 ): PromotionCatalogCandidate | null {
+  const productGroup = classifyPromotionProductGroup(item);
   if (
+    !productGroup ||
     !isText(item.id) ||
     !isText(item.title) ||
     !isText(item.category_id) ||
-    !isText(item.status) ||
     typeof item.price !== 'number' ||
     !Number.isFinite(item.price)
   ) {
@@ -51,10 +44,18 @@ export function toPromotionCandidate(
     familyId: familyIdOf(item.family_id),
     title: item.title.trim(),
     thumbnail: isText(item.thumbnail) ? item.thumbnail.trim() : null,
-    categoryId: item.category_id.trim(),
+    productGroup,
     price: item.price,
-    publicationStatus: item.status.trim(),
-    attributes: getCommercialAttributes(item),
+    categoryId: item.category_id.trim(),
+    listingTypeId: isText(item.listing_type_id)
+      ? item.listing_type_id.trim()
+      : null,
+    shippingMode: isText(item.shipping?.mode)
+      ? item.shipping.mode.trim()
+      : null,
+    logisticType: isText(item.shipping?.logistic_type)
+      ? item.shipping.logistic_type.trim()
+      : null,
   };
 }
 
@@ -62,22 +63,11 @@ export function matchesProductFilters(
   candidate: PromotionCatalogCandidate,
   query: PromotionCatalogQuery,
 ): boolean {
-  if (
-    query.search?.trim() &&
-    !titleMatchesSearch(candidate.title, query.search)
-  )
+  if (query.productGroup && candidate.productGroup !== query.productGroup)
     return false;
-  if (query.categoryId && candidate.categoryId !== query.categoryId)
-    return false;
-  return (query.facetFilters ?? []).every((filter) => {
-    const expectedId = filter.attributeId.trim().toUpperCase();
-    const expectedValue = normalizeTitleSearch(filter.value);
-    return candidate.attributes.some(
-      (attribute) =>
-        attribute.id.toUpperCase() === expectedId &&
-        normalizeTitleSearch(attribute.value) === expectedValue,
-    );
-  });
+  return (
+    !query.search?.trim() || titleMatchesSearch(candidate.title, query.search)
+  );
 }
 
 export function summarizePromotions(
@@ -104,7 +94,6 @@ export function matchesPromotionFilters(
   const status = query.promotionStatus;
   if (status && !matchesStatus(promotions, status)) return false;
   if (!query.promotionType) return true;
-
   const expected = query.promotionType.trim().toUpperCase();
   const types = status
     ? typesForStatus(summary, status)
@@ -112,49 +101,43 @@ export function matchesPromotionFilters(
   return types.some((type) => type.toUpperCase() === expected);
 }
 
-export function getCommercialAttributes(
-  item: MlItem,
-): PromotionCatalogAttribute[] {
-  const result: PromotionCatalogAttribute[] = [];
-  const seen = new Set<string>();
-  appendAttributes(item.attributes, result, seen);
-  for (const variation of item.variations ?? []) {
-    if (!isObject(variation)) continue;
-    appendAttributes(variation.attribute_combinations, result, seen);
-    appendAttributes(variation.attributes, result, seen);
-  }
-  return result;
+export function normalizePromotion(
+  promotion: MlPromotion,
+): NormalizedPromotion {
+  const originalPrice = finiteNumber(promotion.original_price);
+  const promotionPrice = finiteNumber(promotion.price);
+  const discountPercent =
+    originalPrice !== null &&
+    promotionPrice !== null &&
+    originalPrice > 0 &&
+    promotionPrice > 0 &&
+    promotionPrice < originalPrice
+      ? Math.round(((originalPrice - promotionPrice) / originalPrice) * 10000) /
+        100
+      : null;
+  return {
+    id: textOrNull(promotion.id),
+    type: textOrNull(promotion.type),
+    name: textOrNull(promotion.name),
+    originalPrice,
+    promotionPrice,
+    discountPercent,
+    startDate: textOrNull(promotion.start_date),
+    finishDate: textOrNull(promotion.finish_date),
+  };
 }
 
-function appendAttributes(
-  rawAttributes: unknown,
-  result: PromotionCatalogAttribute[],
-  seen: Set<string>,
-): void {
-  if (!Array.isArray(rawAttributes)) return;
-  for (const raw of rawAttributes) {
-    if (!isObject(raw) || !isText(raw.id) || !isText(raw.name)) continue;
-    const id = raw.id.trim();
-    if (TECHNICAL_ATTRIBUTE_IDS.has(id.toUpperCase())) continue;
-    const name = raw.name.trim();
-    for (const value of attributeValues(raw)) {
-      const key = `${id.toUpperCase()}\u0000${normalizeTitleSearch(value)}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      result.push({ id, name, value });
-    }
-  }
+export function currentPromotion(
+  promotions: MlPromotions,
+): NormalizedPromotion | null {
+  const active = promotions.active[0];
+  return active ? normalizePromotion(active) : null;
 }
 
-function attributeValues(attribute: Record<string, unknown>): string[] {
-  const values: string[] = [];
-  if (isText(attribute.value_name)) values.push(attribute.value_name.trim());
-  if (Array.isArray(attribute.values)) {
-    for (const entry of attribute.values) {
-      if (isObject(entry) && isText(entry.name)) values.push(entry.name.trim());
-    }
-  }
-  return [...new Set(values)];
+export function availablePromotions(
+  promotions: MlPromotions,
+): NormalizedPromotion[] {
+  return promotions.candidates.map(normalizePromotion);
 }
 
 function matchesStatus(
@@ -197,10 +180,14 @@ function familyIdOf(value: string | number | null | undefined): string | null {
   return isText(value) ? value.trim() : null;
 }
 
-function isText(value: unknown): value is string {
-  return typeof value === 'string' && value.trim().length > 0;
+function finiteNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+function textOrNull(value: unknown): string | null {
+  return isText(value) ? value.trim() : null;
+}
+
+function isText(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
 }
