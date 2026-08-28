@@ -1,4 +1,4 @@
-import { GUARDS_METADATA } from '@nestjs/common/constants';
+import { GUARDS_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 
 import type { SafeUser } from '../../../auth/domain/auth.models';
 import { AccessTokenGuard } from '../../../auth/presentation/access-token.guard';
@@ -21,6 +21,38 @@ const USER: SafeUser = {
 };
 
 describe('PromotionsCatalogController', () => {
+  it('propaga usuario e item al diagnostico read-only', async () => {
+    const campaigns = {
+      getPromotionDiagnostic: jest.fn().mockResolvedValue({
+        itemId: 'MLA3842290960',
+        promotions: [],
+      }),
+    };
+    const controller = new PromotionsCatalogController(
+      {} as PromotionsCatalogService,
+      campaigns as unknown as PromotionsCampaignsService,
+      {} as PromotionOptionsService,
+      {} as PromotionRemovalService,
+      {} as PromotionSelectionService,
+      {} as PublicationPromotionService,
+    );
+
+    await expect(
+      controller.getPromotionDiagnostic(USER, 'MLA3842290960'),
+    ).resolves.toEqual({ itemId: 'MLA3842290960', promotions: [] });
+    expect(campaigns.getPromotionDiagnostic).toHaveBeenCalledWith(
+      USER.id,
+      'MLA3842290960',
+    );
+    const diagnosticHandler = Object.getOwnPropertyDescriptor(
+      PromotionsCatalogController.prototype,
+      'getPromotionDiagnostic',
+    )?.value as object;
+    expect(Reflect.getMetadata(PATH_METADATA, diagnosticHandler)).toBe(
+      'diagnostico/:itemId',
+    );
+  });
+
   it('protege el catálogo y propaga el usuario autenticado', async () => {
     const service = {
       getCatalog: jest.fn().mockResolvedValue({ publications: [] }),

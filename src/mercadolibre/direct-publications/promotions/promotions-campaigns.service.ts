@@ -7,6 +7,10 @@ import type { MlItem } from '../items/items.types';
 
 import type { PromotionCampaign } from './promotions-campaigns.types';
 import type {
+  PromotionDiagnostic,
+  PromotionDiagnosticEntry,
+} from './promotion-diagnostic.types';
+import type {
   PromotionCampaignItem,
   PromotionCampaignItemsPaging,
   PromotionCampaignItemsQuery,
@@ -47,6 +51,27 @@ export class PromotionsCampaignsService {
       )
         .map(toCampaign)
         .filter((campaign): campaign is PromotionCampaign => campaign !== null),
+    };
+  }
+
+  async getPromotionDiagnostic(
+    userId: string,
+    itemId: string,
+  ): Promise<PromotionDiagnostic> {
+    const id = requiredText(itemId, 'itemId es obligatorio');
+    const connection = await this.tokenService.getStoredConnection(userId);
+    const accessToken = await this.tokenService.getValidAccessToken(
+      userId,
+      connection,
+    );
+    const promotions = await this.promotionsService.getPromotionsStrict(
+      userId,
+      id,
+      accessToken,
+    );
+    return {
+      itemId: id,
+      promotions: promotions.all.map(toPromotionDiagnosticEntry),
     };
   }
 
@@ -194,6 +219,28 @@ export class PromotionsCampaignsService {
       return null;
     }
   }
+}
+
+function toPromotionDiagnosticEntry(
+  promotion: MlPromotion,
+): PromotionDiagnosticEntry {
+  return {
+    id: textOrNull(promotion.id),
+    type: textOrNull(promotion.type),
+    status: textOrNull(promotion.status),
+    originalPrice: finiteNumber(promotion.original_price),
+    price: finiteNumber(promotion.price),
+    minDiscountedPrice: finiteNumber(promotion.min_discounted_price),
+    maxDiscountedPrice: finiteNumber(promotion.max_discounted_price),
+    suggestedDiscountedPrice: finiteNumber(
+      promotion.suggested_discounted_price,
+    ),
+    meliPercentage: finiteNumber(promotion.meli_percentage),
+    sellerPercentage: finiteNumber(promotion.seller_percentage),
+    discountMeliAmount: finiteNumber(promotion.discount_meli_amount),
+    discountMeliBoostAmount: finiteNumber(promotion.discount_meli_boost_amount),
+    offerId: firstText(promotion.ref_id, promotion.offer_id),
+  };
 }
 
 function toCampaign(promotion: MlPromotion): PromotionCampaign | null {

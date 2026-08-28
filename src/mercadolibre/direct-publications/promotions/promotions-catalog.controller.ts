@@ -58,6 +58,14 @@ export class PromotionsCatalogController {
     return this.campaignsService.getCampaignItems(user.id, promotionId, query);
   }
 
+  @Get('diagnostico/:itemId')
+  getPromotionDiagnostic(
+    @CurrentUser() user: SafeUser,
+    @Param('itemId') itemId: string,
+  ) {
+    return this.campaignsService.getPromotionDiagnostic(user.id, itemId);
+  }
+
   @Get('publicacion/:sourceKey/preview')
   previewPublication(
     @CurrentUser() user: SafeUser,

@@ -14,6 +14,60 @@ const USER_ID = '11111111-1111-4111-8111-111111111111';
 const TOKEN = 'token';
 
 describe('PromotionsCampaignsService', () => {
+  it('devuelve un diagnostico read-only normalizado con una sola consulta al MLA', async () => {
+    const diagnosticPromotion: MlPromotion = {
+      id: ' P-MLA123 ',
+      type: ' MARKETPLACE_CAMPAIGN ',
+      status: ' candidate ',
+      original_price: 16999,
+      price: 0,
+      min_discounted_price: 15000,
+      max_discounted_price: 16500,
+      suggested_discounted_price: 16149.05,
+      meli_percentage: 5,
+      seller_percentage: 0,
+      discount_meli_amount: 849.95,
+      discount_meli_boost_amount: 0,
+      ref_id: ' CANDIDATE-MLA3842290960-1 ',
+    };
+    const { service, promotions } = createService(
+      [],
+      undefined,
+      [],
+      [],
+      new Map([['MLA3842290960', diagnosticPromotion]]),
+    );
+
+    await expect(
+      service.getPromotionDiagnostic(USER_ID, ' MLA3842290960 '),
+    ).resolves.toEqual({
+      itemId: 'MLA3842290960',
+      promotions: [
+        {
+          id: 'P-MLA123',
+          type: 'MARKETPLACE_CAMPAIGN',
+          status: 'candidate',
+          originalPrice: 16999,
+          price: 0,
+          minDiscountedPrice: 15000,
+          maxDiscountedPrice: 16500,
+          suggestedDiscountedPrice: 16149.05,
+          meliPercentage: 5,
+          sellerPercentage: 0,
+          discountMeliAmount: 849.95,
+          discountMeliBoostAmount: 0,
+          offerId: 'CANDIDATE-MLA3842290960-1',
+        },
+      ],
+    });
+    expect(promotions.getPromotionsStrict).toHaveBeenCalledTimes(1);
+    expect(promotions.getPromotionsStrict).toHaveBeenCalledWith(
+      USER_ID,
+      'MLA3842290960',
+      TOKEN,
+    );
+  });
+
   it('usa las campañas globales del seller autenticado', async () => {
     const { service, promotions } = createService([campaign('C-1', 'started')]);
 
