@@ -126,6 +126,7 @@ describe('PromotionOptionsService', () => {
     const fees = {
       getMany: jest.fn().mockResolvedValue([
         { saleFeeAmount: 10, estimatedNetAmount: 70 },
+        { saleFeeAmount: 10, estimatedNetAmount: 75 },
         { saleFeeAmount: 9, estimatedNetAmount: 81 },
       ]),
     };
@@ -151,6 +152,7 @@ describe('PromotionOptionsService', () => {
         mercadoLibreBoostAmount: 5,
         mercadoLibreContributionAmount: 5,
         estimatedNetAmount: 70,
+        suggestedEstimatedNetAmount: null,
         startDate: '2026-09-01T00:00:00Z',
         finishDate: '2026-09-10T23:59:59Z',
         canApply: false,
@@ -171,6 +173,7 @@ describe('PromotionOptionsService', () => {
         mercadoLibreBoostAmount: 5,
         mercadoLibreContributionAmount: 5,
         estimatedNetAmount: null,
+        suggestedEstimatedNetAmount: 75,
         canApply: true,
         canRemove: false,
         saleEstimate: null,
@@ -185,6 +188,7 @@ describe('PromotionOptionsService', () => {
         mercadoLibreBoostAmount: 0,
         mercadoLibreContributionAmount: 2,
         estimatedNetAmount: 81,
+        suggestedEstimatedNetAmount: null,
         canApply: false,
         canRemove: false,
         saleEstimate: { saleFeeAmount: 9, estimatedNetAmount: 81 },
@@ -196,17 +200,61 @@ describe('PromotionOptionsService', () => {
     expect(feeCalls).toHaveLength(1);
     expect(
       feeCalls[0]?.[0].map(({ effectivePrice }) => effectivePrice),
-    ).toEqual([80, 90]);
+    ).toEqual([80, 85, 90]);
   });
 
-  it('no consulta fees cuando la unica opcion es candidate con price cero', async () => {
+  it('simula el neto candidate solamente con suggestedPromotionPrice', async () => {
+    const candidate = {
+      id: 'candidate-1',
+      type: 'DEAL',
+      status: 'candidate',
+      price: 0,
+      original_price: 70000,
+      max_discounted_price: 65000,
+      suggested_discounted_price: 61418,
+    };
+    const promotions = {
+      getPromotions: jest.fn().mockResolvedValue({
+        active: [],
+        candidates: [candidate],
+        pending: [],
+        all: [candidate],
+      } satisfies MlPromotions),
+    };
+    const fees = {
+      getMany: jest
+        .fn()
+        .mockResolvedValue([
+          { saleFeeAmount: 14000, estimatedNetAmount: 47418 },
+        ]),
+    };
+    const service = createService(promotions, fees);
+
+    const result = await service.getOptions(USER_ID, ITEM_ID);
+
+    expect(result[0]).toMatchObject({
+      promotionPrice: null,
+      requiresPriceSelection: true,
+      sellerDiscountAmount: null,
+      estimatedNetAmount: null,
+      suggestedEstimatedNetAmount: 47418,
+    });
+    const feeCalls = fees.getMany.mock.calls as unknown as Array<
+      [SellingFeeRequest[], string]
+    >;
+    expect(feeCalls[0]?.[0]).toEqual([
+      expect.objectContaining({ effectivePrice: 61418 }),
+    ]);
+  });
+
+  it('no consulta fees ni simula neto cuando el candidate no tiene suggested', async () => {
     const candidate = {
       id: 'candidate-1',
       type: 'DEAL',
       status: 'candidate',
       price: 0,
       original_price: 100,
-      suggested_discounted_price: 85,
+      max_discounted_price: 90,
     };
     const promotions = {
       getPromotions: jest.fn().mockResolvedValue({
@@ -223,9 +271,8 @@ describe('PromotionOptionsService', () => {
 
     expect(result[0]).toMatchObject({
       promotionPrice: null,
-      requiresPriceSelection: true,
-      sellerDiscountAmount: null,
       estimatedNetAmount: null,
+      suggestedEstimatedNetAmount: null,
     });
     expect(fees.getMany).not.toHaveBeenCalled();
   });

@@ -37,6 +37,7 @@ export type PromotionOption = NormalizedPromotion &
     mercadoLibreBoostAmount: number | null;
     mercadoLibreContributionAmount: number | null;
     estimatedNetAmount: number | null;
+    suggestedEstimatedNetAmount: number | null;
     canApply: boolean;
     canRemove: boolean;
     saleEstimate: Readonly<{

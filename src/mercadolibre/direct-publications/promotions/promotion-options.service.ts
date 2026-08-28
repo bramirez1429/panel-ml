@@ -92,9 +92,27 @@ export class PromotionOptionsService {
     });
     const requestEntries = prepared.flatMap((entry, index) => {
       const effectivePrice = entry.financial.effectiveCalculationPrice;
-      return effectivePrice !== null
-        ? [{ index, request: { candidate, effectivePrice } }]
-        : [];
+      const suggestedPrice = suggestedSimulationPrice(entry.financial);
+      return [
+        ...(effectivePrice !== null
+          ? [
+              {
+                index,
+                target: 'estimated' as const,
+                request: { candidate, effectivePrice },
+              },
+            ]
+          : []),
+        ...(suggestedPrice !== null
+          ? [
+              {
+                index,
+                target: 'suggested' as const,
+                request: { candidate, effectivePrice: suggestedPrice },
+              },
+            ]
+          : []),
+      ];
     });
     const requests: SellingFeeRequest[] = requestEntries.map(
       ({ request }) => request,
@@ -102,15 +120,20 @@ export class PromotionOptionsService {
     const estimates = requests.length
       ? await this.sellingFeeService.getMany(requests, accessToken)
       : [];
-    const estimateByIndex = new Map<number, SellingFeeResult | null>(
-      requestEntries.map(({ index }, estimateIndex) => [
-        index,
-        estimates[estimateIndex] ?? null,
-      ]),
-    );
+    const estimateByIndex = new Map<number, SellingFeeResult | null>();
+    const suggestedEstimateByIndex = new Map<number, SellingFeeResult | null>();
+    requestEntries.forEach(({ index, target }, estimateIndex) => {
+      const estimate = estimates[estimateIndex] ?? null;
+      if (target === 'suggested') {
+        suggestedEstimateByIndex.set(index, estimate);
+      } else {
+        estimateByIndex.set(index, estimate);
+      }
+    });
     return prepared.map((entry, index) => {
       const estimate = estimateByIndex.get(index) ?? null;
-      return toPromotionOption(entry, estimate);
+      const suggestedEstimate = suggestedEstimateByIndex.get(index) ?? null;
+      return toPromotionOption(entry, estimate, suggestedEstimate);
     });
   }
 }
@@ -123,6 +146,7 @@ function toPromotionOption(
     financial: PromotionFinancialPreview;
   }>,
   estimate: SellingFeeResult | null,
+  suggestedEstimate: SellingFeeResult | null,
 ): PromotionOption {
   return {
     ...entry.normalized,
@@ -139,12 +163,23 @@ function toPromotionOption(
     mercadoLibreContributionAmount:
       entry.financial.mercadoLibreContributionAmount,
     estimatedNetAmount: estimate?.estimatedNetAmount ?? null,
+    suggestedEstimatedNetAmount: suggestedEstimate?.estimatedNetAmount ?? null,
     canApply:
       entry.status === 'candidate' &&
       SUPPORTED_TYPES.has(entry.promotion.type?.toUpperCase() ?? ''),
     canRemove: entry.status === 'started',
     saleEstimate: estimate,
   };
+}
+
+function suggestedSimulationPrice(
+  financial: PromotionFinancialPreview,
+): number | null {
+  return financial.requiresPriceSelection &&
+    financial.suggestedPromotionPrice !== null &&
+    financial.suggestedPromotionPrice > 0
+    ? financial.suggestedPromotionPrice
+    : null;
 }
 
 function finiteNumber(value: unknown): number | null {
