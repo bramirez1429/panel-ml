@@ -43,6 +43,20 @@ export class PromotionsService {
     return this.groupPromotions(promotions);
   }
 
+  /** Obtiene las campaÃ±as disponibles globalmente para un seller. */
+  async getSellerCampaigns(
+    userId: string,
+    sellerId: number,
+    accessToken: string,
+  ): Promise<MlPromotion[]> {
+    void userId;
+    return this.apiService.get<MlPromotion[]>(
+      `/seller-promotions/users/${sellerId}?app_version=v2`,
+      accessToken,
+      'promotion',
+    );
+  }
+
   private groupPromotions(promotions: MlPromotion[]): MlPromotions {
     return {
       active: promotions.filter((promotion) => promotion.status === 'started'),

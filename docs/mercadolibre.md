@@ -158,6 +158,23 @@ Una fila parent con `external_key=family:...` y una fila child por MLA. El
 `user_product_id` no es \u00fanico porque un MLAU puede tener varias condiciones de
 venta.
 
+## Campañas de promociones
+
+```text
+GET /mercadolibre/direct/promociones/campaigns
+```
+
+El endpoint consulta directamente las campañas globales del seller autenticado
+con `GET /seller-promotions/users/{SELLER_ID}?app_version=v2`; no recorre el
+catálogo ni calcula cobertura de publicaciones. Para el análisis posterior de
+una campaña seleccionada se usará la fuente oficial:
+
+```text
+GET /seller-promotions/promotions/{PROMOTION_ID}/items
+  ?promotion_type={PROMOTION_TYPE}
+  &app_version=v2
+```
+
 ## Webhook
 
 ```text

@@ -1,14 +1,9 @@
-export type PromotionCampaignAudience = 'WOMEN' | 'GIRLS';
-
-export type PromotionCampaignQuery = Readonly<{
-  audience?: PromotionCampaignAudience;
-}>;
-
 export type PromotionCampaign = Readonly<{
   id: string;
-  name: string;
+  name: string | null;
   type: string;
-  eligibleItems: number;
+  status: 'started' | 'pending';
   startDate: string | null;
   finishDate: string | null;
+  deadlineDate: string | null;
 }>;

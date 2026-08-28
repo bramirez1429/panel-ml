@@ -11,6 +11,7 @@ export type MlPromotion = {
 
   start_date?: string;
   finish_date?: string;
+  deadline_date?: string;
 
   name?: string;
 
