@@ -382,9 +382,11 @@ function toSellingFeeRequest(
       effectivePrice,
       candidate: {
         categoryId,
+        currencyId: textOrNull(item.currency_id),
         listingTypeId: textOrNull(item.listing_type_id),
         shippingMode: textOrNull(item.shipping?.mode),
         logisticType: textOrNull(item.shipping?.logistic_type),
+        billableWeight: billableWeightOf(item),
       },
     },
   ];
@@ -435,6 +437,19 @@ function rawPromotionPriceOf(
 
 function priceOf(item: MlItem | null): number | null {
   return finiteNumber(item?.original_price) ?? finiteNumber(item?.price);
+}
+
+type MlItemWithBillableWeight = MlItem & {
+  billable_weight?: unknown;
+  shipping?: MlItem['shipping'] & { billable_weight?: unknown };
+};
+
+function billableWeightOf(item: MlItem): number | null {
+  const weightedItem = item as MlItemWithBillableWeight;
+  return (
+    positiveFiniteNumber(weightedItem.billable_weight) ??
+    positiveFiniteNumber(weightedItem.shipping?.billable_weight)
+  );
 }
 
 function contributionOf(
@@ -512,6 +527,11 @@ function normalizePaging(
 
 function finiteNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function positiveFiniteNumber(value: unknown): number | null {
+  const number = finiteNumber(value);
+  return number !== null && number > 0 ? number : null;
 }
 
 function firstFinite(...values: unknown[]): number | null {

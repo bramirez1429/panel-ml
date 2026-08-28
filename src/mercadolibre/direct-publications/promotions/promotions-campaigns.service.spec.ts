@@ -3,7 +3,10 @@ import type { ItemsService } from '../items/items.service';
 import type { MlItem } from '../items/items.types';
 
 import { PromotionsCampaignsService } from './promotions-campaigns.service';
-import type { MercadoLibreSellingFeeService } from './mercadolibre-selling-fee.service';
+import type {
+  MercadoLibreSellingFeeService,
+  SellingFeeRequest,
+} from './mercadolibre-selling-fee.service';
 import type { PromotionsService } from './promotions.service';
 import type {
   MlPromotion,
@@ -658,6 +661,48 @@ describe('PromotionsCampaignsService', () => {
       mercadoLibreContributionAmount: 1000,
       sellerDiscountAmount: 3000,
     });
+  });
+
+  it('propaga currency y billable_weight reales del item al calculo de fees', async () => {
+    const weightedItem = {
+      ...item('MLA3842290960'),
+      currency_id: 'ARS',
+      billable_weight: 462,
+    };
+    const { service, fees } = createService(
+      [],
+      {
+        results: [
+          {
+            id: 'MLA3842290960',
+            status: 'candidate',
+            original_price: 16999,
+            price: 16149.05,
+            min_discounted_price: null,
+            max_discounted_price: null,
+            suggested_discounted_price: null,
+            discount_meli_amount: 0,
+            discount_meli_boost_amount: 0,
+            seller_percentage: 100,
+          },
+        ],
+      },
+      [weightedItem],
+    );
+
+    await service.getCampaignItems(USER_ID, 'P-OTHER', {
+      promotionType: 'MARKETPLACE_CAMPAIGN',
+    });
+
+    const feeCalls = fees.getMany.mock.calls as unknown as Array<
+      [SellingFeeRequest[], string]
+    >;
+    expect(feeCalls).toHaveLength(1);
+    expect(feeCalls[0]?.[0][0]?.candidate).toMatchObject({
+      currencyId: 'ARS',
+      billableWeight: 462,
+    });
+    expect(feeCalls[0]?.[1]).toBe(TOKEN);
   });
 
   it('mantiene la paginacion solicitada sin traer paginas adicionales', async () => {

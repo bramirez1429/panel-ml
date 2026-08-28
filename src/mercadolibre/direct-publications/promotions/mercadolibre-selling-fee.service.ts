@@ -15,9 +15,11 @@ export type SellingFeeRequest = Readonly<{
 
 export type SellingFeeCandidate = Readonly<{
   categoryId: string;
+  currencyId?: string | null;
   listingTypeId: string | null;
   shippingMode: string | null;
   logisticType: string | null;
+  billableWeight?: number | null;
 }>;
 
 @Injectable()
@@ -58,8 +60,10 @@ export class MercadoLibreSellingFeeService {
       category_id: candidate.categoryId,
     });
     addParam(params, 'listing_type_id', candidate.listingTypeId);
+    addParam(params, 'currency_id', candidate.currencyId ?? null);
     addParam(params, 'shipping_mode', candidate.shippingMode);
     addParam(params, 'logistic_type', candidate.logisticType);
+    addNumberParam(params, 'billable_weight', candidate.billableWeight ?? null);
     try {
       const response = await this.apiService.get<unknown>(
         `/sites/MLA/listing_prices?${params.toString()}`,
@@ -90,6 +94,14 @@ function findSaleFee(value: unknown): number | null {
 
 function addParam(params: URLSearchParams, key: string, value: string | null) {
   if (value) params.set(key, value);
+}
+
+function addNumberParam(
+  params: URLSearchParams,
+  key: string,
+  value: number | null,
+) {
+  if (value !== null) params.set(key, String(value));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

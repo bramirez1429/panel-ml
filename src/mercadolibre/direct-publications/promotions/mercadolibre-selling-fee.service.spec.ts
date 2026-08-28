@@ -20,8 +20,10 @@ describe('MercadoLibreSellingFeeService', () => {
     );
     const calls = api.get.mock.calls as unknown as Array<unknown[]>;
     expect(calls[0]?.[0]).toContain('listing_type_id=gold_special');
+    expect(calls[0]?.[0]).toContain('currency_id=ARS');
     expect(calls[0]?.[0]).toContain('shipping_mode=me2');
     expect(calls[0]?.[0]).toContain('logistic_type=self_service');
+    expect(calls[0]?.[0]).toContain('billable_weight=462');
   });
 
   it('devuelve null si listing_prices falla', async () => {
@@ -31,6 +33,32 @@ describe('MercadoLibreSellingFeeService', () => {
     );
 
     await expect(service.getMany([match()], 'token')).resolves.toEqual([null]);
+  });
+
+  it('omite currency y billable_weight cuando el item no los informa', async () => {
+    const api = { get: jest.fn().mockResolvedValue([{ sale_fee_amount: 25 }]) };
+    const service = new MercadoLibreSellingFeeService(
+      api as unknown as MercadolibreApiService,
+    );
+    const request = match();
+
+    await service.getMany(
+      [
+        {
+          ...request,
+          candidate: {
+            ...request.candidate,
+            currencyId: null,
+            billableWeight: null,
+          },
+        },
+      ],
+      'token',
+    );
+
+    const calls = api.get.mock.calls as unknown as Array<unknown[]>;
+    expect(calls[0]?.[0]).not.toContain('currency_id=');
+    expect(calls[0]?.[0]).not.toContain('billable_weight=');
   });
 });
 
@@ -44,9 +72,11 @@ function match(): SellingFeeRequest {
       productGroup: 'WOMEN_TSHIRT',
       price: 100,
       categoryId: 'MLA-CAT',
+      currencyId: 'ARS',
       listingTypeId: 'gold_special',
       shippingMode: 'me2',
       logisticType: 'self_service',
+      billableWeight: 462,
     },
     effectivePrice: 100,
   };
