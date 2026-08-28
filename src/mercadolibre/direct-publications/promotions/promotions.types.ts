@@ -8,6 +8,10 @@ export type MlPromotion = {
 
   price?: number;
   original_price?: number;
+  meli_percentage?: number;
+  seller_percentage?: number;
+  discount_meli_amount?: number;
+  discount_meli_boost_amount?: number;
 
   start_date?: string;
   finish_date?: string;
@@ -28,6 +32,8 @@ export type MlPromotionCampaignItem = {
   price?: number;
   original_price?: number;
   promotion_price?: number;
+  meli_percentage?: number;
+  seller_percentage?: number;
   discount_meli_amount?: number;
   discount_meli_boost_amount?: number;
   [key: string]: unknown;

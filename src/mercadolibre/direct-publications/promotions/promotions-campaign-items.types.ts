@@ -9,8 +9,10 @@ export type PromotionCampaignItem = Readonly<{
   title: string | null;
   thumbnail: string | null;
   status: string | null;
+  eligible: boolean | null;
   currentPrice: number | null;
   promotionPrice: number | null;
+  requiresPriceSelection: boolean | null;
   sellerDiscountAmount: number | null;
   mercadoLibreBaseContributionAmount: number | null;
   mercadoLibreBoostAmount: number | null;

@@ -102,8 +102,10 @@ describe('PromotionsCampaignsService', () => {
           title: 'Remera',
           thumbnail: 'https://img/MLA123.jpg',
           status: 'candidate',
+          eligible: true,
           currentPrice: 20000,
           promotionPrice: 16000,
+          requiresPriceSelection: false,
           sellerDiscountAmount: 2000,
           mercadoLibreBaseContributionAmount: 1500,
           mercadoLibreBoostAmount: 500,
@@ -149,8 +151,10 @@ describe('PromotionsCampaignsService', () => {
           title: 'Remera',
           thumbnail: 'https://img/MLA1.jpg',
           status: 'candidate',
+          eligible: true,
           currentPrice: 10000,
           promotionPrice: 10000,
+          requiresPriceSelection: false,
           sellerDiscountAmount: null,
           mercadoLibreBaseContributionAmount: null,
           mercadoLibreBoostAmount: null,
@@ -162,8 +166,10 @@ describe('PromotionsCampaignsService', () => {
           title: null,
           thumbnail: null,
           status: 'candidate',
+          eligible: true,
           currentPrice: null,
           promotionPrice: 12000,
+          requiresPriceSelection: false,
           sellerDiscountAmount: null,
           mercadoLibreBaseContributionAmount: null,
           mercadoLibreBoostAmount: null,
@@ -178,6 +184,112 @@ describe('PromotionsCampaignsService', () => {
       TOKEN,
     );
   });
+
+  it('marca price cero como selecciÃ³n requerida sin inventar precio promo', async () => {
+    const { service, fees } = createService(
+      [],
+      {
+        results: [
+          {
+            id: 'MLA1',
+            status: 'candidate',
+            original_price: 20000,
+            price: 0,
+            discount_meli_amount: 0,
+            discount_meli_boost_amount: 0,
+            seller_percentage: 100,
+          },
+        ],
+      },
+      [item('MLA1')],
+    );
+
+    const result = await service.getCampaignItems(USER_ID, 'P-1', {
+      promotionType: 'MARKETPLACE_CAMPAIGN',
+    });
+
+    expect(result.items[0]).toMatchObject({
+      eligible: true,
+      promotionPrice: null,
+      requiresPriceSelection: true,
+      sellerDiscountAmount: null,
+      estimatedNetAmount: null,
+    });
+    expect(fees.getMany).toHaveBeenCalledWith([], TOKEN);
+  });
+
+  it('calcula aportes y descuento desde porcentajes reales informados', async () => {
+    const { service } = createService(
+      [],
+      {
+        results: [
+          {
+            id: 'MLA1',
+            status: 'candidate',
+            original_price: 20000,
+            price: 16000,
+            meli_percentage: 25,
+            seller_percentage: 75,
+            discount_meli_boost_amount: 0,
+          },
+        ],
+      },
+      [item('MLA1')],
+    );
+
+    const result = await service.getCampaignItems(USER_ID, 'P-1', {
+      promotionType: 'MARKETPLACE_CAMPAIGN',
+    });
+
+    expect(result.items[0]).toMatchObject({
+      mercadoLibreBaseContributionAmount: 1000,
+      mercadoLibreBoostAmount: 0,
+      mercadoLibreContributionAmount: 1000,
+      sellerDiscountAmount: 3000,
+    });
+  });
+
+  it('consulta datos dirigidos sÃ³lo para items incompletos de la pÃ¡gina', async () => {
+    const directed = {
+      id: 'P-1',
+      type: 'MARKETPLACE_CAMPAIGN',
+      status: 'candidate',
+      original_price: 20000,
+      price: 16000,
+      meli_percentage: 25,
+      seller_percentage: 75,
+      discount_meli_boost_amount: 0,
+    };
+    const { service, promotions } = createService(
+      [],
+      { results: [{ id: 'MLA1' }] },
+      [item('MLA1')],
+      [],
+      new Map([['MLA1', directed]]),
+    );
+
+    const result = await service.getCampaignItems(USER_ID, 'P-1', {
+      promotionType: 'MARKETPLACE_CAMPAIGN',
+      limit: 50,
+      offset: 0,
+    });
+
+    expect(promotions.getPromotionsStrict).toHaveBeenCalledTimes(1);
+    expect(promotions.getPromotionsStrict).toHaveBeenCalledWith(
+      USER_ID,
+      'MLA1',
+      TOKEN,
+    );
+    expect(result.items[0]).toMatchObject({
+      status: 'candidate',
+      eligible: true,
+      currentPrice: 20000,
+      promotionPrice: 16000,
+      requiresPriceSelection: false,
+      mercadoLibreContributionAmount: 1000,
+      sellerDiscountAmount: 3000,
+    });
+  });
 });
 
 function createService(
@@ -188,6 +300,7 @@ function createService(
     saleFeeAmount: number;
     estimatedNetAmount: number;
   } | null> = [],
+  directedPromotions = new Map<string, MlPromotion>(),
 ) {
   const token = {
     getStoredConnection: jest.fn().mockResolvedValue({ seller_id: 42 }),
@@ -196,6 +309,16 @@ function createService(
   const promotions = {
     getSellerCampaigns: jest.fn().mockResolvedValue(campaigns),
     getCampaignItems: jest.fn().mockResolvedValue(campaignItems),
+    getPromotionsStrict: jest.fn((_userId: string, itemId: string) => {
+      const promotion = directedPromotions.get(itemId);
+      const all = promotion ? [promotion] : [];
+      return Promise.resolve({
+        active: [],
+        candidates: all,
+        pending: [],
+        all,
+      });
+    }),
   };
   const items = { getMany: jest.fn().mockResolvedValue(itemDetails) };
   const fees = { getMany: jest.fn().mockResolvedValue(estimates) };
