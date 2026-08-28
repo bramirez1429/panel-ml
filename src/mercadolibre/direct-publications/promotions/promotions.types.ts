@@ -26,7 +26,10 @@ export type MlPromotionCampaignItem = {
   id?: string;
   status?: string;
   price?: number;
+  original_price?: number;
   promotion_price?: number;
+  discount_meli_amount?: number;
+  discount_meli_boost_amount?: number;
   [key: string]: unknown;
 };
 

@@ -3,16 +3,21 @@ import { Injectable } from '@nestjs/common';
 import { PUBLICATION_REQUEST_CONCURRENCY } from '../../publications/publication.constants';
 import { MercadolibreApiService } from '../../shared/mercadolibre-api.service';
 
-import type { PromotionCatalogCandidate } from './promotions-catalog.types';
-
 export type SellingFeeResult = Readonly<{
   saleFeeAmount: number;
   estimatedNetAmount: number;
 }>;
 
 export type SellingFeeRequest = Readonly<{
-  candidate: PromotionCatalogCandidate;
+  candidate: SellingFeeCandidate;
   effectivePrice: number;
+}>;
+
+export type SellingFeeCandidate = Readonly<{
+  categoryId: string;
+  listingTypeId: string | null;
+  shippingMode: string | null;
+  logisticType: string | null;
 }>;
 
 @Injectable()

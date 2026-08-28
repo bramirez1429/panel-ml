@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 
 import { MercadolibreTokenService } from '../../auth/mercadolibre-token.service';
+import { ItemsService } from '../items/items.service';
+import type { MlItem } from '../items/items.types';
 
 import type { PromotionCampaign } from './promotions-campaigns.types';
 import type {
@@ -8,6 +10,10 @@ import type {
   PromotionCampaignItemsPaging,
   PromotionCampaignItemsQuery,
 } from './promotions-campaign-items.types';
+import {
+  MercadoLibreSellingFeeService,
+  type SellingFeeRequest,
+} from './mercadolibre-selling-fee.service';
 import { PromotionsService } from './promotions.service';
 import type {
   MlPromotion,
@@ -20,6 +26,8 @@ export class PromotionsCampaignsService {
   constructor(
     private readonly tokenService: MercadolibreTokenService,
     private readonly promotionsService: PromotionsService,
+    private readonly itemsService: ItemsService,
+    private readonly sellingFeeService: MercadoLibreSellingFeeService,
   ) {}
 
   async getCampaigns(userId: string) {
@@ -63,9 +71,40 @@ export class PromotionsCampaignsService {
       accessToken,
       { limit: query.limit, offset: query.offset },
     );
+    const details = await this.itemsService.getMany(
+      response.results.flatMap((item) => {
+        const itemId = textOrNull(item.id);
+        return itemId ? [itemId] : [];
+      }),
+      accessToken,
+    );
+    const detailsById = new Map(details.map((item) => [item.id, item]));
+    const feeRequests = response.results.flatMap((item) => {
+      const detail = detailsById.get(item.id ?? '');
+      const promotionPrice = promotionPriceOf(item);
+      return detail && promotionPrice !== null
+        ? toSellingFeeRequest(detail, promotionPrice)
+        : [];
+    });
+    const estimates = await this.sellingFeeService.getMany(
+      feeRequests,
+      accessToken,
+    );
+    const estimateByItemId = new Map(
+      feeRequests.map((request, index) => [
+        request.itemId,
+        estimates[index] ?? null,
+      ]),
+    );
     const paging = normalizePaging(response.paging);
     return {
-      items: response.results.flatMap(toCampaignItem),
+      items: response.results.flatMap((item) =>
+        toCampaignItem(
+          item,
+          detailsById.get(item.id ?? '') ?? null,
+          estimateByItemId.get(item.id ?? '') ?? null,
+        ),
+      ),
       ...(paging ? { paging } : {}),
     };
   }
@@ -100,20 +139,83 @@ function requiredText(value: unknown, message: string): string {
 
 function toCampaignItem(
   item: MlPromotionCampaignItem,
+  detail: MlItem | null,
+  estimate: Readonly<{ estimatedNetAmount: number }> | null,
 ): PromotionCampaignItem[] {
   const itemId = textOrNull(item.id);
   if (!itemId) return [];
-  const status = textOrNull(item.status);
-  const price = finiteNumber(item.price);
-  const promotionPrice = finiteNumber(item.promotion_price);
+  const currentPrice = finiteNumber(item.original_price) ?? priceOf(detail);
+  const promotionPrice = promotionPriceOf(item);
+  const baseContribution = finiteNumber(item.discount_meli_amount);
+  const boost = finiteNumber(item.discount_meli_boost_amount);
+  const contribution = contributionOf(baseContribution, boost);
   return [
     {
       itemId,
-      ...(status ? { status } : {}),
-      ...(price !== null ? { price } : {}),
-      ...(promotionPrice !== null ? { promotionPrice } : {}),
+      title: textOrNull(detail?.title),
+      thumbnail: textOrNull(detail?.thumbnail),
+      status: textOrNull(item.status),
+      currentPrice,
+      promotionPrice,
+      sellerDiscountAmount: sellerDiscountOf(
+        currentPrice,
+        promotionPrice,
+        contribution,
+      ),
+      mercadoLibreBaseContributionAmount: baseContribution,
+      mercadoLibreBoostAmount: boost,
+      mercadoLibreContributionAmount: contribution,
+      estimatedNetAmount: estimate?.estimatedNetAmount ?? null,
     },
   ];
+}
+
+function toSellingFeeRequest(
+  item: MlItem,
+  effectivePrice: number,
+): Array<SellingFeeRequest & { itemId: string }> {
+  const itemId = textOrNull(item.id);
+  const categoryId = textOrNull(item.category_id);
+  if (!itemId || !categoryId || effectivePrice <= 0) return [];
+  return [
+    {
+      itemId,
+      effectivePrice,
+      candidate: {
+        categoryId,
+        listingTypeId: textOrNull(item.listing_type_id),
+        shippingMode: textOrNull(item.shipping?.mode),
+        logisticType: textOrNull(item.shipping?.logistic_type),
+      },
+    },
+  ];
+}
+
+function promotionPriceOf(item: MlPromotionCampaignItem): number | null {
+  return finiteNumber(item.promotion_price) ?? finiteNumber(item.price);
+}
+
+function priceOf(item: MlItem | null): number | null {
+  return finiteNumber(item?.original_price) ?? finiteNumber(item?.price);
+}
+
+function contributionOf(
+  baseContribution: number | null,
+  boost: number | null,
+): number | null {
+  if (baseContribution === null && boost === null) return null;
+  return (baseContribution ?? 0) + (boost ?? 0);
+}
+
+function sellerDiscountOf(
+  currentPrice: number | null,
+  promotionPrice: number | null,
+  contribution: number | null,
+): number | null {
+  if (currentPrice === null || promotionPrice === null || contribution === null)
+    return null;
+  const amount = currentPrice - promotionPrice - contribution;
+  return amount >= 0 ? amount : null;
 }
 
 function normalizePaging(
