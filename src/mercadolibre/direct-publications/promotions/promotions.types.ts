@@ -18,6 +18,10 @@ export type MlPromotion = {
   [key: string]: unknown;
 };
 
+export type MlSellerPromotionsResponse = {
+  results: MlPromotion[];
+};
+
 export type MlPromotions = Readonly<{
   active: MlPromotion[];
   candidates: MlPromotion[];

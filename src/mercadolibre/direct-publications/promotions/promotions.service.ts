@@ -5,7 +5,11 @@ import {
   type MercadolibreApiRequestOptions,
 } from '../../shared/mercadolibre-api.service';
 
-import { MlPromotion, type MlPromotions } from './promotions.types';
+import {
+  MlPromotion,
+  type MlPromotions,
+  type MlSellerPromotionsResponse,
+} from './promotions.types';
 
 @Injectable()
 export class PromotionsService {
@@ -50,11 +54,12 @@ export class PromotionsService {
     accessToken: string,
   ): Promise<MlPromotion[]> {
     void userId;
-    return this.apiService.get<MlPromotion[]>(
+    const response = await this.apiService.get<MlSellerPromotionsResponse>(
       `/seller-promotions/users/${sellerId}?app_version=v2`,
       accessToken,
       'promotion',
     );
+    return response.results;
   }
 
   private groupPromotions(promotions: MlPromotion[]): MlPromotions {
