@@ -4,6 +4,7 @@ import type { SafeUser } from '../../../auth/domain/auth.models';
 import { AccessTokenGuard } from '../../../auth/presentation/access-token.guard';
 
 import { PromotionsCatalogController } from './promotions-catalog.controller';
+import type { PromotionsCampaignsService } from './promotions-campaigns.service';
 import type { PromotionsCatalogService } from './promotions-catalog.service';
 import type { PromotionOptionsService } from './promotion-options.service';
 import type { PromotionRemovalService } from './promotion-removal.service';
@@ -31,6 +32,7 @@ describe('PromotionsCatalogController', () => {
     const selection = { apply: jest.fn().mockResolvedValue({ success: true }) };
     const controller = new PromotionsCatalogController(
       service as unknown as PromotionsCatalogService,
+      { getCampaigns: jest.fn() } as unknown as PromotionsCampaignsService,
       options as unknown as PromotionOptionsService,
       removal as unknown as PromotionRemovalService,
       selection as unknown as PromotionSelectionService,

@@ -14,6 +14,8 @@ import { AccessTokenGuard } from '../../../auth/presentation/access-token.guard'
 import { CurrentUser } from '../../../auth/presentation/current-user.decorator';
 
 import { PromotionsCatalogQueryDto } from './promotions-catalog-query.dto';
+import { PromotionsCampaignsQueryDto } from './promotions-campaigns-query.dto';
+import { PromotionsCampaignsService } from './promotions-campaigns.service';
 import { PromotionsCatalogService } from './promotions-catalog.service';
 import { PromotionOptionsService } from './promotion-options.service';
 import { parsePromotionRequest } from './publication-promotion-request';
@@ -27,6 +29,7 @@ import type { PromotionSwitchRequest } from './promotion-manager.types';
 export class PromotionsCatalogController {
   constructor(
     private readonly catalogService: PromotionsCatalogService,
+    private readonly campaignsService: PromotionsCampaignsService,
     private readonly optionsService: PromotionOptionsService,
     private readonly removalService: PromotionRemovalService,
     private readonly selectionService: PromotionSelectionService,
@@ -39,6 +42,14 @@ export class PromotionsCatalogController {
     @Query() query: PromotionsCatalogQueryDto,
   ) {
     return this.catalogService.getCatalog(user.id, query);
+  }
+
+  @Get('campaigns')
+  getCampaigns(
+    @CurrentUser() user: SafeUser,
+    @Query() query: PromotionsCampaignsQueryDto,
+  ) {
+    return this.campaignsService.getCampaigns(user.id, query);
   }
 
   @Get('publicacion/:sourceKey/preview')
