@@ -117,6 +117,7 @@ export class PromotionsCampaignsService {
       const effectiveCalculationPrice = effectiveCalculationPriceOf(
         item,
         directedPromotions.get(item.id ?? '') ?? null,
+        promotionType,
       );
       return detail && effectiveCalculationPrice !== null
         ? toSellingFeeRequest(detail, effectiveCalculationPrice)
@@ -291,7 +292,17 @@ function toCampaignItem(
     directedPromotion,
     'suggested_discounted_price',
   );
-  const effectiveCalculationPrice = promotionPrice ?? suggestedPromotionPrice;
+  const maxPromotionPrice = guidancePriceOf(
+    item,
+    directedPromotion,
+    'max_discounted_price',
+  );
+  const effectiveCalculationPrice = selectEffectiveCalculationPrice(
+    promotionType,
+    promotionPrice,
+    maxPromotionPrice,
+    suggestedPromotionPrice,
+  );
   const totalDiscount = discountAmountOf(
     currentPrice,
     effectiveCalculationPrice,
@@ -345,11 +356,7 @@ function toCampaignItem(
         directedPromotion,
         'min_discounted_price',
       ),
-      maxPromotionPrice: guidancePriceOf(
-        item,
-        directedPromotion,
-        'max_discounted_price',
-      ),
+      maxPromotionPrice,
       suggestedPromotionPrice,
       requiresPriceSelection:
         rawPromotionPrice === null ? null : rawPromotionPrice === 0,
@@ -394,11 +401,25 @@ function promotionPriceOf(
 function effectiveCalculationPriceOf(
   item: MlPromotionCampaignItem,
   directedPromotion: MlPromotion | null,
+  promotionType: string,
 ): number | null {
-  return (
-    promotionPriceOf(item, directedPromotion) ??
-    guidancePriceOf(item, directedPromotion, 'suggested_discounted_price')
+  return selectEffectiveCalculationPrice(
+    promotionType,
+    promotionPriceOf(item, directedPromotion),
+    guidancePriceOf(item, directedPromotion, 'max_discounted_price'),
+    guidancePriceOf(item, directedPromotion, 'suggested_discounted_price'),
   );
+}
+
+function selectEffectiveCalculationPrice(
+  promotionType: string,
+  promotionPrice: number | null,
+  maxPromotionPrice: number | null,
+  suggestedPromotionPrice: number | null,
+): number | null {
+  return promotionType === 'DEAL'
+    ? (promotionPrice ?? maxPromotionPrice ?? suggestedPromotionPrice)
+    : (promotionPrice ?? suggestedPromotionPrice);
 }
 
 function rawPromotionPriceOf(

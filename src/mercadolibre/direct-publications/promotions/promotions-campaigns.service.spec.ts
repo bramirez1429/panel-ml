@@ -68,7 +68,7 @@ describe('PromotionsCampaignsService', () => {
     );
   });
 
-  it('normaliza el preview financiero de un DEAL candidate con sugerencia', async () => {
+  it('usa maxPromotionPrice para el preview de un DEAL candidate', async () => {
     const { service, fees } = createService(
       [],
       {
@@ -78,9 +78,9 @@ describe('PromotionsCampaignsService', () => {
             status: 'candidate',
             original_price: 16999,
             price: 0,
-            min_discounted_price: null,
-            max_discounted_price: null,
-            suggested_discounted_price: 14449.15,
+            min_discounted_price: 3399.8,
+            max_discounted_price: 16149.05,
+            suggested_discounted_price: 15639.08,
             meli_percentage: null,
             seller_percentage: null,
             discount_meli_amount: null,
@@ -89,7 +89,7 @@ describe('PromotionsCampaignsService', () => {
         ],
       },
       [item('MLA3842290960')],
-      [{ saleFeeAmount: 3268.2, estimatedNetAmount: 11180.95 }],
+      [{ saleFeeAmount: 4968.1, estimatedNetAmount: 11180.95 }],
     );
 
     const result = await service.getCampaignItems(USER_ID, 'P-MLA17939038', {
@@ -99,9 +99,11 @@ describe('PromotionsCampaignsService', () => {
     expect(result.items[0]).toMatchObject({
       itemId: 'MLA3842290960',
       promotionPrice: null,
-      suggestedPromotionPrice: 14449.15,
+      minPromotionPrice: 3399.8,
+      maxPromotionPrice: 16149.05,
+      suggestedPromotionPrice: 15639.08,
       requiresPriceSelection: true,
-      sellerDiscountAmount: 2549.85,
+      sellerDiscountAmount: 849.95,
       mercadoLibreBaseContributionAmount: 0,
       mercadoLibreBoostAmount: null,
       mercadoLibreContributionAmount: 0,
@@ -111,7 +113,49 @@ describe('PromotionsCampaignsService', () => {
       [
         expect.objectContaining({
           itemId: 'MLA3842290960',
-          effectivePrice: 14449.15,
+          effectivePrice: 16149.05,
+        }),
+      ],
+      TOKEN,
+    );
+  });
+
+  it('prioriza promotionPrice real sobre maxPromotionPrice en DEAL', async () => {
+    const { service, fees } = createService(
+      [],
+      {
+        results: [
+          {
+            id: 'MLA3842290960',
+            status: 'started',
+            original_price: 16999,
+            price: 16000,
+            min_discounted_price: 3399.8,
+            max_discounted_price: 16149.05,
+            suggested_discounted_price: 15639.08,
+            discount_meli_boost_amount: null,
+          },
+        ],
+      },
+      [item('MLA3842290960')],
+    );
+
+    const result = await service.getCampaignItems(USER_ID, 'P-MLA17939038', {
+      promotionType: 'DEAL',
+    });
+
+    expect(result.items[0]).toMatchObject({
+      promotionPrice: 16000,
+      maxPromotionPrice: 16149.05,
+      suggestedPromotionPrice: 15639.08,
+      requiresPriceSelection: false,
+      sellerDiscountAmount: 999,
+    });
+    expect(fees.getMany).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          itemId: 'MLA3842290960',
+          effectivePrice: 16000,
         }),
       ],
       TOKEN,
@@ -119,7 +163,7 @@ describe('PromotionsCampaignsService', () => {
   });
 
   it('resta un boost real del descuento vendedor de un DEAL', async () => {
-    const { service } = createService(
+    const { service, fees } = createService(
       [],
       {
         results: [
@@ -143,15 +187,25 @@ describe('PromotionsCampaignsService', () => {
     expect(result.items[0]).toMatchObject({
       promotionPrice: null,
       suggestedPromotionPrice: 14449.15,
+      requiresPriceSelection: true,
       sellerDiscountAmount: 2449.85,
       mercadoLibreBaseContributionAmount: 0,
       mercadoLibreBoostAmount: 100,
       mercadoLibreContributionAmount: 100,
     });
+    expect(fees.getMany).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          itemId: 'MLA3842290960',
+          effectivePrice: 14449.15,
+        }),
+      ],
+      TOKEN,
+    );
   });
 
   it('conserva null para aportes desconocidos en tipos que no son DEAL', async () => {
-    const { service } = createService(
+    const { service, fees } = createService(
       [],
       {
         results: [
@@ -160,7 +214,8 @@ describe('PromotionsCampaignsService', () => {
             status: 'candidate',
             original_price: 16999,
             price: 0,
-            suggested_discounted_price: 14449.15,
+            max_discounted_price: 16149.05,
+            suggested_discounted_price: 15639.08,
             meli_percentage: null,
             seller_percentage: null,
             discount_meli_amount: null,
@@ -177,12 +232,22 @@ describe('PromotionsCampaignsService', () => {
 
     expect(result.items[0]).toMatchObject({
       promotionPrice: null,
-      suggestedPromotionPrice: 14449.15,
+      maxPromotionPrice: 16149.05,
+      suggestedPromotionPrice: 15639.08,
       sellerDiscountAmount: null,
       mercadoLibreBaseContributionAmount: null,
       mercadoLibreBoostAmount: null,
       mercadoLibreContributionAmount: null,
     });
+    expect(fees.getMany).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          itemId: 'MLA3842290960',
+          effectivePrice: 15639.08,
+        }),
+      ],
+      TOKEN,
+    );
   });
 
   it('usa las campañas globales del seller autenticado', async () => {
