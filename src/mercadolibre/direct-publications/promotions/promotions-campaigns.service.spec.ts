@@ -212,6 +212,7 @@ describe('PromotionsCampaignsService', () => {
         ],
       },
       [item('MLA1')],
+      [{ saleFeeAmount: 3000, estimatedNetAmount: 14000 }],
     );
 
     const result = await service.getCampaignItems(USER_ID, 'P-1', {
@@ -223,10 +224,48 @@ describe('PromotionsCampaignsService', () => {
       promotionPrice: null,
       suggestedPromotionPrice: 17000,
       requiresPriceSelection: true,
-      sellerDiscountAmount: null,
-      estimatedNetAmount: null,
+      sellerDiscountAmount: 3000,
+      mercadoLibreContributionAmount: 0,
+      estimatedNetAmount: 14000,
     });
-    expect(fees.getMany).toHaveBeenCalledWith([], TOKEN);
+    expect(fees.getMany).toHaveBeenCalledWith(
+      [expect.objectContaining({ itemId: 'MLA1', effectivePrice: 17000 })],
+      TOKEN,
+    );
+  });
+
+  it('calcula el aporte ML sobre la sugerencia usando meli_percentage real', async () => {
+    const { service } = createService(
+      [],
+      {
+        results: [
+          {
+            id: 'MLA1',
+            status: 'candidate',
+            original_price: 20000,
+            price: 0,
+            suggested_discounted_price: 17000,
+            meli_percentage: 25,
+            seller_percentage: 75,
+            discount_meli_boost_amount: 0,
+          },
+        ],
+      },
+      [item('MLA1')],
+    );
+
+    const result = await service.getCampaignItems(USER_ID, 'P-1', {
+      promotionType: 'MARKETPLACE_CAMPAIGN',
+    });
+
+    expect(result.items[0]).toMatchObject({
+      promotionPrice: null,
+      suggestedPromotionPrice: 17000,
+      requiresPriceSelection: true,
+      sellerDiscountAmount: 2250,
+      mercadoLibreBaseContributionAmount: 750,
+      mercadoLibreContributionAmount: 750,
+    });
   });
 
   it('mantiene suggestedPromotionPrice null cuando ML no lo informa', async () => {
@@ -262,8 +301,8 @@ describe('PromotionsCampaignsService', () => {
     });
   });
 
-  it('calcula aportes y descuento desde porcentajes reales informados', async () => {
-    const { service } = createService(
+  it('prioriza promotionPrice real sobre suggestedPromotionPrice', async () => {
+    const { service, fees } = createService(
       [],
       {
         results: [
@@ -297,6 +336,44 @@ describe('PromotionsCampaignsService', () => {
       mercadoLibreContributionAmount: 1000,
       sellerDiscountAmount: 3000,
     });
+    expect(fees.getMany).toHaveBeenCalledWith(
+      [expect.objectContaining({ itemId: 'MLA1', effectivePrice: 16000 })],
+      TOKEN,
+    );
+  });
+
+  it('mantiene calculos null sin precio promocional ni sugerido', async () => {
+    const { service, fees } = createService(
+      [],
+      {
+        results: [
+          {
+            id: 'MLA1',
+            status: 'candidate',
+            original_price: 20000,
+            min_discounted_price: null,
+            max_discounted_price: null,
+            suggested_discounted_price: null,
+            meli_percentage: 25,
+            seller_percentage: 75,
+          },
+        ],
+      },
+      [item('MLA1')],
+    );
+
+    const result = await service.getCampaignItems(USER_ID, 'P-1', {
+      promotionType: 'MARKETPLACE_CAMPAIGN',
+    });
+
+    expect(result.items[0]).toMatchObject({
+      promotionPrice: null,
+      suggestedPromotionPrice: null,
+      sellerDiscountAmount: null,
+      mercadoLibreContributionAmount: null,
+      estimatedNetAmount: null,
+    });
+    expect(fees.getMany).toHaveBeenCalledWith([], TOKEN);
   });
 
   it('consulta datos dirigidos sÃ³lo para items incompletos de la pÃ¡gina', async () => {

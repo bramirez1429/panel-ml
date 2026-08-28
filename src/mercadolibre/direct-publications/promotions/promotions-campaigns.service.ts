@@ -89,12 +89,12 @@ export class PromotionsCampaignsService {
     const detailsById = new Map(details.map((item) => [item.id, item]));
     const feeRequests = response.results.flatMap((item) => {
       const detail = detailsById.get(item.id ?? '');
-      const promotionPrice = promotionPriceOf(
+      const effectiveCalculationPrice = effectiveCalculationPriceOf(
         item,
         directedPromotions.get(item.id ?? '') ?? null,
       );
-      return detail && promotionPrice !== null
-        ? toSellingFeeRequest(detail, promotionPrice)
+      return detail && effectiveCalculationPrice !== null
+        ? toSellingFeeRequest(detail, effectiveCalculationPrice)
         : [];
     });
     const estimates = await this.sellingFeeService.getMany(
@@ -237,7 +237,16 @@ function toCampaignItem(
     priceOf(detail);
   const rawPromotionPrice = rawPromotionPriceOf(item, directedPromotion);
   const promotionPrice = rawPromotionPrice === 0 ? null : rawPromotionPrice;
-  const totalDiscount = discountAmountOf(currentPrice, promotionPrice);
+  const suggestedPromotionPrice = guidancePriceOf(
+    item,
+    directedPromotion,
+    'suggested_discounted_price',
+  );
+  const effectiveCalculationPrice = promotionPrice ?? suggestedPromotionPrice;
+  const totalDiscount = discountAmountOf(
+    currentPrice,
+    effectiveCalculationPrice,
+  );
   const baseContribution =
     firstFinite(
       item.discount_meli_amount,
@@ -256,7 +265,8 @@ function toCampaignItem(
     percentageAmount(
       totalDiscount,
       firstFinite(item.seller_percentage, directedPromotion?.seller_percentage),
-    ) ?? sellerDiscountOf(currentPrice, promotionPrice, contribution);
+    ) ??
+    sellerDiscountOf(currentPrice, effectiveCalculationPrice, contribution);
   return [
     {
       itemId,
@@ -276,11 +286,7 @@ function toCampaignItem(
         directedPromotion,
         'max_discounted_price',
       ),
-      suggestedPromotionPrice: guidancePriceOf(
-        item,
-        directedPromotion,
-        'suggested_discounted_price',
-      ),
+      suggestedPromotionPrice,
       requiresPriceSelection:
         rawPromotionPrice === null ? null : rawPromotionPrice === 0,
       sellerDiscountAmount: sellerDiscount,
@@ -319,6 +325,16 @@ function promotionPriceOf(
 ): number | null {
   const price = rawPromotionPriceOf(item, directedPromotion);
   return price === 0 ? null : price;
+}
+
+function effectiveCalculationPriceOf(
+  item: MlPromotionCampaignItem,
+  directedPromotion: MlPromotion | null,
+): number | null {
+  return (
+    promotionPriceOf(item, directedPromotion) ??
+    guidancePriceOf(item, directedPromotion, 'suggested_discounted_price')
+  );
 }
 
 function rawPromotionPriceOf(
