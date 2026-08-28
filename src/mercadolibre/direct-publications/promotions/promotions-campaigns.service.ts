@@ -266,6 +266,21 @@ function toCampaignItem(
       eligible: status === null ? null : status === 'candidate',
       currentPrice,
       promotionPrice,
+      minPromotionPrice: guidancePriceOf(
+        item,
+        directedPromotion,
+        'min_discounted_price',
+      ),
+      maxPromotionPrice: guidancePriceOf(
+        item,
+        directedPromotion,
+        'max_discounted_price',
+      ),
+      suggestedPromotionPrice: guidancePriceOf(
+        item,
+        directedPromotion,
+        'suggested_discounted_price',
+      ),
       requiresPriceSelection:
         rawPromotionPrice === null ? null : rawPromotionPrice === 0,
       sellerDiscountAmount: sellerDiscount,
@@ -401,11 +416,36 @@ function firstText(...values: unknown[]): string | null {
   return null;
 }
 
+type PriceGuidanceField =
+  | 'min_discounted_price'
+  | 'max_discounted_price'
+  | 'suggested_discounted_price';
+
+const PRICE_GUIDANCE_FIELDS: readonly PriceGuidanceField[] = [
+  'min_discounted_price',
+  'max_discounted_price',
+  'suggested_discounted_price',
+];
+
+function guidancePriceOf(
+  item: MlPromotionCampaignItem,
+  directedPromotion: MlPromotion | null,
+  field: PriceGuidanceField,
+): number | null {
+  if (hasOwn(item, field)) return finiteNumber(item[field]);
+  return finiteNumber(directedPromotion?.[field]);
+}
+
+function hasOwn(value: object, field: PropertyKey): boolean {
+  return Object.prototype.hasOwnProperty.call(value, field);
+}
+
 function needsDirectedPromotionDetail(item: MlPromotionCampaignItem): boolean {
   return (
     textOrNull(item.status) === null ||
     finiteNumber(item.original_price) === null ||
     firstFinite(item.promotion_price, item.price) === null ||
+    PRICE_GUIDANCE_FIELDS.some((field) => !hasOwn(item, field)) ||
     (finiteNumber(item.discount_meli_amount) === null &&
       finiteNumber(item.meli_percentage) === null) ||
     finiteNumber(item.discount_meli_boost_amount) === null ||

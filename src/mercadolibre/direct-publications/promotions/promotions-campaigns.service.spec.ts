@@ -105,6 +105,9 @@ describe('PromotionsCampaignsService', () => {
           eligible: true,
           currentPrice: 20000,
           promotionPrice: 16000,
+          minPromotionPrice: null,
+          maxPromotionPrice: null,
+          suggestedPromotionPrice: null,
           requiresPriceSelection: false,
           sellerDiscountAmount: 2000,
           mercadoLibreBaseContributionAmount: 1500,
@@ -154,6 +157,9 @@ describe('PromotionsCampaignsService', () => {
           eligible: true,
           currentPrice: 10000,
           promotionPrice: 10000,
+          minPromotionPrice: null,
+          maxPromotionPrice: null,
+          suggestedPromotionPrice: null,
           requiresPriceSelection: false,
           sellerDiscountAmount: null,
           mercadoLibreBaseContributionAmount: null,
@@ -169,6 +175,9 @@ describe('PromotionsCampaignsService', () => {
           eligible: true,
           currentPrice: null,
           promotionPrice: 12000,
+          minPromotionPrice: null,
+          maxPromotionPrice: null,
+          suggestedPromotionPrice: null,
           requiresPriceSelection: false,
           sellerDiscountAmount: null,
           mercadoLibreBaseContributionAmount: null,
@@ -185,7 +194,7 @@ describe('PromotionsCampaignsService', () => {
     );
   });
 
-  it('marca price cero como selecciÃ³n requerida sin inventar precio promo', async () => {
+  it('conserva la sugerencia real cuando price cero requiere selecciÃ³n', async () => {
     const { service, fees } = createService(
       [],
       {
@@ -195,6 +204,7 @@ describe('PromotionsCampaignsService', () => {
             status: 'candidate',
             original_price: 20000,
             price: 0,
+            suggested_discounted_price: 17000,
             discount_meli_amount: 0,
             discount_meli_boost_amount: 0,
             seller_percentage: 100,
@@ -211,11 +221,45 @@ describe('PromotionsCampaignsService', () => {
     expect(result.items[0]).toMatchObject({
       eligible: true,
       promotionPrice: null,
+      suggestedPromotionPrice: 17000,
       requiresPriceSelection: true,
       sellerDiscountAmount: null,
       estimatedNetAmount: null,
     });
     expect(fees.getMany).toHaveBeenCalledWith([], TOKEN);
+  });
+
+  it('mantiene suggestedPromotionPrice null cuando ML no lo informa', async () => {
+    const { service } = createService(
+      [],
+      {
+        results: [
+          {
+            id: 'MLA1',
+            status: 'candidate',
+            original_price: 20000,
+            price: 0,
+            min_discounted_price: 15000,
+            max_discounted_price: 19000,
+            suggested_discounted_price: null,
+            discount_meli_amount: 0,
+            discount_meli_boost_amount: 0,
+            seller_percentage: 100,
+          },
+        ],
+      },
+      [item('MLA1')],
+    );
+
+    const result = await service.getCampaignItems(USER_ID, 'P-1', {
+      promotionType: 'MARKETPLACE_CAMPAIGN',
+    });
+
+    expect(result.items[0]).toMatchObject({
+      minPromotionPrice: 15000,
+      maxPromotionPrice: 19000,
+      suggestedPromotionPrice: null,
+    });
   });
 
   it('calcula aportes y descuento desde porcentajes reales informados', async () => {
@@ -228,6 +272,9 @@ describe('PromotionsCampaignsService', () => {
             status: 'candidate',
             original_price: 20000,
             price: 16000,
+            min_discounted_price: 14000,
+            max_discounted_price: 18000,
+            suggested_discounted_price: 15500,
             meli_percentage: 25,
             seller_percentage: 75,
             discount_meli_boost_amount: 0,
@@ -242,6 +289,9 @@ describe('PromotionsCampaignsService', () => {
     });
 
     expect(result.items[0]).toMatchObject({
+      minPromotionPrice: 14000,
+      maxPromotionPrice: 18000,
+      suggestedPromotionPrice: 15500,
       mercadoLibreBaseContributionAmount: 1000,
       mercadoLibreBoostAmount: 0,
       mercadoLibreContributionAmount: 1000,
@@ -256,6 +306,9 @@ describe('PromotionsCampaignsService', () => {
       status: 'candidate',
       original_price: 20000,
       price: 16000,
+      min_discounted_price: 14000,
+      max_discounted_price: 18000,
+      suggested_discounted_price: 15500,
       meli_percentage: 25,
       seller_percentage: 75,
       discount_meli_boost_amount: 0,
@@ -285,10 +338,39 @@ describe('PromotionsCampaignsService', () => {
       eligible: true,
       currentPrice: 20000,
       promotionPrice: 16000,
+      minPromotionPrice: 14000,
+      maxPromotionPrice: 18000,
+      suggestedPromotionPrice: 15500,
       requiresPriceSelection: false,
       mercadoLibreContributionAmount: 1000,
       sellerDiscountAmount: 3000,
     });
+  });
+
+  it('mantiene la paginacion solicitada sin traer paginas adicionales', async () => {
+    const { service, promotions } = createService([], {
+      results: [],
+      paging: { total: 125, offset: 50, limit: 25 },
+    });
+
+    await expect(
+      service.getCampaignItems(USER_ID, 'P-1', {
+        promotionType: 'DEAL',
+        limit: 25,
+        offset: 50,
+      }),
+    ).resolves.toEqual({
+      items: [],
+      paging: { total: 125, offset: 50, limit: 25 },
+    });
+    expect(promotions.getCampaignItems).toHaveBeenCalledTimes(1);
+    expect(promotions.getCampaignItems).toHaveBeenCalledWith(
+      USER_ID,
+      'P-1',
+      'DEAL',
+      TOKEN,
+      { limit: 25, offset: 50 },
+    );
   });
 });
 

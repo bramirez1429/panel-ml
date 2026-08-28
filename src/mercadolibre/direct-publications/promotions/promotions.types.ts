@@ -8,6 +8,9 @@ export type MlPromotion = {
 
   price?: number;
   original_price?: number;
+  min_discounted_price?: number | null;
+  max_discounted_price?: number | null;
+  suggested_discounted_price?: number | null;
   meli_percentage?: number;
   seller_percentage?: number;
   discount_meli_amount?: number;
@@ -32,6 +35,9 @@ export type MlPromotionCampaignItem = {
   price?: number;
   original_price?: number;
   promotion_price?: number;
+  min_discounted_price?: number | null;
+  max_discounted_price?: number | null;
+  suggested_discounted_price?: number | null;
   meli_percentage?: number;
   seller_percentage?: number;
   discount_meli_amount?: number;

@@ -12,6 +12,9 @@ export type PromotionCampaignItem = Readonly<{
   eligible: boolean | null;
   currentPrice: number | null;
   promotionPrice: number | null;
+  minPromotionPrice: number | null;
+  maxPromotionPrice: number | null;
+  suggestedPromotionPrice: number | null;
   requiresPriceSelection: boolean | null;
   sellerDiscountAmount: number | null;
   mercadoLibreBaseContributionAmount: number | null;
