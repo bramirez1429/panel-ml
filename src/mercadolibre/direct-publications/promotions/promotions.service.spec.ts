@@ -29,4 +29,25 @@ describe('PromotionsService', () => {
       'promotion',
     );
   });
+
+  it('consulta directamente una página de items de campaña', async () => {
+    const api = { get: jest.fn().mockResolvedValue({ results: [] }) };
+    const service = new PromotionsService(
+      api as unknown as MercadolibreApiService,
+    );
+
+    await service.getCampaignItems(
+      'user-id',
+      'P-MLA123',
+      'MARKETPLACE_CAMPAIGN',
+      'token',
+      { limit: 50, offset: 0 },
+    );
+
+    expect(api.get).toHaveBeenCalledWith(
+      '/seller-promotions/promotions/P-MLA123/items?promotion_type=MARKETPLACE_CAMPAIGN&app_version=v2&limit=50&offset=0',
+      'token',
+      'promotion',
+    );
+  });
 });

@@ -7,6 +7,7 @@ import {
 
 import {
   MlPromotion,
+  type MlPromotionCampaignItemsResponse,
   type MlPromotions,
   type MlSellerPromotionsResponse,
 } from './promotions.types';
@@ -60,6 +61,29 @@ export class PromotionsService {
       'promotion',
     );
     return response.results;
+  }
+
+  /** Obtiene una pÃ¡gina de MLA directamente desde una campaÃ±a. */
+  async getCampaignItems(
+    userId: string,
+    promotionId: string,
+    promotionType: string,
+    accessToken: string,
+    paging?: Readonly<{ limit?: number; offset?: number }>,
+  ): Promise<MlPromotionCampaignItemsResponse> {
+    void userId;
+    const query = new URLSearchParams({
+      promotion_type: promotionType,
+      app_version: 'v2',
+    });
+    if (paging?.limit !== undefined) query.set('limit', String(paging.limit));
+    if (paging?.offset !== undefined)
+      query.set('offset', String(paging.offset));
+    return this.apiService.get<MlPromotionCampaignItemsResponse>(
+      `/seller-promotions/promotions/${encodeURIComponent(promotionId)}/items?${query.toString()}`,
+      accessToken,
+      'promotion',
+    );
   }
 
   private groupPromotions(promotions: MlPromotion[]): MlPromotions {

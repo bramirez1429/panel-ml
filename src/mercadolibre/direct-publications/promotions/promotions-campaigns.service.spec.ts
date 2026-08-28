@@ -69,15 +69,58 @@ describe('PromotionsCampaignsService', () => {
     expect(service).not.toHaveProperty('publicationSource');
     expect(service).not.toHaveProperty('itemsService');
   });
+
+  it('normaliza una página real de MLA de la campaña seleccionada', async () => {
+    const { service, promotions } = createService([], {
+      results: [
+        {
+          id: 'MLA123',
+          status: 'candidate',
+          price: 20000,
+          promotion_price: 16000,
+        },
+      ],
+      paging: { total: 51, offset: 0, limit: 50 },
+    });
+
+    await expect(
+      service.getCampaignItems(USER_ID, 'P-MLA123', {
+        promotionType: 'MARKETPLACE_CAMPAIGN',
+        limit: 50,
+        offset: 0,
+      }),
+    ).resolves.toEqual({
+      items: [
+        {
+          itemId: 'MLA123',
+          status: 'candidate',
+          price: 20000,
+          promotionPrice: 16000,
+        },
+      ],
+      paging: { total: 51, offset: 0, limit: 50 },
+    });
+    expect(promotions.getCampaignItems).toHaveBeenCalledWith(
+      USER_ID,
+      'P-MLA123',
+      'MARKETPLACE_CAMPAIGN',
+      TOKEN,
+      { limit: 50, offset: 0 },
+    );
+  });
 });
 
-function createService(campaigns: MlPromotion[]) {
+function createService(
+  campaigns: MlPromotion[],
+  campaignItems = { results: [] },
+) {
   const token = {
     getStoredConnection: jest.fn().mockResolvedValue({ seller_id: 42 }),
     getValidAccessToken: jest.fn().mockResolvedValue(TOKEN),
   };
   const promotions = {
     getSellerCampaigns: jest.fn().mockResolvedValue(campaigns),
+    getCampaignItems: jest.fn().mockResolvedValue(campaignItems),
   };
   return {
     promotions,

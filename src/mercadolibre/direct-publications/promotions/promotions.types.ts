@@ -22,6 +22,23 @@ export type MlSellerPromotionsResponse = {
   results: MlPromotion[];
 };
 
+export type MlPromotionCampaignItem = {
+  id?: string;
+  status?: string;
+  price?: number;
+  promotion_price?: number;
+  [key: string]: unknown;
+};
+
+export type MlPromotionCampaignItemsResponse = {
+  results: MlPromotionCampaignItem[];
+  paging?: {
+    total?: number;
+    offset?: number;
+    limit?: number;
+  };
+};
+
 export type MlPromotions = Readonly<{
   active: MlPromotion[];
   candidates: MlPromotion[];
