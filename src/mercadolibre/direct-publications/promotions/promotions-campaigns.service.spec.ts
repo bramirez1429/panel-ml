@@ -71,7 +71,7 @@ describe('PromotionsCampaignsService', () => {
     );
   });
 
-  it('usa maxPromotionPrice para el preview de un DEAL candidate', async () => {
+  it('difiere descuento y neto de un DEAL candidate hasta elegir precio', async () => {
     const { service, fees } = createService(
       [],
       {
@@ -82,8 +82,8 @@ describe('PromotionsCampaignsService', () => {
             original_price: 16999,
             price: 0,
             min_discounted_price: 3399.8,
-            max_discounted_price: 16149.05,
-            suggested_discounted_price: 15639.08,
+            max_discounted_price: 15299.1,
+            suggested_discounted_price: 14449.15,
             meli_percentage: null,
             seller_percentage: null,
             discount_meli_amount: null,
@@ -92,7 +92,6 @@ describe('PromotionsCampaignsService', () => {
         ],
       },
       [item('MLA3842290960')],
-      [{ saleFeeAmount: 4968.1, estimatedNetAmount: 11180.95 }],
     );
 
     const result = await service.getCampaignItems(USER_ID, 'P-MLA17939038', {
@@ -103,24 +102,16 @@ describe('PromotionsCampaignsService', () => {
       itemId: 'MLA3842290960',
       promotionPrice: null,
       minPromotionPrice: 3399.8,
-      maxPromotionPrice: 16149.05,
-      suggestedPromotionPrice: 15639.08,
+      maxPromotionPrice: 15299.1,
+      suggestedPromotionPrice: 14449.15,
       requiresPriceSelection: true,
-      sellerDiscountAmount: 849.95,
+      sellerDiscountAmount: null,
       mercadoLibreBaseContributionAmount: 0,
       mercadoLibreBoostAmount: null,
       mercadoLibreContributionAmount: 0,
-      estimatedNetAmount: 11180.95,
+      estimatedNetAmount: null,
     });
-    expect(fees.getMany).toHaveBeenCalledWith(
-      [
-        expect.objectContaining({
-          itemId: 'MLA3842290960',
-          effectivePrice: 16149.05,
-        }),
-      ],
-      TOKEN,
-    );
+    expect(fees.getMany).not.toHaveBeenCalled();
   });
 
   it('prioriza promotionPrice real sobre maxPromotionPrice en DEAL', async () => {
@@ -132,15 +123,16 @@ describe('PromotionsCampaignsService', () => {
             id: 'MLA3842290960',
             status: 'started',
             original_price: 16999,
-            price: 16000,
+            price: 15000,
             min_discounted_price: 3399.8,
-            max_discounted_price: 16149.05,
-            suggested_discounted_price: 15639.08,
+            max_discounted_price: 15299.1,
+            suggested_discounted_price: 14449.15,
             discount_meli_boost_amount: null,
           },
         ],
       },
       [item('MLA3842290960')],
+      [{ saleFeeAmount: 4000, estimatedNetAmount: 11000 }],
     );
 
     const result = await service.getCampaignItems(USER_ID, 'P-MLA17939038', {
@@ -148,17 +140,18 @@ describe('PromotionsCampaignsService', () => {
     });
 
     expect(result.items[0]).toMatchObject({
-      promotionPrice: 16000,
-      maxPromotionPrice: 16149.05,
-      suggestedPromotionPrice: 15639.08,
+      promotionPrice: 15000,
+      maxPromotionPrice: 15299.1,
+      suggestedPromotionPrice: 14449.15,
       requiresPriceSelection: false,
-      sellerDiscountAmount: 999,
+      sellerDiscountAmount: 1999,
+      estimatedNetAmount: 11000,
     });
     expect(fees.getMany).toHaveBeenCalledWith(
       [
         expect.objectContaining({
           itemId: 'MLA3842290960',
-          effectivePrice: 16000,
+          effectivePrice: 15000,
         }),
       ],
       TOKEN,
@@ -191,20 +184,13 @@ describe('PromotionsCampaignsService', () => {
       promotionPrice: null,
       suggestedPromotionPrice: 14449.15,
       requiresPriceSelection: true,
-      sellerDiscountAmount: 2449.85,
+      sellerDiscountAmount: null,
       mercadoLibreBaseContributionAmount: 0,
       mercadoLibreBoostAmount: 100,
       mercadoLibreContributionAmount: 100,
+      estimatedNetAmount: null,
     });
-    expect(fees.getMany).toHaveBeenCalledWith(
-      [
-        expect.objectContaining({
-          itemId: 'MLA3842290960',
-          effectivePrice: 14449.15,
-        }),
-      ],
-      TOKEN,
-    );
+    expect(fees.getMany).not.toHaveBeenCalled();
   });
 
   it('conserva null para aportes desconocidos en tipos que no son DEAL', async () => {
@@ -612,7 +598,7 @@ describe('PromotionsCampaignsService', () => {
       mercadoLibreContributionAmount: null,
       estimatedNetAmount: null,
     });
-    expect(fees.getMany).toHaveBeenCalledWith([], TOKEN);
+    expect(fees.getMany).not.toHaveBeenCalled();
   });
 
   it('consulta datos dirigidos sÃ³lo para items incompletos de la pÃ¡gina', async () => {

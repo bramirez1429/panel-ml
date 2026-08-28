@@ -123,10 +123,9 @@ export class PromotionsCampaignsService {
         ? toSellingFeeRequest(detail, effectiveCalculationPrice)
         : [];
     });
-    const estimates = await this.sellingFeeService.getMany(
-      feeRequests,
-      accessToken,
-    );
+    const estimates = feeRequests.length
+      ? await this.sellingFeeService.getMany(feeRequests, accessToken)
+      : [];
     const estimateByItemId = new Map(
       feeRequests.map((request, index) => [
         request.itemId,
@@ -287,6 +286,8 @@ function toCampaignItem(
     priceOf(detail);
   const rawPromotionPrice = rawPromotionPriceOf(item, directedPromotion);
   const promotionPrice = rawPromotionPrice === 0 ? null : rawPromotionPrice;
+  const requiresPriceSelection =
+    rawPromotionPrice === null ? null : rawPromotionPrice === 0;
   const suggestedPromotionPrice = guidancePriceOf(
     item,
     directedPromotion,
@@ -297,12 +298,17 @@ function toCampaignItem(
     directedPromotion,
     'max_discounted_price',
   );
-  const effectiveCalculationPrice = selectEffectiveCalculationPrice(
+  const effectiveCalculationPrice = shouldDeferDealFinancials(
     promotionType,
-    promotionPrice,
-    maxPromotionPrice,
-    suggestedPromotionPrice,
-  );
+    requiresPriceSelection,
+  )
+    ? null
+    : selectEffectiveCalculationPrice(
+        promotionType,
+        promotionPrice,
+        maxPromotionPrice,
+        suggestedPromotionPrice,
+      );
   const totalDiscount = discountAmountOf(
     currentPrice,
     effectiveCalculationPrice,
@@ -358,8 +364,7 @@ function toCampaignItem(
       ),
       maxPromotionPrice,
       suggestedPromotionPrice,
-      requiresPriceSelection:
-        rawPromotionPrice === null ? null : rawPromotionPrice === 0,
+      requiresPriceSelection,
       sellerDiscountAmount: sellerDiscount,
       mercadoLibreBaseContributionAmount: baseContribution,
       mercadoLibreBoostAmount: boost,
@@ -405,12 +410,22 @@ function effectiveCalculationPriceOf(
   directedPromotion: MlPromotion | null,
   promotionType: string,
 ): number | null {
+  const rawPromotionPrice = rawPromotionPriceOf(item, directedPromotion);
+  if (shouldDeferDealFinancials(promotionType, rawPromotionPrice === 0))
+    return null;
   return selectEffectiveCalculationPrice(
     promotionType,
     promotionPriceOf(item, directedPromotion),
     guidancePriceOf(item, directedPromotion, 'max_discounted_price'),
     guidancePriceOf(item, directedPromotion, 'suggested_discounted_price'),
   );
+}
+
+function shouldDeferDealFinancials(
+  promotionType: string,
+  requiresPriceSelection: boolean | null,
+): boolean {
+  return promotionType === 'DEAL' && requiresPriceSelection === true;
 }
 
 function selectEffectiveCalculationPrice(
