@@ -27,7 +27,18 @@ export type NormalizedPromotion = Readonly<{
 
 export type PromotionOption = NormalizedPromotion &
   Readonly<{
+    status: string | null;
+    minPromotionPrice: number | null;
+    maxPromotionPrice: number | null;
+    suggestedPromotionPrice: number | null;
+    requiresPriceSelection: boolean | null;
+    sellerDiscountAmount: number | null;
+    mercadoLibreBaseContributionAmount: number | null;
+    mercadoLibreBoostAmount: number | null;
+    mercadoLibreContributionAmount: number | null;
+    estimatedNetAmount: number | null;
     canApply: boolean;
+    canRemove: boolean;
     saleEstimate: Readonly<{
       saleFeeAmount: number;
       estimatedNetAmount: number;

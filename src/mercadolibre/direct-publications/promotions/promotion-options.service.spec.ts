@@ -2,7 +2,10 @@ import type { MercadolibreTokenService } from '../../auth/mercadolibre-token.ser
 import type { ItemsService } from '../items/items.service';
 import type { MlItem } from '../items/items.types';
 
-import type { MercadoLibreSellingFeeService } from './mercadolibre-selling-fee.service';
+import type {
+  MercadoLibreSellingFeeService,
+  SellingFeeRequest,
+} from './mercadolibre-selling-fee.service';
 import { PromotionOptionsService } from './promotion-options.service';
 import type { PromotionsService } from './promotions.service';
 import type { MlPromotions } from './promotions.types';
@@ -68,6 +71,163 @@ describe('PromotionOptionsService', () => {
         saleEstimate: null,
       }),
     ]);
+  });
+
+  it('expone started, candidate y pending con el contrato financiero completo', async () => {
+    const active = {
+      id: 'active-1',
+      ref_id: 'OFFER-1',
+      type: 'DEAL',
+      name: 'Activa',
+      price: 80,
+      original_price: 100,
+      min_discounted_price: 30,
+      max_discounted_price: 90,
+      suggested_discounted_price: 85,
+      discount_meli_boost_amount: 5,
+      start_date: '2026-09-01T00:00:00Z',
+      finish_date: '2026-09-10T23:59:59Z',
+    };
+    const candidate = {
+      id: 'candidate-1',
+      offer_id: 'CANDIDATE-1',
+      type: 'DEAL',
+      name: 'Disponible',
+      price: 0,
+      original_price: 100,
+      min_discounted_price: 30,
+      max_discounted_price: 90,
+      suggested_discounted_price: 85,
+      discount_meli_boost_amount: 5,
+      start_date: '2026-09-11T00:00:00Z',
+      finish_date: '2026-09-20T23:59:59Z',
+    };
+    const pending = {
+      id: 'pending-1',
+      type: 'SELLER_CAMPAIGN',
+      name: 'Programada',
+      price: 90,
+      original_price: 100,
+      meli_percentage: 20,
+      seller_percentage: 80,
+      discount_meli_boost_amount: 0,
+      start_date: '2026-09-21T00:00:00Z',
+      finish_date: '2026-09-30T23:59:59Z',
+    };
+    const groupedPromotions = {
+      active: [active],
+      candidates: [candidate],
+      pending: [pending],
+      all: [active, candidate, pending],
+    } satisfies MlPromotions;
+    const promotions = {
+      getPromotions: jest.fn().mockResolvedValue(groupedPromotions),
+    };
+    const fees = {
+      getMany: jest.fn().mockResolvedValue([
+        { saleFeeAmount: 10, estimatedNetAmount: 70 },
+        { saleFeeAmount: 9, estimatedNetAmount: 81 },
+      ]),
+    };
+    const service = createService(promotions, fees);
+
+    const result = await service.getOptions(USER_ID, ITEM_ID);
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        id: 'active-1',
+        offerId: 'OFFER-1',
+        type: 'DEAL',
+        name: 'Activa',
+        status: 'started',
+        originalPrice: 100,
+        promotionPrice: 80,
+        minPromotionPrice: 30,
+        maxPromotionPrice: 90,
+        suggestedPromotionPrice: 85,
+        requiresPriceSelection: false,
+        sellerDiscountAmount: 15,
+        mercadoLibreBaseContributionAmount: 0,
+        mercadoLibreBoostAmount: 5,
+        mercadoLibreContributionAmount: 5,
+        estimatedNetAmount: 70,
+        startDate: '2026-09-01T00:00:00Z',
+        finishDate: '2026-09-10T23:59:59Z',
+        canApply: false,
+        canRemove: true,
+        saleEstimate: { saleFeeAmount: 10, estimatedNetAmount: 70 },
+      }),
+      expect.objectContaining({
+        id: 'candidate-1',
+        offerId: 'CANDIDATE-1',
+        status: 'candidate',
+        promotionPrice: null,
+        minPromotionPrice: 30,
+        maxPromotionPrice: 90,
+        suggestedPromotionPrice: 85,
+        requiresPriceSelection: true,
+        sellerDiscountAmount: null,
+        mercadoLibreBaseContributionAmount: 0,
+        mercadoLibreBoostAmount: 5,
+        mercadoLibreContributionAmount: 5,
+        estimatedNetAmount: null,
+        canApply: true,
+        canRemove: false,
+        saleEstimate: null,
+      }),
+      expect.objectContaining({
+        id: 'pending-1',
+        status: 'pending',
+        promotionPrice: 90,
+        requiresPriceSelection: false,
+        sellerDiscountAmount: 8,
+        mercadoLibreBaseContributionAmount: 2,
+        mercadoLibreBoostAmount: 0,
+        mercadoLibreContributionAmount: 2,
+        estimatedNetAmount: 81,
+        canApply: false,
+        canRemove: false,
+        saleEstimate: { saleFeeAmount: 9, estimatedNetAmount: 81 },
+      }),
+    ]);
+    const feeCalls = fees.getMany.mock.calls as unknown as Array<
+      [SellingFeeRequest[], string]
+    >;
+    expect(feeCalls).toHaveLength(1);
+    expect(
+      feeCalls[0]?.[0].map(({ effectivePrice }) => effectivePrice),
+    ).toEqual([80, 90]);
+  });
+
+  it('no consulta fees cuando la unica opcion es candidate con price cero', async () => {
+    const candidate = {
+      id: 'candidate-1',
+      type: 'DEAL',
+      status: 'candidate',
+      price: 0,
+      original_price: 100,
+      suggested_discounted_price: 85,
+    };
+    const promotions = {
+      getPromotions: jest.fn().mockResolvedValue({
+        active: [],
+        candidates: [candidate],
+        pending: [],
+        all: [candidate],
+      } satisfies MlPromotions),
+    };
+    const fees = { getMany: jest.fn() };
+    const service = createService(promotions, fees);
+
+    const result = await service.getOptions(USER_ID, ITEM_ID);
+
+    expect(result[0]).toMatchObject({
+      promotionPrice: null,
+      requiresPriceSelection: true,
+      sellerDiscountAmount: null,
+      estimatedNetAmount: null,
+    });
+    expect(fees.getMany).not.toHaveBeenCalled();
   });
 });
 

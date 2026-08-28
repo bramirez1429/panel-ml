@@ -6,6 +6,7 @@ import { ItemsService } from '../items/items.service';
 import type { MlItem } from '../items/items.types';
 
 import type { PromotionCampaign } from './promotions-campaigns.types';
+import { normalizePromotionFinancialPreview } from './promotion-financial-preview';
 import type {
   PromotionDiagnostic,
   PromotionDiagnosticEntry,
@@ -285,69 +286,43 @@ function toCampaignItem(
     firstFinite(item.original_price, directedPromotion?.original_price) ??
     priceOf(detail);
   const rawPromotionPrice = rawPromotionPriceOf(item, directedPromotion);
-  const promotionPrice = rawPromotionPrice === 0 ? null : rawPromotionPrice;
-  const requiresPriceSelection =
-    rawPromotionPrice === null ? null : rawPromotionPrice === 0;
-  const suggestedPromotionPrice = guidancePriceOf(
-    item,
-    directedPromotion,
-    'suggested_discounted_price',
-  );
-  const maxPromotionPrice = guidancePriceOf(
-    item,
-    directedPromotion,
-    'max_discounted_price',
-  );
-  const effectiveCalculationPrice = shouldDeferDealFinancials(
+  const financialPreview = normalizePromotionFinancialPreview({
     promotionType,
-    requiresPriceSelection,
-  )
-    ? null
-    : selectEffectiveCalculationPrice(
-        promotionType,
-        promotionPrice,
-        maxPromotionPrice,
-        suggestedPromotionPrice,
-      );
-  const totalDiscount = discountAmountOf(
     currentPrice,
-    effectiveCalculationPrice,
-  );
-  const baseContribution =
-    promotionType === 'DEAL'
-      ? 0
-      : (firstFinite(
-          item.discount_meli_amount,
-          directedPromotion?.discount_meli_amount,
-        ) ??
-        percentageAmount(
-          totalDiscount,
-          firstFinite(item.meli_percentage, directedPromotion?.meli_percentage),
-        ));
-  const boost = firstFinite(
-    item.discount_meli_boost_amount,
-    directedPromotion?.discount_meli_boost_amount,
-  );
-  const contribution = contributionOf(baseContribution, boost);
-  const sellerDiscount =
-    promotionType === 'DEAL'
-      ? dealSellerDiscountOf(
-          currentPrice,
-          effectiveCalculationPrice,
-          contribution,
-        )
-      : (percentageAmount(
-          totalDiscount,
-          firstFinite(
-            item.seller_percentage,
-            directedPromotion?.seller_percentage,
-          ),
-        ) ??
-        sellerDiscountOf(
-          currentPrice,
-          effectiveCalculationPrice,
-          contribution,
-        ));
+    rawPromotionPrice,
+    minPromotionPrice: guidancePriceOf(
+      item,
+      directedPromotion,
+      'min_discounted_price',
+    ),
+    maxPromotionPrice: guidancePriceOf(
+      item,
+      directedPromotion,
+      'max_discounted_price',
+    ),
+    suggestedPromotionPrice: guidancePriceOf(
+      item,
+      directedPromotion,
+      'suggested_discounted_price',
+    ),
+    meliPercentage: firstFinite(
+      item.meli_percentage,
+      directedPromotion?.meli_percentage,
+    ),
+    sellerPercentage: firstFinite(
+      item.seller_percentage,
+      directedPromotion?.seller_percentage,
+    ),
+    discountMeliAmount: firstFinite(
+      item.discount_meli_amount,
+      directedPromotion?.discount_meli_amount,
+    ),
+    discountMeliBoostAmount: firstFinite(
+      item.discount_meli_boost_amount,
+      directedPromotion?.discount_meli_boost_amount,
+    ),
+    deferFinancialsWhenPriceSelectionRequired: promotionType === 'DEAL',
+  });
   return [
     {
       itemId,
@@ -356,19 +331,17 @@ function toCampaignItem(
       status,
       eligible: status === null ? null : status === 'candidate',
       currentPrice,
-      promotionPrice,
-      minPromotionPrice: guidancePriceOf(
-        item,
-        directedPromotion,
-        'min_discounted_price',
-      ),
-      maxPromotionPrice,
-      suggestedPromotionPrice,
-      requiresPriceSelection,
-      sellerDiscountAmount: sellerDiscount,
-      mercadoLibreBaseContributionAmount: baseContribution,
-      mercadoLibreBoostAmount: boost,
-      mercadoLibreContributionAmount: contribution,
+      promotionPrice: financialPreview.promotionPrice,
+      minPromotionPrice: financialPreview.minPromotionPrice,
+      maxPromotionPrice: financialPreview.maxPromotionPrice,
+      suggestedPromotionPrice: financialPreview.suggestedPromotionPrice,
+      requiresPriceSelection: financialPreview.requiresPriceSelection,
+      sellerDiscountAmount: financialPreview.sellerDiscountAmount,
+      mercadoLibreBaseContributionAmount:
+        financialPreview.mercadoLibreBaseContributionAmount,
+      mercadoLibreBoostAmount: financialPreview.mercadoLibreBoostAmount,
+      mercadoLibreContributionAmount:
+        financialPreview.mercadoLibreContributionAmount,
       estimatedNetAmount: estimate?.estimatedNetAmount ?? null,
     },
   ];
@@ -465,61 +438,6 @@ function billableWeightOf(item: MlItem): number | null {
     positiveFiniteNumber(weightedItem.billable_weight) ??
     positiveFiniteNumber(weightedItem.shipping?.billable_weight)
   );
-}
-
-function contributionOf(
-  baseContribution: number | null,
-  boost: number | null,
-): number | null {
-  if (baseContribution === null && boost === null) return null;
-  return (baseContribution ?? 0) + (boost ?? 0);
-}
-
-function discountAmountOf(
-  currentPrice: number | null,
-  promotionPrice: number | null,
-): number | null {
-  if (currentPrice === null || promotionPrice === null) return null;
-  const discount = currentPrice - promotionPrice;
-  return discount >= 0 ? discount : null;
-}
-
-function percentageAmount(
-  amount: number | null,
-  percentage: number | null,
-): number | null {
-  if (
-    amount === null ||
-    percentage === null ||
-    percentage < 0 ||
-    percentage > 100
-  )
-    return null;
-  return Math.round(amount * percentage) / 100;
-}
-
-function sellerDiscountOf(
-  currentPrice: number | null,
-  promotionPrice: number | null,
-  contribution: number | null,
-): number | null {
-  if (currentPrice === null || promotionPrice === null || contribution === null)
-    return null;
-  const amount = currentPrice - promotionPrice - contribution;
-  return amount >= 0 ? amount : null;
-}
-
-function dealSellerDiscountOf(
-  currentPrice: number | null,
-  effectiveCalculationPrice: number | null,
-  contribution: number | null,
-): number | null {
-  const amount = sellerDiscountOf(
-    currentPrice,
-    effectiveCalculationPrice,
-    contribution,
-  );
-  return amount === null ? null : Math.round(amount * 100) / 100;
 }
 
 function normalizePaging(
