@@ -137,6 +137,7 @@ export class PromotionsCampaignsService {
       items: response.results.flatMap((item) =>
         toCampaignItem(
           item,
+          promotionType,
           directedPromotions.get(item.id ?? '') ?? null,
           detailsById.get(item.id ?? '') ?? null,
           estimateByItemId.get(item.id ?? '') ?? null,
@@ -272,6 +273,7 @@ function requiredText(value: unknown, message: string): string {
 
 function toCampaignItem(
   item: MlPromotionCampaignItem,
+  promotionType: string,
   directedPromotion: MlPromotion | null,
   detail: MlItem | null,
   estimate: Readonly<{ estimatedNetAmount: number }> | null,
@@ -295,25 +297,40 @@ function toCampaignItem(
     effectiveCalculationPrice,
   );
   const baseContribution =
-    firstFinite(
-      item.discount_meli_amount,
-      directedPromotion?.discount_meli_amount,
-    ) ??
-    percentageAmount(
-      totalDiscount,
-      firstFinite(item.meli_percentage, directedPromotion?.meli_percentage),
-    );
+    promotionType === 'DEAL'
+      ? 0
+      : (firstFinite(
+          item.discount_meli_amount,
+          directedPromotion?.discount_meli_amount,
+        ) ??
+        percentageAmount(
+          totalDiscount,
+          firstFinite(item.meli_percentage, directedPromotion?.meli_percentage),
+        ));
   const boost = firstFinite(
     item.discount_meli_boost_amount,
     directedPromotion?.discount_meli_boost_amount,
   );
   const contribution = contributionOf(baseContribution, boost);
   const sellerDiscount =
-    percentageAmount(
-      totalDiscount,
-      firstFinite(item.seller_percentage, directedPromotion?.seller_percentage),
-    ) ??
-    sellerDiscountOf(currentPrice, effectiveCalculationPrice, contribution);
+    promotionType === 'DEAL'
+      ? dealSellerDiscountOf(
+          currentPrice,
+          effectiveCalculationPrice,
+          contribution,
+        )
+      : (percentageAmount(
+          totalDiscount,
+          firstFinite(
+            item.seller_percentage,
+            directedPromotion?.seller_percentage,
+          ),
+        ) ??
+        sellerDiscountOf(
+          currentPrice,
+          effectiveCalculationPrice,
+          contribution,
+        ));
   return [
     {
       itemId,
@@ -439,6 +456,19 @@ function sellerDiscountOf(
     return null;
   const amount = currentPrice - promotionPrice - contribution;
   return amount >= 0 ? amount : null;
+}
+
+function dealSellerDiscountOf(
+  currentPrice: number | null,
+  effectiveCalculationPrice: number | null,
+  contribution: number | null,
+): number | null {
+  const amount = sellerDiscountOf(
+    currentPrice,
+    effectiveCalculationPrice,
+    contribution,
+  );
+  return amount === null ? null : Math.round(amount * 100) / 100;
 }
 
 function normalizePaging(

@@ -68,6 +68,123 @@ describe('PromotionsCampaignsService', () => {
     );
   });
 
+  it('normaliza el preview financiero de un DEAL candidate con sugerencia', async () => {
+    const { service, fees } = createService(
+      [],
+      {
+        results: [
+          {
+            id: 'MLA3842290960',
+            status: 'candidate',
+            original_price: 16999,
+            price: 0,
+            min_discounted_price: null,
+            max_discounted_price: null,
+            suggested_discounted_price: 14449.15,
+            meli_percentage: null,
+            seller_percentage: null,
+            discount_meli_amount: null,
+            discount_meli_boost_amount: null,
+          },
+        ],
+      },
+      [item('MLA3842290960')],
+      [{ saleFeeAmount: 3268.2, estimatedNetAmount: 11180.95 }],
+    );
+
+    const result = await service.getCampaignItems(USER_ID, 'P-MLA17939038', {
+      promotionType: 'DEAL',
+    });
+
+    expect(result.items[0]).toMatchObject({
+      itemId: 'MLA3842290960',
+      promotionPrice: null,
+      suggestedPromotionPrice: 14449.15,
+      requiresPriceSelection: true,
+      sellerDiscountAmount: 2549.85,
+      mercadoLibreBaseContributionAmount: 0,
+      mercadoLibreBoostAmount: null,
+      mercadoLibreContributionAmount: 0,
+      estimatedNetAmount: 11180.95,
+    });
+    expect(fees.getMany).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          itemId: 'MLA3842290960',
+          effectivePrice: 14449.15,
+        }),
+      ],
+      TOKEN,
+    );
+  });
+
+  it('resta un boost real del descuento vendedor de un DEAL', async () => {
+    const { service } = createService(
+      [],
+      {
+        results: [
+          {
+            id: 'MLA3842290960',
+            status: 'candidate',
+            original_price: 16999,
+            price: 0,
+            suggested_discounted_price: 14449.15,
+            discount_meli_boost_amount: 100,
+          },
+        ],
+      },
+      [item('MLA3842290960')],
+    );
+
+    const result = await service.getCampaignItems(USER_ID, 'P-MLA17939038', {
+      promotionType: 'DEAL',
+    });
+
+    expect(result.items[0]).toMatchObject({
+      promotionPrice: null,
+      suggestedPromotionPrice: 14449.15,
+      sellerDiscountAmount: 2449.85,
+      mercadoLibreBaseContributionAmount: 0,
+      mercadoLibreBoostAmount: 100,
+      mercadoLibreContributionAmount: 100,
+    });
+  });
+
+  it('conserva null para aportes desconocidos en tipos que no son DEAL', async () => {
+    const { service } = createService(
+      [],
+      {
+        results: [
+          {
+            id: 'MLA3842290960',
+            status: 'candidate',
+            original_price: 16999,
+            price: 0,
+            suggested_discounted_price: 14449.15,
+            meli_percentage: null,
+            seller_percentage: null,
+            discount_meli_amount: null,
+            discount_meli_boost_amount: null,
+          },
+        ],
+      },
+      [item('MLA3842290960')],
+    );
+
+    const result = await service.getCampaignItems(USER_ID, 'P-OTHER', {
+      promotionType: 'MARKETPLACE_CAMPAIGN',
+    });
+
+    expect(result.items[0]).toMatchObject({
+      promotionPrice: null,
+      suggestedPromotionPrice: 14449.15,
+      sellerDiscountAmount: null,
+      mercadoLibreBaseContributionAmount: null,
+      mercadoLibreBoostAmount: null,
+      mercadoLibreContributionAmount: null,
+    });
+  });
+
   it('usa las campañas globales del seller autenticado', async () => {
     const { service, promotions } = createService([campaign('C-1', 'started')]);
 

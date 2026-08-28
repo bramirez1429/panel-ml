@@ -11,10 +11,10 @@ export type MlPromotion = {
   min_discounted_price?: number | null;
   max_discounted_price?: number | null;
   suggested_discounted_price?: number | null;
-  meli_percentage?: number;
-  seller_percentage?: number;
-  discount_meli_amount?: number;
-  discount_meli_boost_amount?: number;
+  meli_percentage?: number | null;
+  seller_percentage?: number | null;
+  discount_meli_amount?: number | null;
+  discount_meli_boost_amount?: number | null;
 
   start_date?: string;
   finish_date?: string;
@@ -38,10 +38,10 @@ export type MlPromotionCampaignItem = {
   min_discounted_price?: number | null;
   max_discounted_price?: number | null;
   suggested_discounted_price?: number | null;
-  meli_percentage?: number;
-  seller_percentage?: number;
-  discount_meli_amount?: number;
-  discount_meli_boost_amount?: number;
+  meli_percentage?: number | null;
+  seller_percentage?: number | null;
+  discount_meli_amount?: number | null;
+  discount_meli_boost_amount?: number | null;
   [key: string]: unknown;
 };
 
