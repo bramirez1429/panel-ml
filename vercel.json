@@ -10,6 +10,16 @@
           "initialDelaySeconds": 0
         }
       ]
+    },
+    "api/queues/mercadolibre-promotion-bulk.ts": {
+      "experimentalTriggers": [
+        {
+          "type": "queue/v2beta",
+          "topic": "mercadolibre-promotion-bulk",
+          "retryAfterSeconds": 60,
+          "initialDelaySeconds": 0
+        }
+      ]
     }
   }
 }

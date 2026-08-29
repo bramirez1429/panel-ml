@@ -278,6 +278,74 @@ type SyncJobInsert = {
   updated_at?: string;
 };
 
+type PromotionBulkJobStatus =
+  'QUEUED' | 'PROCESSING' | 'COMPLETED' | 'COMPLETED_WITH_ERRORS';
+
+type PromotionBulkJobRow = {
+  id: string;
+  user_id: string;
+  seller_id: number;
+  status: PromotionBulkJobStatus;
+  total_items: number;
+  processed_items: number;
+  successful_items: number;
+  failed_items: number;
+  locked_at: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type PromotionBulkJobInsert = {
+  id?: string;
+  user_id: string;
+  seller_id: number;
+  status?: PromotionBulkJobStatus;
+  total_items: number;
+  processed_items?: number;
+  successful_items?: number;
+  failed_items?: number;
+  locked_at?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+type PromotionBulkItemStatus =
+  'QUEUED' | 'PROCESSING' | 'SCHEDULED' | 'ACTIVE' | 'ERROR';
+
+type PromotionBulkJobItemRow = {
+  id: string;
+  job_id: string;
+  position: number;
+  item_id: string;
+  request: Json;
+  status: PromotionBulkItemStatus;
+  error_code: string | null;
+  provider_message: string | null;
+  processing_started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type PromotionBulkJobItemInsert = {
+  id?: string;
+  job_id: string;
+  position: number;
+  item_id: string;
+  request: Json;
+  status?: PromotionBulkItemStatus;
+  error_code?: string | null;
+  provider_message?: string | null;
+  processing_started_at?: string | null;
+  finished_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -376,6 +444,14 @@ export type Database = {
         ]
       >;
       mercadolibre_sync_jobs: Table<SyncJobRow, SyncJobInsert>;
+      mercadolibre_promotion_bulk_jobs: Table<
+        PromotionBulkJobRow,
+        PromotionBulkJobInsert
+      >;
+      mercadolibre_promotion_bulk_job_items: Table<
+        PromotionBulkJobItemRow,
+        PromotionBulkJobItemInsert
+      >;
     };
     Views: Record<string, never>;
     Functions: {
@@ -409,6 +485,22 @@ export type Database = {
           p_state_hash: string;
           p_user_id: string;
           p_browser_binding_hash: string;
+        };
+        Returns: boolean;
+      };
+      create_mercadolibre_promotion_bulk_job: {
+        Args: {
+          p_job_id: string;
+          p_user_id: string;
+          p_seller_id: number;
+          p_items: Json;
+        };
+        Returns: string;
+      };
+      claim_mercadolibre_promotion_bulk_job: {
+        Args: {
+          p_job_id: string;
+          p_stale_before: string;
         };
         Returns: boolean;
       };

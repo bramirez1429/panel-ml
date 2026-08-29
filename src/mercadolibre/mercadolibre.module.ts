@@ -63,6 +63,9 @@ import { PublicationPromotionExecutorService } from './direct-publications/promo
 import { PublicationPromotionPreflightService } from './direct-publications/promotions/publication-promotion-preflight.service';
 import { PublicationPromotionSourceService } from './direct-publications/promotions/publication-promotion-source.service';
 import { PublicationPromotionService } from './direct-publications/promotions/publication-promotion.service';
+import { PromotionBulkJobRepository } from './direct-publications/promotions/promotion-bulk-job.repository';
+import { PromotionBulkJobService } from './direct-publications/promotions/promotion-bulk-job.service';
+import { PromotionBulkJobQueue } from './direct-publications/promotions/promotion-bulk-job.queue';
 import { StockService } from './direct-publications/stock/stock.service';
 import { SkuService } from './direct-publications/sku/sku.service';
 import { PicturesService } from './direct-publications/pictures/pictures.service';
@@ -148,6 +151,9 @@ import { ShippingController } from './direct-publications/shipping/shipping.cont
     PublicationPromotionPreflightService,
     PublicationPromotionExecutorService,
     PublicationPromotionService,
+    PromotionBulkJobRepository,
+    PromotionBulkJobService,
+    PromotionBulkJobQueue,
   ],
   exports: [
     MercadolibreProductsRepository,
