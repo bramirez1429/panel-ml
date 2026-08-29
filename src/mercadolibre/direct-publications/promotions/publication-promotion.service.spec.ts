@@ -93,6 +93,76 @@ describe('PublicationPromotionService', () => {
     });
   });
 
+  it('declara failure y conserva el error real cuando falla el unico MLA', async () => {
+    const dependencies = createService(1, 1);
+    dependencies.executor.apply.mockResolvedValueOnce({
+      itemId: 'MLA1',
+      success: false,
+      stage: 'APPLICATION',
+      errorCode: 'PROMOTION_APPLICATION_FAILED',
+    });
+
+    const result = await dependencies.service.apply(
+      'user',
+      'item:MLA1',
+      REQUEST,
+    );
+
+    expect(result).toEqual({
+      success: false,
+      status: 'FAILURE',
+      errorCode: 'PROMOTION_APPLICATION_FAILED',
+      totalItems: 1,
+      successfulItems: 0,
+      failedItems: 1,
+      results: [
+        {
+          itemId: 'MLA1',
+          success: false,
+          stage: 'APPLICATION',
+          errorCode: 'PROMOTION_APPLICATION_FAILED',
+        },
+      ],
+    });
+  });
+
+  it('declara failure cuando fallan varios MLA y usa el primer error real', async () => {
+    const dependencies = createService(3, 3);
+    dependencies.executor.apply
+      .mockResolvedValueOnce({
+        itemId: 'MLA1',
+        success: false,
+        stage: 'APPLICATION_VERIFICATION',
+        errorCode: 'PROMOTION_VERIFICATION_FAILED',
+      })
+      .mockResolvedValueOnce({
+        itemId: 'MLA2',
+        success: false,
+        stage: 'APPLICATION',
+        errorCode: 'PROMOTION_APPLICATION_FAILED',
+      })
+      .mockResolvedValueOnce({
+        itemId: 'MLA3',
+        success: false,
+        stage: 'APPLICATION',
+      });
+
+    const result = await dependencies.service.apply(
+      'user',
+      'family:123',
+      REQUEST,
+    );
+
+    expect(result).toMatchObject({
+      success: false,
+      status: 'FAILURE',
+      errorCode: 'PROMOTION_VERIFICATION_FAILED',
+      totalItems: 3,
+      successfulItems: 0,
+      failedItems: 3,
+    });
+  });
+
   it('limita las escrituras FAMILY a tres MLA simultáneos', async () => {
     const dependencies = createService(8, 8);
     let active = 0;

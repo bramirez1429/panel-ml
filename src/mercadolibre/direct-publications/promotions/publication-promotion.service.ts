@@ -123,12 +123,24 @@ export class PublicationPromotionService {
 function summarize(results: PromotionItemResult[]): PublicationPromotionResult {
   const successfulItems = results.filter((result) => result.success).length;
   const failedItems = results.length - successfulItems;
+  const status =
+    failedItems === 0
+      ? 'SUCCESS'
+      : successfulItems === 0
+        ? 'FAILURE'
+        : 'PARTIAL_FAILURE';
+  const firstFailure = results.find((result) => !result.success);
   return {
     success: failedItems === 0,
-    status: failedItems === 0 ? 'SUCCESS' : 'PARTIAL_FAILURE',
-    ...(failedItems === 0
-      ? {}
-      : { errorCode: 'PROMOTION_PARTIAL_FAILURE' as const }),
+    status,
+    ...(status === 'PARTIAL_FAILURE'
+      ? { errorCode: 'PROMOTION_PARTIAL_FAILURE' as const }
+      : status === 'FAILURE'
+        ? {
+            errorCode:
+              firstFailure?.errorCode ?? 'PROMOTION_APPLICATION_FAILED',
+          }
+        : {}),
     totalItems: results.length,
     successfulItems,
     failedItems,

@@ -67,8 +67,8 @@ export type PromotionItemResult = Readonly<{
 
 export type PublicationPromotionResult = Readonly<{
   success: boolean;
-  status: 'SUCCESS' | 'PARTIAL_FAILURE';
-  errorCode?: 'PROMOTION_PARTIAL_FAILURE';
+  status: 'SUCCESS' | 'PARTIAL_FAILURE' | 'FAILURE';
+  errorCode?: PromotionErrorCode;
   totalItems: number;
   successfulItems: number;
   failedItems: number;
