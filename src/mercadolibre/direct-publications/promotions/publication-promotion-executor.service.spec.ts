@@ -45,6 +45,7 @@ describe('PublicationPromotionExecutorService', () => {
       itemId: 'MLA1',
       success: true,
       stage: 'COMPLETED',
+      promotionStatus: 'started',
     });
     expect(dependencies.application.apply).toHaveBeenCalledTimes(1);
     expect(dependencies.application.apply).toHaveBeenCalledWith(
@@ -54,6 +55,39 @@ describe('PublicationPromotionExecutorService', () => {
       { timeoutMs: 30_000 },
     );
   });
+
+  it('confirma pending como scheduled sin exigir started', async () => {
+    const pending = { ...ACTIVE, status: 'pending' };
+    const dependencies = createExecutor([
+      state([], [CANDIDATE]),
+      state([], [CANDIDATE]),
+      state([], [], [pending]),
+    ]);
+
+    const result = await dependencies.service.apply(context());
+
+    expect(result).toMatchObject({
+      success: true,
+      promotionStatus: 'pending',
+    });
+  });
+
+  it.each([
+    ['pending', [], [{ ...ACTIVE, status: 'pending' }]],
+    ['started', [ACTIVE], []],
+  ] as const)(
+    'es idempotente cuando la promoción ya está %s',
+    async (promotionStatus, active, pending) => {
+      const dependencies = createExecutor([
+        state([...active], [], [...pending]),
+      ]);
+
+      const result = await dependencies.service.apply(context());
+
+      expect(result).toMatchObject({ success: true, promotionStatus });
+      expect(dependencies.application.apply).not.toHaveBeenCalled();
+    },
+  );
 
   it('elimina una promoción LEGACY y verifica el estado final', async () => {
     const dependencies = createExecutor([state([PREVIOUS], []), state([], [])]);
@@ -69,6 +103,35 @@ describe('PublicationPromotionExecutorService', () => {
       { timeoutMs: 30_000 },
     );
   });
+
+  it.each([
+    ['pending', [], [{ ...PREVIOUS, status: 'pending' }]],
+    ['started', [PREVIOUS], []],
+  ] as const)(
+    'elimina exactamente una promoción %s',
+    async (_status, active, pending) => {
+      const selected = active[0] ?? pending[0];
+      const dependencies = createExecutor([
+        state([...active], [], [...pending]),
+        state([], [], []),
+      ]);
+
+      const result = await dependencies.service.removeSelected(
+        'user',
+        'token',
+        RESOLVED,
+        { type: 'DEAL', promotionId: 'old', offerId: null },
+      );
+
+      expect(result.success).toBe(true);
+      expect(dependencies.removal.removePromotion).toHaveBeenCalledWith(
+        'user',
+        RESOLVED.publication,
+        selected,
+        { timeoutMs: 30_000 },
+      );
+    },
+  );
 
   it('considera success una eliminación ya inactiva', async () => {
     const dependencies = createExecutor([state([], [])]);
@@ -217,8 +280,13 @@ function context() {
   };
 }
 
-function state(active: object[], candidates: object[]) {
-  return { active, candidates, pending: [], all: [...active, ...candidates] };
+function state(active: object[], candidates: object[], pending: object[] = []) {
+  return {
+    active,
+    candidates,
+    pending,
+    all: [...active, ...candidates, ...pending],
+  };
 }
 
 function createExecutor(

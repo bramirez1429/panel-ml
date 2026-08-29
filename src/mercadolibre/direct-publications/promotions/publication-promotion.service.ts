@@ -12,6 +12,7 @@ import type {
   PublicationPromotionPreview,
   PublicationPromotionResult,
   PromotionItemResult,
+  PromotionRemovalSelection,
   ResolvedPromotionSource,
 } from './publication-promotion.types';
 
@@ -75,6 +76,26 @@ export class PublicationPromotionService {
       WRITE_CONCURRENCY,
       (resolvedItem) =>
         this.executorService.remove(userId, source.accessToken, resolvedItem),
+    );
+    return summarize(results);
+  }
+
+  async removeSelected(
+    userId: string,
+    sourceKey: string,
+    selection: PromotionRemovalSelection,
+  ): Promise<PublicationPromotionResult> {
+    const source = await this.resolve(userId, sourceKey);
+    const results = await mapWithConcurrency(
+      source.items,
+      WRITE_CONCURRENCY,
+      (resolvedItem) =>
+        this.executorService.removeSelected(
+          userId,
+          source.accessToken,
+          resolvedItem,
+          selection,
+        ),
     );
     return summarize(results);
   }

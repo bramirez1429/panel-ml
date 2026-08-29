@@ -2,7 +2,10 @@ import { Injectable } from '@nestjs/common';
 
 import { mapWithConcurrency } from '../../publications/sync/publication-sync.helpers';
 
-import { findRequestedCandidate } from './promotion-candidate.helpers';
+import {
+  findRequestedCandidate,
+  promotionMatchesRequest,
+} from './promotion-candidate.helpers';
 import type { PromotionSwitchRequest } from './promotion-manager.types';
 import {
   promotionSnapshot,
@@ -36,9 +39,16 @@ export class PublicationPromotionPreflightService {
         const candidate = request
           ? findRequestedCandidate(promotions.candidates, request)
           : null;
+        const alreadyParticipating = request
+          ? ([...promotions.active, ...promotions.pending].find((promotion) =>
+              promotionMatchesRequest(promotion, request),
+            ) ?? null)
+          : null;
         const applicable = request
-          ? candidate !== null
-          : promotions.active.every(canRemovePromotion);
+          ? candidate !== null || alreadyParticipating !== null
+          : [...promotions.active, ...promotions.pending].every(
+              canRemovePromotion,
+            );
         return {
           itemId: item.id,
           price:
@@ -49,7 +59,11 @@ export class PublicationPromotionPreflightService {
             ? promotionSnapshot(promotions.active[0])
             : null,
           candidates: promotions.candidates.map(promotionSnapshot),
-          requestedCandidate: candidate ? promotionSnapshot(candidate) : null,
+          requestedCandidate: candidate
+            ? promotionSnapshot(candidate)
+            : alreadyParticipating
+              ? promotionSnapshot(alreadyParticipating)
+              : null,
           applicable,
           unavailableReason: applicable
             ? null

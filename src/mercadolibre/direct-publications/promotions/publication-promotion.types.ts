@@ -64,6 +64,7 @@ export type PromotionItemResult = Readonly<{
   stage: PromotionExecutionStage;
   errorCode?: PromotionErrorCode;
   providerMessage?: string;
+  promotionStatus?: 'pending' | 'started';
 }>;
 
 export type PublicationPromotionResult = Readonly<{
@@ -82,6 +83,12 @@ export type PromotionExecutionContext = Readonly<{
   accessToken: string;
   resolvedItem: ResolvedPromotionItem;
   request: PromotionSwitchRequest;
+}>;
+
+export type PromotionRemovalSelection = Readonly<{
+  type: string;
+  promotionId: string | null;
+  offerId: string | null;
 }>;
 
 export function promotionSnapshot(

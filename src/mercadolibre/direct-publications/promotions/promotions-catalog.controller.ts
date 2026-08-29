@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  ParseUUIDPipe,
   Post,
   Query,
   UseGuards,
@@ -18,6 +19,10 @@ import { PromotionsCampaignItemsQueryDto } from './promotions-campaign-items-que
 import { PromotionsCampaignsService } from './promotions-campaigns.service';
 import { PromotionsCatalogService } from './promotions-catalog.service';
 import { PromotionOptionsService } from './promotion-options.service';
+import { PromotionBulkJobQueue } from './promotion-bulk-job.queue';
+import { parsePromotionBulkJobRequest } from './promotion-bulk-job.request';
+import { PromotionBulkJobService } from './promotion-bulk-job.service';
+import { parsePromotionRemovalSelection } from './promotion-removal-request';
 import { parsePromotionRequest } from './publication-promotion-request';
 import { PublicationPromotionService } from './publication-promotion.service';
 import { PromotionRemovalService } from './promotion-removal.service';
@@ -34,6 +39,8 @@ export class PromotionsCatalogController {
     private readonly removalService: PromotionRemovalService,
     private readonly selectionService: PromotionSelectionService,
     private readonly publicationPromotionService: PublicationPromotionService,
+    private readonly bulkJobService: PromotionBulkJobService,
+    private readonly bulkJobQueue: PromotionBulkJobQueue,
   ) {}
 
   @Get()
@@ -93,11 +100,37 @@ export class PromotionsCatalogController {
   }
 
   @Delete('publicacion/:sourceKey')
-  removePublication(
+  async removePublication(
     @CurrentUser() user: SafeUser,
     @Param('sourceKey') sourceKey: string,
+    @Query() query: unknown,
   ) {
-    return this.publicationPromotionService.remove(user.id, sourceKey);
+    const selection = parsePromotionRemovalSelection(query);
+    return selection
+      ? this.publicationPromotionService.removeSelected(
+          user.id,
+          sourceKey,
+          selection,
+        )
+      : this.publicationPromotionService.remove(user.id, sourceKey);
+  }
+
+  @Post('bulk/jobs')
+  async startBulkJob(@CurrentUser() user: SafeUser, @Body() body: unknown) {
+    const result = await this.bulkJobService.start(
+      user.id,
+      parsePromotionBulkJobRequest(body),
+    );
+    await this.bulkJobQueue.enqueue({ userId: user.id, jobId: result.jobId });
+    return result;
+  }
+
+  @Get('bulk/jobs/:jobId')
+  getBulkJob(
+    @CurrentUser() user: SafeUser,
+    @Param('jobId', ParseUUIDPipe) jobId: string,
+  ) {
+    return this.bulkJobService.getStatus(user.id, jobId);
   }
 
   @Get(':itemId/opciones')

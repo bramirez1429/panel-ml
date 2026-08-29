@@ -17,6 +17,7 @@ import type {
   PromotionExecutionContext,
   PromotionExecutionStage,
   PromotionItemResult,
+  PromotionRemovalSelection,
   ResolvedPromotionItem,
 } from './publication-promotion.types';
 import { PromotionRemovalService } from './promotion-removal.service';
@@ -45,6 +46,20 @@ export class PublicationPromotionExecutorService {
         itemId,
         context.accessToken,
       );
+      const alreadyStarted = current.active.some((promotion) =>
+        promotionMatchesRequest(promotion, context.request),
+      );
+      const alreadyPending = current.pending.some((promotion) =>
+        promotionMatchesRequest(promotion, context.request),
+      );
+      if (alreadyStarted || alreadyPending) {
+        return {
+          itemId,
+          success: true,
+          stage: 'COMPLETED',
+          promotionStatus: alreadyStarted ? 'started' : 'pending',
+        };
+      }
       const candidate = findRequestedCandidate(
         current.candidates,
         context.request,
@@ -55,9 +70,6 @@ export class PublicationPromotionExecutorService {
           'La candidate cambió durante la operación',
         );
       }
-      const alreadyActive = current.active.some((promotion) =>
-        promotionMatchesRequest(promotion, context.request),
-      );
       const previous = current.active.filter(
         (promotion) => !promotionMatchesRequest(promotion, context.request),
       );
@@ -79,9 +91,6 @@ export class PublicationPromotionExecutorService {
             ),
         );
       }
-      if (alreadyActive) {
-        return { itemId, success: true, stage: 'COMPLETED' };
-      }
       stage = 'CANDIDATE_REVALIDATION';
       current = await this.current(context.userId, itemId, context.accessToken);
       if (!findRequestedCandidate(current.candidates, context.request)) {
@@ -93,16 +102,25 @@ export class PublicationPromotionExecutorService {
       stage = 'APPLICATION';
       await this.applySafely(context);
       stage = 'APPLICATION_VERIFICATION';
-      await this.waitUntil(
+      const verified = await this.waitUntil(
         context.userId,
         itemId,
         context.accessToken,
         (promotions) =>
-          promotions.active.some((promotion) =>
+          [...promotions.active, ...promotions.pending].some((promotion) =>
             promotionMatchesRequest(promotion, context.request),
           ),
       );
-      return { itemId, success: true, stage: 'COMPLETED' };
+      return {
+        itemId,
+        success: true,
+        stage: 'COMPLETED',
+        promotionStatus: verified.active.some((promotion) =>
+          promotionMatchesRequest(promotion, context.request),
+        )
+          ? 'started'
+          : 'pending',
+      };
     } catch (error) {
       const providerMessage = promotionProviderMessage(error);
       return {
@@ -124,12 +142,13 @@ export class PublicationPromotionExecutorService {
     let stage: PromotionExecutionStage = 'CURRENT_STATE';
     try {
       const current = await this.current(userId, itemId, accessToken);
-      if (current.active.length === 0) {
+      const removable = [...current.active, ...current.pending];
+      if (removable.length === 0) {
         return { itemId, success: true, stage: 'ALREADY_INACTIVE' };
       }
       stage = 'REMOVAL';
       const context = { userId, accessToken, resolvedItem };
-      for (const promotion of current.active) {
+      for (const promotion of removable) {
         await this.removeSafely(context, promotion);
       }
       stage = 'REMOVAL_VERIFICATION';
@@ -137,7 +156,45 @@ export class PublicationPromotionExecutorService {
         userId,
         itemId,
         accessToken,
-        (promotions) => promotions.active.length === 0,
+        (promotions) =>
+          promotions.active.length === 0 && promotions.pending.length === 0,
+      );
+      return { itemId, success: true, stage: 'COMPLETED' };
+    } catch (error) {
+      const providerMessage = promotionProviderMessage(error);
+      return {
+        itemId,
+        success: false,
+        stage,
+        errorCode: normalizePromotionError(error, fallbackForStage(stage)),
+        ...(providerMessage ? { providerMessage } : {}),
+      };
+    }
+  }
+
+  async removeSelected(
+    userId: string,
+    accessToken: string,
+    resolvedItem: ResolvedPromotionItem,
+    selection: PromotionRemovalSelection,
+  ): Promise<PromotionItemResult> {
+    const itemId = resolvedItem.item.id;
+    let stage: PromotionExecutionStage = 'CURRENT_STATE';
+    try {
+      const current = await this.current(userId, itemId, accessToken);
+      const selected = [...current.active, ...current.pending].find(
+        (promotion) => promotionMatchesRemoval(promotion, selection),
+      );
+      if (!selected) {
+        return { itemId, success: true, stage: 'ALREADY_INACTIVE' };
+      }
+      stage = 'REMOVAL';
+      await this.removeSafely({ userId, accessToken, resolvedItem }, selected);
+      stage = 'REMOVAL_VERIFICATION';
+      await this.waitUntil(userId, itemId, accessToken, (promotions) =>
+        [...promotions.active, ...promotions.pending].every(
+          (promotion) => !promotionMatchesRemoval(promotion, selection),
+        ),
       );
       return { itemId, success: true, stage: 'COMPLETED' };
     } catch (error) {
@@ -173,7 +230,11 @@ export class PublicationPromotionExecutorService {
         context.resolvedItem.item.id,
         context.accessToken,
       );
-      if (state.active.every((active) => !samePromotion(active, promotion)))
+      if (
+        [...state.active, ...state.pending].every(
+          (active) => !samePromotion(active, promotion),
+        )
+      )
         return;
       throw promotionError(
         'PROMOTION_TIMEOUT',
@@ -198,7 +259,7 @@ export class PublicationPromotionExecutorService {
         context.accessToken,
       );
       if (
-        state.active.some((active) =>
+        [...state.active, ...state.pending].some((active) =>
           promotionMatchesRequest(active, context.request),
         )
       )
@@ -226,10 +287,10 @@ export class PublicationPromotionExecutorService {
     predicate: (
       state: Awaited<ReturnType<PromotionsService['getPromotionsStrict']>>,
     ) => boolean,
-  ): Promise<void> {
+  ): Promise<Awaited<ReturnType<PromotionsService['getPromotionsStrict']>>> {
     for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt += 1) {
       const state = await this.current(userId, itemId, accessToken);
-      if (predicate(state)) return;
+      if (predicate(state)) return state;
       if (attempt < MAX_POLL_ATTEMPTS - 1) await delay(POLL_INTERVAL_MS);
     }
     throw promotionError(
@@ -249,4 +310,17 @@ function fallbackForStage(stage: PromotionExecutionStage) {
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function promotionMatchesRemoval(
+  promotion: ManagedActivePromotion,
+  selection: PromotionRemovalSelection,
+): boolean {
+  return (
+    promotion.type === selection.type &&
+    (selection.promotionId === null ||
+      promotion.id === selection.promotionId) &&
+    (selection.offerId === null ||
+      (promotion.ref_id ?? promotion.offer_id) === selection.offerId)
+  );
 }

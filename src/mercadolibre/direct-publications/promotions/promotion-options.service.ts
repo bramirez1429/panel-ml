@@ -167,7 +167,7 @@ function toPromotionOption(
     canApply:
       entry.status === 'candidate' &&
       SUPPORTED_TYPES.has(entry.promotion.type?.toUpperCase() ?? ''),
-    canRemove: entry.status === 'started',
+    canRemove: entry.status === 'started' || entry.status === 'pending',
     saleEstimate: estimate,
   };
 }

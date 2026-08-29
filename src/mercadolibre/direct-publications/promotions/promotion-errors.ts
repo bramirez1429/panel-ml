@@ -42,7 +42,10 @@ export function isPromotionException(error: unknown): boolean {
   return promotionErrorCode(error) !== null;
 }
 
-function isPromotionErrorCode(value: string): value is PromotionErrorCode {
+export function isPromotionErrorCode(
+  value: unknown,
+): value is PromotionErrorCode {
+  if (typeof value !== 'string') return false;
   return PROMOTION_ERROR_CODES.has(value as PromotionErrorCode);
 }
 

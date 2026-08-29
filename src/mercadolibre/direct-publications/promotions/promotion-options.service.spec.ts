@@ -190,7 +190,7 @@ describe('PromotionOptionsService', () => {
         estimatedNetAmount: 81,
         suggestedEstimatedNetAmount: null,
         canApply: false,
-        canRemove: false,
+        canRemove: true,
         saleEstimate: { saleFeeAmount: 9, estimatedNetAmount: 81 },
       }),
     ]);
