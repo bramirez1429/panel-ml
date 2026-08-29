@@ -31,8 +31,17 @@ export function promotionMatchesRequest(
   if ('dealPrice' in request) {
     if (!Number.isFinite(request.dealPrice) || request.dealPrice <= 0)
       return false;
-    if (promotion.price != null && promotion.price !== request.dealPrice)
+
+    const candidatePrice = promotion.price;
+
+    if (
+      typeof candidatePrice === 'number' &&
+      Number.isFinite(candidatePrice) &&
+      candidatePrice > 0 &&
+      candidatePrice !== request.dealPrice
+    ) {
       return false;
+    }
   }
   return (
     request.type !== 'PRICE_DISCOUNT' ||
