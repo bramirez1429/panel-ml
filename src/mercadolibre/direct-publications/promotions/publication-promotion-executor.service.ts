@@ -6,7 +6,11 @@ import {
   promotionMatchesRequest,
   samePromotion,
 } from './promotion-candidate.helpers';
-import { normalizePromotionError, isTimeout } from './promotion-error-mapper';
+import {
+  normalizePromotionError,
+  isTimeout,
+  promotionProviderMessage,
+} from './promotion-error-mapper';
 import { promotionError } from './promotion-errors';
 import type { ManagedActivePromotion } from './promotion-manager.types';
 import type {
@@ -100,11 +104,13 @@ export class PublicationPromotionExecutorService {
       );
       return { itemId, success: true, stage: 'COMPLETED' };
     } catch (error) {
+      const providerMessage = promotionProviderMessage(error);
       return {
         itemId,
         success: false,
         stage,
         errorCode: normalizePromotionError(error, fallbackForStage(stage)),
+        ...(providerMessage ? { providerMessage } : {}),
       };
     }
   }
@@ -135,11 +141,13 @@ export class PublicationPromotionExecutorService {
       );
       return { itemId, success: true, stage: 'COMPLETED' };
     } catch (error) {
+      const providerMessage = promotionProviderMessage(error);
       return {
         itemId,
         success: false,
         stage,
         errorCode: normalizePromotionError(error, fallbackForStage(stage)),
+        ...(providerMessage ? { providerMessage } : {}),
       };
     }
   }

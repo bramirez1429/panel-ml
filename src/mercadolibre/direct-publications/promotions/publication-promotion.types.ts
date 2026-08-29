@@ -63,12 +63,14 @@ export type PromotionItemResult = Readonly<{
   success: boolean;
   stage: PromotionExecutionStage;
   errorCode?: PromotionErrorCode;
+  providerMessage?: string;
 }>;
 
 export type PublicationPromotionResult = Readonly<{
   success: boolean;
   status: 'SUCCESS' | 'PARTIAL_FAILURE' | 'FAILURE';
   errorCode?: PromotionErrorCode;
+  providerMessage?: string;
   totalItems: number;
   successfulItems: number;
   failedItems: number;

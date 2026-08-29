@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   GatewayTimeoutException,
   HttpException,
@@ -165,6 +166,29 @@ describe('PublicationPromotionExecutorService', () => {
       errorCode: 'PROMOTION_TIMEOUT',
     });
     expect(dependencies.application.apply).toHaveBeenCalledTimes(1);
+  });
+
+  it('conserva el mensaje seguro del proveedor cuando falla apply', async () => {
+    const error = new BadRequestException({
+      message: 'La promoción cambió o ya no es aplicable',
+      mercadoLibreMessage: 'invalid deal price',
+      mercadoLibreError: 'bad_request',
+    });
+    const dependencies = createExecutor(
+      [state([], [CANDIDATE]), state([], [CANDIDATE])],
+      undefined,
+      jest.fn().mockRejectedValue(error),
+    );
+
+    const result = await dependencies.service.apply(context());
+
+    expect(result).toMatchObject({
+      itemId: 'MLA1',
+      success: false,
+      stage: 'APPLICATION',
+      providerMessage: 'invalid deal price',
+    });
+    expect(result).not.toHaveProperty('mercadoLibreError');
   });
 
   it.each([

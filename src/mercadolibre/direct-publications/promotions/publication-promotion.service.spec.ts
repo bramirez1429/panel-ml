@@ -100,6 +100,7 @@ describe('PublicationPromotionService', () => {
       success: false,
       stage: 'APPLICATION',
       errorCode: 'PROMOTION_APPLICATION_FAILED',
+      providerMessage: 'invalid deal price',
     });
 
     const result = await dependencies.service.apply(
@@ -112,6 +113,7 @@ describe('PublicationPromotionService', () => {
       success: false,
       status: 'FAILURE',
       errorCode: 'PROMOTION_APPLICATION_FAILED',
+      providerMessage: 'invalid deal price',
       totalItems: 1,
       successfulItems: 0,
       failedItems: 1,
@@ -121,6 +123,7 @@ describe('PublicationPromotionService', () => {
           success: false,
           stage: 'APPLICATION',
           errorCode: 'PROMOTION_APPLICATION_FAILED',
+          providerMessage: 'invalid deal price',
         },
       ],
     });

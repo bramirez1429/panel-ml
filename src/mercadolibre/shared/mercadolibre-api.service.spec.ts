@@ -115,6 +115,39 @@ describe('MercadolibreApiService', () => {
     );
   });
 
+  it('conserva el rechazo sanitizado de una promoción', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        {
+          message: 'invalid deal price',
+          error: 'bad_request',
+          access_token: 'SECRET',
+        },
+        400,
+      ),
+    );
+
+    let caught: unknown;
+    try {
+      await service.post(
+        '/seller-promotions/items/MLA1',
+        { price: 100 },
+        'private-token',
+        'promotion',
+      );
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(HttpException);
+    const exception = caught as HttpException;
+    expect(exception.getResponse()).toMatchObject({
+      mercadoLibreMessage: 'invalid deal price',
+      mercadoLibreError: 'bad_request',
+    });
+    expect(JSON.stringify(exception.getResponse())).not.toContain('SECRET');
+  });
+
   it.each([
     [401, 401],
     [403, 403],

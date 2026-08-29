@@ -27,6 +27,21 @@ export function isTimeout(error: unknown): boolean {
   return error instanceof HttpException && error.getStatus() === 504;
 }
 
+export function promotionProviderMessage(error: unknown): string | undefined {
+  if (!(error instanceof HttpException)) return undefined;
+  const response = error.getResponse();
+  if (
+    typeof response !== 'object' ||
+    response === null ||
+    !('mercadoLibreMessage' in response)
+  )
+    return undefined;
+  const message = response.mercadoLibreMessage;
+  return typeof message === 'string' && message.trim()
+    ? message.trim().slice(0, 500)
+    : undefined;
+}
+
 export function normalizedPromotionException(
   error: unknown,
   fallback: PromotionErrorCode,

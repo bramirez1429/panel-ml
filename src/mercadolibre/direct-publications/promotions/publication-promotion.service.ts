@@ -141,6 +141,9 @@ function summarize(results: PromotionItemResult[]): PublicationPromotionResult {
               firstFailure?.errorCode ?? 'PROMOTION_APPLICATION_FAILED',
           }
         : {}),
+    ...(failedItems > 0 && firstFailure?.providerMessage
+      ? { providerMessage: firstFailure.providerMessage }
+      : {}),
     totalItems: results.length,
     successfulItems,
     failedItems,

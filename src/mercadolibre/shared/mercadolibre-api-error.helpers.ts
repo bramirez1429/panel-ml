@@ -16,6 +16,9 @@ const PRIVATE_FIELDS = new Set([
   'refreshtoken',
   'clientsecret',
   'authorization',
+  'cookie',
+  'cookies',
+  'setcookie',
 ]);
 
 export function throwMercadolibreApiError(
@@ -46,7 +49,7 @@ export function throwMercadolibreApiError(
       'Mercado Libre no encontró la descripción solicitada',
     );
   }
-  if (kind === 'promotion') throwPromotionApiError(status);
+  if (kind === 'promotion') throwPromotionApiError(status, safeData);
   if (status === 400) {
     throw new BadRequestException(
       isJsonObject(safeData) ? safeData : 'Mercado Libre rechazó la solicitud',
@@ -60,17 +63,36 @@ export function throwMercadolibreApiError(
   throw new BadGatewayException('Mercado Libre no completó la solicitud');
 }
 
-function throwPromotionApiError(status: number): void {
+function throwPromotionApiError(status: number, safeData: unknown): void {
   if (status === 404)
     throw new NotFoundException('La promoción o publicación ya no existe');
-  if (status === 400 || status === 409)
-    throw new BadRequestException('La promoción cambió o ya no es aplicable');
+  if (status === 400 || status === 409) {
+    const mercadoLibreMessage = providerText(safeData, 'message', 500);
+    const mercadoLibreError = providerText(safeData, 'error', 100);
+    throw new BadRequestException({
+      message: 'La promoción cambió o ya no es aplicable',
+      ...(mercadoLibreMessage ? { mercadoLibreMessage } : {}),
+      ...(mercadoLibreError ? { mercadoLibreError } : {}),
+    });
+  }
   if (status === 429)
     throw new HttpException('Mercado Libre limitó las solicitudes', 429);
   if (status >= 500)
     throw new ServiceUnavailableException(
       'Mercado Libre no está disponible temporalmente',
     );
+}
+
+function providerText(
+  safeData: unknown,
+  field: 'message' | 'error',
+  maximumLength: number,
+): string | undefined {
+  if (!isJsonObject(safeData)) return undefined;
+  const value = safeData[field];
+  return isNonEmptyString(value)
+    ? value.trim().slice(0, maximumLength)
+    : undefined;
 }
 
 export function sanitizeMercadoLibreData<T>(value: T): T {
