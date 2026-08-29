@@ -17,6 +17,24 @@ describe('PublicationPromotionSourceService', () => {
     });
   });
 
+  it('resuelve un MLA de FAMILY como un único MLA NEW', async () => {
+    const service = createService({
+      id: 'MLA2',
+      family_id: 123,
+      user_product_id: 'UP1',
+    });
+
+    const result = await service.resolve('user', 'item:MLA2');
+
+    expect(result.sourceKey).toBe('item:MLA2');
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.publication).toEqual({
+      type: 'NEW',
+      familyId: '123',
+      itemId: 'MLA2',
+    });
+  });
+
   it('resuelve todos los MLA actuales de una FAMILY y deduplica', async () => {
     const service = createService({ id: 'MLA0', variations: [{}] }, [
       { id: 'MLA1', family_id: 123 },

@@ -42,15 +42,37 @@ export class PublicationPromotionSourceService {
       accessToken,
       'promotion',
     );
-    if (PublicationsMapper.getModel(item) !== 'SHARED') {
+    const model = PublicationsMapper.getModel(item);
+
+    if (model === 'SHARED') {
+      return {
+        sourceKey: `item:${item.id}`,
+        accessToken,
+        items: [{ item, publication: { type: 'CLASSIC', itemId: item.id } }],
+      };
+    }
+
+    const familyId = String(item.family_id ?? '').trim();
+
+    if (!familyId) {
       throw new BadRequestException(
-        'Una publicación FAMILY debe operarse con su sourceKey family:...',
+        'La publicación nueva no informa family_id',
       );
     }
+
     return {
       sourceKey: `item:${item.id}`,
       accessToken,
-      items: [{ item, publication: { type: 'CLASSIC', itemId: item.id } }],
+      items: [
+        {
+          item,
+          publication: {
+            type: 'NEW',
+            familyId,
+            itemId: item.id,
+          },
+        },
+      ],
     };
   }
 
