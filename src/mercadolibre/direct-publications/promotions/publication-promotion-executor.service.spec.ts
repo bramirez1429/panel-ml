@@ -32,6 +32,23 @@ const ACTIVE = { id: 'new', type: 'DEAL', status: 'started', price: 80 };
 const PREVIOUS = { id: 'old', type: 'DEAL', status: 'started', price: 90 };
 
 describe('PublicationPromotionExecutorService', () => {
+  it('mantiene success si el POST fue 2xx aunque el GET siga en candidate', async () => {
+    const dependencies = createExecutor([
+      state([], [CANDIDATE]),
+      state([], [CANDIDATE]),
+      state([], [CANDIDATE]),
+    ]);
+
+    const result = await dependencies.service.apply(context());
+
+    expect(result).toEqual({
+      itemId: 'MLA1',
+      success: true,
+      stage: 'COMPLETED',
+    });
+    expect(dependencies.application.apply).toHaveBeenCalledTimes(1);
+  });
+
   it('aplica una publicación LEGACY una sola vez y verifica ACTIVE', async () => {
     const dependencies = createExecutor([
       state([], [CANDIDATE]),
@@ -88,6 +105,44 @@ describe('PublicationPromotionExecutorService', () => {
       expect(dependencies.application.apply).not.toHaveBeenCalled();
     },
   );
+
+  it.each([
+    ['pending', [], [{ ...ACTIVE, status: 'pending' }]],
+    ['started', [ACTIVE], []],
+  ] as const)(
+    'acepta %s durante candidate revalidation sin hacer POST',
+    async (promotionStatus, active, pending) => {
+      const dependencies = createExecutor([
+        state([], [CANDIDATE]),
+        state([...active], [], [...pending]),
+      ]);
+
+      const result = await dependencies.service.apply(context());
+
+      expect(result).toMatchObject({ success: true, promotionStatus });
+      expect(dependencies.application.apply).not.toHaveBeenCalled();
+    },
+  );
+
+  it('no confunde un pending de otra promoción con la solicitada', async () => {
+    const otherPending = {
+      id: 'other',
+      type: 'DEAL',
+      status: 'pending',
+      price: 80,
+    };
+    const dependencies = createExecutor([
+      state([], [CANDIDATE], [otherPending]),
+      state([], [CANDIDATE], [otherPending]),
+      state([], [CANDIDATE], [otherPending]),
+    ]);
+
+    const result = await dependencies.service.apply(context());
+
+    expect(result.success).toBe(true);
+    expect(result).not.toHaveProperty('promotionStatus');
+    expect(dependencies.application.apply).toHaveBeenCalledTimes(1);
+  });
 
   it('elimina una promoción LEGACY y verifica el estado final', async () => {
     const dependencies = createExecutor([state([PREVIOUS], []), state([], [])]);
@@ -214,14 +269,46 @@ describe('PublicationPromotionExecutorService', () => {
     expect(dependencies.application.apply).toHaveBeenCalledTimes(1);
   });
 
-  it('no reintenta un write con timeout que no pudo confirmar', async () => {
+  it('acepta POST timeout cuando GET confirma la promoción PENDING', async () => {
+    const pending = { ...ACTIVE, status: 'pending' };
     const dependencies = createExecutor(
-      [state([], [CANDIDATE]), state([], [CANDIDATE]), state([], [CANDIDATE])],
+      [
+        state([], [CANDIDATE]),
+        state([], [CANDIDATE]),
+        state([], [], [pending]),
+      ],
       undefined,
       jest.fn().mockRejectedValue(new GatewayTimeoutException()),
     );
 
     const result = await dependencies.service.apply(context());
+
+    expect(result).toMatchObject({
+      success: true,
+      promotionStatus: 'pending',
+    });
+    expect(dependencies.application.apply).toHaveBeenCalledTimes(1);
+  });
+
+  it('no reintenta un write con timeout que no pudo confirmar', async () => {
+    jest.useFakeTimers();
+    const dependencies = createExecutor(
+      [
+        state([], [CANDIDATE]),
+        state([], [CANDIDATE]),
+        state([], [CANDIDATE]),
+        state([], [CANDIDATE]),
+        state([], [CANDIDATE]),
+        state([], [CANDIDATE]),
+      ],
+      undefined,
+      jest.fn().mockRejectedValue(new GatewayTimeoutException()),
+    );
+
+    const operation = dependencies.service.apply(context());
+    await jest.runAllTimersAsync();
+    const result = await operation;
+    jest.useRealTimers();
 
     expect(result).toMatchObject({
       success: false,

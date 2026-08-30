@@ -67,20 +67,27 @@ function throwPromotionApiError(status: number, safeData: unknown): void {
   if (status === 404)
     throw new NotFoundException('La promoción o publicación ya no existe');
   if (status === 400 || status === 409) {
-    const mercadoLibreMessage = providerText(safeData, 'message', 500);
-    const mercadoLibreError = providerText(safeData, 'error', 100);
     throw new BadRequestException({
       message: 'La promoción cambió o ya no es aplicable',
-      ...(mercadoLibreMessage ? { mercadoLibreMessage } : {}),
-      ...(mercadoLibreError ? { mercadoLibreError } : {}),
+      ...promotionProviderDetails(safeData),
     });
   }
   if (status === 429)
     throw new HttpException('Mercado Libre limitó las solicitudes', 429);
   if (status >= 500)
-    throw new ServiceUnavailableException(
-      'Mercado Libre no está disponible temporalmente',
-    );
+    throw new ServiceUnavailableException({
+      message: 'Mercado Libre no está disponible temporalmente',
+      ...promotionProviderDetails(safeData),
+    });
+}
+
+function promotionProviderDetails(safeData: unknown) {
+  const mercadoLibreMessage = providerText(safeData, 'message', 500);
+  const mercadoLibreError = providerText(safeData, 'error', 100);
+  return {
+    ...(mercadoLibreMessage ? { mercadoLibreMessage } : {}),
+    ...(mercadoLibreError ? { mercadoLibreError } : {}),
+  };
 }
 
 function providerText(

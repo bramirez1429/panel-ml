@@ -4,7 +4,7 @@ import { mapWithConcurrency } from '../../publications/sync/publication-sync.hel
 
 import {
   findRequestedCandidate,
-  promotionMatchesRequest,
+  findConfirmedParticipation,
 } from './promotion-candidate.helpers';
 import type { PromotionSwitchRequest } from './promotion-manager.types';
 import {
@@ -40,9 +40,7 @@ export class PublicationPromotionPreflightService {
           ? findRequestedCandidate(promotions.candidates, request)
           : null;
         const alreadyParticipating = request
-          ? ([...promotions.active, ...promotions.pending].find((promotion) =>
-              promotionMatchesRequest(promotion, request),
-            ) ?? null)
+          ? findConfirmedParticipation(promotions, request)
           : null;
         const applicable = request
           ? candidate !== null || alreadyParticipating !== null
@@ -62,7 +60,7 @@ export class PublicationPromotionPreflightService {
           requestedCandidate: candidate
             ? promotionSnapshot(candidate)
             : alreadyParticipating
-              ? promotionSnapshot(alreadyParticipating)
+              ? promotionSnapshot(alreadyParticipating.promotion)
               : null,
           applicable,
           unavailableReason: applicable

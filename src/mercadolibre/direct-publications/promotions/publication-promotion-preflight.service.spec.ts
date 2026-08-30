@@ -46,6 +46,34 @@ describe('PublicationPromotionPreflightService', () => {
     expect(preview.items.filter((item) => !item.applicable)).toHaveLength(2);
     expect(promotions.getPromotionsStrict).toHaveBeenCalledTimes(8);
   });
+
+  it.each([
+    ['pending', [], [{ ...candidate(), status: 'pending' }]],
+    ['started', [{ ...candidate(), status: 'started' }], []],
+  ] as const)(
+    'considera aplicable una participación exacta %s sin candidate',
+    async (_status, active, pending) => {
+      const promotions = {
+        getPromotionsStrict: jest.fn().mockResolvedValue({
+          active: [...active],
+          candidates: [],
+          pending: [...pending],
+          all: [...active, ...pending],
+        }),
+      };
+      const service = new PublicationPromotionPreflightService(
+        promotions as unknown as PromotionsService,
+      );
+
+      const preview = await service.preview('user', source(1), REQUEST);
+
+      expect(preview).toMatchObject({
+        totalItems: 1,
+        applicableItems: 1,
+        unavailableItems: 0,
+      });
+    },
+  );
 });
 
 function source(count: number): ResolvedPromotionSource {

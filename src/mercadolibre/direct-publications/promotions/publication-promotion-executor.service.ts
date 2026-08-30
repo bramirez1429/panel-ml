@@ -1,8 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { HttpException, Injectable } from '@nestjs/common';
 
 import { PromotionApplicationService } from './promotion-application.service';
 import {
   findRequestedCandidate,
+  findConfirmedParticipation,
   promotionMatchesRequest,
   samePromotion,
 } from './promotion-candidate.helpers';
@@ -26,6 +27,7 @@ import { PromotionsService } from './promotions.service';
 const PROMOTION_TIMEOUT = { timeoutMs: 30_000 } as const;
 const POLL_INTERVAL_MS = 1_000;
 const MAX_POLL_ATTEMPTS = 10;
+const UNCERTAIN_WRITE_RETRY_DELAYS_MS = [300, 600, 1_000, 1_500] as const;
 
 @Injectable()
 export class PublicationPromotionExecutorService {
@@ -46,18 +48,16 @@ export class PublicationPromotionExecutorService {
         itemId,
         context.accessToken,
       );
-      const alreadyStarted = current.active.some((promotion) =>
-        promotionMatchesRequest(promotion, context.request),
+      const existingParticipation = findConfirmedParticipation(
+        current,
+        context.request,
       );
-      const alreadyPending = current.pending.some((promotion) =>
-        promotionMatchesRequest(promotion, context.request),
-      );
-      if (alreadyStarted || alreadyPending) {
+      if (existingParticipation) {
         return {
           itemId,
           success: true,
           stage: 'COMPLETED',
-          promotionStatus: alreadyStarted ? 'started' : 'pending',
+          promotionStatus: existingParticipation.status,
         };
       }
       const candidate = findRequestedCandidate(
@@ -93,6 +93,18 @@ export class PublicationPromotionExecutorService {
       }
       stage = 'CANDIDATE_REVALIDATION';
       current = await this.current(context.userId, itemId, context.accessToken);
+      const concurrentParticipation = findConfirmedParticipation(
+        current,
+        context.request,
+      );
+      if (concurrentParticipation) {
+        return {
+          itemId,
+          success: true,
+          stage: 'COMPLETED',
+          promotionStatus: concurrentParticipation.status,
+        };
+      }
       if (!findRequestedCandidate(current.candidates, context.request)) {
         throw promotionError(
           'PROMOTION_CHANGED_DURING_OPERATION',
@@ -100,26 +112,14 @@ export class PublicationPromotionExecutorService {
         );
       }
       stage = 'APPLICATION';
-      await this.applySafely(context);
-      stage = 'APPLICATION_VERIFICATION';
-      const verified = await this.waitUntil(
-        context.userId,
-        itemId,
-        context.accessToken,
-        (promotions) =>
-          [...promotions.active, ...promotions.pending].some((promotion) =>
-            promotionMatchesRequest(promotion, context.request),
-          ),
-      );
+      const reconciledStatus = await this.applySafely(context);
+      const diagnosticStatus =
+        reconciledStatus ?? (await this.readParticipation(context));
       return {
         itemId,
         success: true,
         stage: 'COMPLETED',
-        promotionStatus: verified.active.some((promotion) =>
-          promotionMatchesRequest(promotion, context.request),
-        )
-          ? 'started'
-          : 'pending',
+        ...(diagnosticStatus ? { promotionStatus: diagnosticStatus } : {}),
       };
     } catch (error) {
       const providerMessage = promotionProviderMessage(error);
@@ -142,7 +142,10 @@ export class PublicationPromotionExecutorService {
     let stage: PromotionExecutionStage = 'CURRENT_STATE';
     try {
       const current = await this.current(userId, itemId, accessToken);
-      const removable = [...current.active, ...current.pending];
+      const removable = uniquePromotions([
+        ...current.active,
+        ...current.pending,
+      ]);
       if (removable.length === 0) {
         return { itemId, success: true, stage: 'ALREADY_INACTIVE' };
       }
@@ -243,7 +246,9 @@ export class PublicationPromotionExecutorService {
     }
   }
 
-  private async applySafely(context: PromotionExecutionContext): Promise<void> {
+  private async applySafely(
+    context: PromotionExecutionContext,
+  ): Promise<'pending' | 'started' | null> {
     try {
       await this.applicationService.apply(
         context.userId,
@@ -251,24 +256,39 @@ export class PublicationPromotionExecutorService {
         context.request,
         PROMOTION_TIMEOUT,
       );
+      return null;
     } catch (error) {
-      if (!isTimeout(error)) throw error;
+      if (!isUncertainWrite(error)) throw error;
+      const confirmed = await this.reconcileUncertainWrite(context);
+      if (confirmed) return confirmed;
+      throw error;
+    }
+  }
+
+  private async readParticipation(
+    context: PromotionExecutionContext,
+  ): Promise<'pending' | 'started' | null> {
+    try {
       const state = await this.current(
         context.userId,
         context.resolvedItem.item.id,
         context.accessToken,
       );
-      if (
-        [...state.active, ...state.pending].some((active) =>
-          promotionMatchesRequest(active, context.request),
-        )
-      )
-        return;
-      throw promotionError(
-        'PROMOTION_TIMEOUT',
-        'La aplicación agotó el tiempo y no pudo confirmarse',
-      );
+      return findConfirmedParticipation(state, context.request)?.status ?? null;
+    } catch {
+      return null;
     }
+  }
+
+  private async reconcileUncertainWrite(
+    context: PromotionExecutionContext,
+  ): Promise<'pending' | 'started' | null> {
+    for (const delayMs of UNCERTAIN_WRITE_RETRY_DELAYS_MS) {
+      await delay(delayMs);
+      const confirmed = await this.readParticipation(context);
+      if (confirmed) return confirmed;
+    }
+    return null;
   }
 
   private current(userId: string, itemId: string, accessToken: string) {
@@ -322,5 +342,23 @@ function promotionMatchesRemoval(
       promotion.id === selection.promotionId) &&
     (selection.offerId === null ||
       (promotion.ref_id ?? promotion.offer_id) === selection.offerId)
+  );
+}
+
+function uniquePromotions(
+  promotions: ManagedActivePromotion[],
+): ManagedActivePromotion[] {
+  return promotions.filter(
+    (promotion, index) =>
+      promotions.findIndex((candidate) =>
+        samePromotion(candidate, promotion),
+      ) === index,
+  );
+}
+
+function isUncertainWrite(error: unknown): boolean {
+  return (
+    isTimeout(error) ||
+    (error instanceof HttpException && error.getStatus() >= 500)
   );
 }

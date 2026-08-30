@@ -2,6 +2,24 @@ import type {
   ManagedActivePromotion,
   PromotionSwitchRequest,
 } from './promotion-manager.types';
+import type { MlPromotions } from './promotions.types';
+
+export function findConfirmedParticipation(
+  promotions: Pick<MlPromotions, 'active' | 'pending'>,
+  request: PromotionSwitchRequest,
+): Readonly<{
+  promotion: ManagedActivePromotion;
+  status: 'pending' | 'started';
+}> | null {
+  const active = promotions.active.find((promotion) =>
+    promotionMatchesRequest(promotion, request),
+  );
+  if (active) return { promotion: active, status: 'started' };
+  const pending = promotions.pending.find((promotion) =>
+    promotionMatchesRequest(promotion, request),
+  );
+  return pending ? { promotion: pending, status: 'pending' } : null;
+}
 
 export function findRequestedCandidate(
   candidates: readonly ManagedActivePromotion[],

@@ -148,6 +148,40 @@ describe('MercadolibreApiService', () => {
     expect(JSON.stringify(exception.getResponse())).not.toContain('SECRET');
   });
 
+  it('conserva el diagnóstico sanitizado de un 5xx de promociones', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        {
+          message: 'provider could not confirm write',
+          error: 'internal_error',
+          authorization: 'SECRET',
+        },
+        503,
+      ),
+    );
+
+    let caught: unknown;
+    try {
+      await service.post(
+        '/seller-promotions/items/MLA1',
+        { price: 100 },
+        'private-token',
+        'promotion',
+      );
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(HttpException);
+    expect((caught as HttpException).getResponse()).toMatchObject({
+      mercadoLibreMessage: 'provider could not confirm write',
+      mercadoLibreError: 'internal_error',
+    });
+    expect(
+      JSON.stringify((caught as HttpException).getResponse()),
+    ).not.toContain('SECRET');
+  });
+
   it.each([
     [401, 401],
     [403, 403],

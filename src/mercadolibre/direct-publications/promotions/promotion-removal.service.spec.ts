@@ -76,6 +76,60 @@ describe('PromotionRemovalService', () => {
     });
     expect(dependencies.api.delete).not.toHaveBeenCalled();
   });
+
+  it('elimina una promoción pending y verifica active más pending', async () => {
+    const pending = { id: 'p-1', type: 'DEAL', status: 'pending' };
+    const dependencies = createDependencies(
+      { active: [], candidates: [], pending: [pending], all: [pending] },
+      { active: [], candidates: [], pending: [], all: [] },
+    );
+    const service = new PromotionRemovalService(
+      dependencies.token as unknown as MercadolibreTokenService,
+      dependencies.items as unknown as ItemsService,
+      dependencies.promotions as unknown as PromotionsService,
+      dependencies.api as unknown as MercadolibreApiService,
+      dependencies.priceDiscount as unknown as PriceDiscountService,
+      dependencies.deal as unknown as DealService,
+      dependencies.sellerCampaign as unknown as SellerCampaignService,
+      dependencies.smart as unknown as SmartPromotionService,
+    );
+
+    await expect(service.removeAll(USER_ID, 'MLA1')).resolves.toMatchObject({
+      success: true,
+    });
+
+    expect(dependencies.deal.deleteClassic).toHaveBeenCalledTimes(1);
+    expect(dependencies.promotions.getPromotionsStrict).toHaveBeenCalledTimes(
+      2,
+    );
+  });
+
+  it('no duplica DELETE si active y pending representan la misma promoción', async () => {
+    const promotion = { id: 'p-1', type: 'DEAL' };
+    const dependencies = createDependencies(
+      {
+        active: [{ ...promotion, status: 'started' }],
+        candidates: [],
+        pending: [{ ...promotion, status: 'pending' }],
+        all: [],
+      },
+      { active: [], candidates: [], pending: [], all: [] },
+    );
+    const service = new PromotionRemovalService(
+      dependencies.token as unknown as MercadolibreTokenService,
+      dependencies.items as unknown as ItemsService,
+      dependencies.promotions as unknown as PromotionsService,
+      dependencies.api as unknown as MercadolibreApiService,
+      dependencies.priceDiscount as unknown as PriceDiscountService,
+      dependencies.deal as unknown as DealService,
+      dependencies.sellerCampaign as unknown as SellerCampaignService,
+      dependencies.smart as unknown as SmartPromotionService,
+    );
+
+    await service.removeAll(USER_ID, 'MLA1');
+
+    expect(dependencies.deal.deleteClassic).toHaveBeenCalledTimes(1);
+  });
 });
 
 function createDependencies(current: object, after: object) {

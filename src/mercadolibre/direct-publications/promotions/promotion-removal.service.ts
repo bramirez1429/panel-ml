@@ -10,6 +10,7 @@ import { PublicationsMapper } from '../publications/publications.mapper';
 import type { MlItem } from '../items/items.types';
 
 import { DealService } from './deal.service';
+import { samePromotion } from './promotion-candidate.helpers';
 import { PriceDiscountService } from './price-discount.service';
 import { promotionError } from './promotion-errors';
 import type { PromotionPublication } from './promotion-publication.types';
@@ -41,7 +42,10 @@ export class PromotionRemovalService {
         itemId,
         token,
       );
-      for (const promotion of current.active) {
+      for (const promotion of uniquePromotions([
+        ...current.active,
+        ...current.pending,
+      ])) {
         await this.removePromotion(userId, publication, promotion);
       }
       await this.verifyNoActive(userId, itemId);
@@ -204,7 +208,7 @@ export class PromotionRemovalService {
         itemId,
         token,
       );
-      if (current.active.length === 0) return;
+      if (current.active.length === 0 && current.pending.length === 0) return;
       if (attempt < 9) await delay(300);
     }
     throw promotionError(
@@ -246,6 +250,17 @@ export class PromotionRemovalService {
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function uniquePromotions(
+  promotions: ManagedActivePromotion[],
+): ManagedActivePromotion[] {
+  return promotions.filter(
+    (promotion, index) =>
+      promotions.findIndex((candidate) =>
+        samePromotion(candidate, promotion),
+      ) === index,
+  );
 }
 
 function isPromotionException(error: unknown): boolean {

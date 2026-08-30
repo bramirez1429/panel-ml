@@ -115,6 +115,10 @@ export class PromotionBulkJobService {
         await this.repository.finishItem(item.id, { status: 'ACTIVE' });
         return;
       }
+      if (result.success) {
+        await this.repository.finishItem(item.id, { status: 'SCHEDULED' });
+        return;
+      }
       await this.repository.finishItem(item.id, {
         status: 'ERROR',
         errorCode: result.errorCode ?? 'PROMOTION_APPLICATION_FAILED',
