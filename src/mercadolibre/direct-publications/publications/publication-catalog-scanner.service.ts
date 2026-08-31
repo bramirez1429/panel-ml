@@ -14,9 +14,10 @@ export class PublicationCatalogScannerService {
   async scan(
     sellerId: number,
     accessToken: string,
+    startingScrollId: string | undefined,
     consumePage: (items: readonly MlItem[]) => boolean,
-  ): Promise<{ reachedEnd: boolean }> {
-    let scrollId: string | undefined;
+  ): Promise<{ reachedEnd: boolean; nextScrollId: string | null }> {
+    let scrollId = startingScrollId;
 
     while (true) {
       const page = await this.publicationSource.fetchNextScanPage(
@@ -24,11 +25,18 @@ export class PublicationCatalogScannerService {
         accessToken,
         scrollId,
       );
-      if (page.itemIds.length === 0) return { reachedEnd: true };
+      if (page.itemIds.length === 0) {
+        return { reachedEnd: true, nextScrollId: null };
+      }
 
       const items = await this.itemsService.getMany(page.itemIds, accessToken);
-      if (consumePage(items)) return { reachedEnd: false };
-      if (!page.scrollId) return { reachedEnd: true };
+      if (consumePage(items)) {
+        return {
+          reachedEnd: !page.scrollId,
+          nextScrollId: page.scrollId,
+        };
+      }
+      if (!page.scrollId) return { reachedEnd: true, nextScrollId: null };
       scrollId = page.scrollId;
     }
   }

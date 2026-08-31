@@ -71,10 +71,15 @@ export class PublicationsGlobalSearchService {
     const references: GroupedReference[] = [];
     const seenItems = new Set<string>();
     const families = new Map<string, GroupedReference>();
-    const scan = await this.scanner.scan(sellerId, accessToken, (items) => {
-      this.appendMatches(items, search, references, families, seenItems);
-      return references.length >= target;
-    });
+    const scan = await this.scanner.scan(
+      sellerId,
+      accessToken,
+      undefined,
+      (items) => {
+        this.appendMatches(items, search, references, families, seenItems);
+        return references.length >= target;
+      },
+    );
 
     return { references, reachedEnd: scan.reachedEnd };
   }

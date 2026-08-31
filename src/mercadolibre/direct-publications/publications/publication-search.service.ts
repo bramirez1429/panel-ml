@@ -7,6 +7,7 @@ import type { MlItem } from '../items/items.types';
 import { parsePublicationSearchCriteria } from './publication-search-criteria';
 import { PublicationSearchMapper } from './publication-search.mapper';
 import type {
+  PublicationItemsSearchResult,
   PublicationSearchCriteria,
   PublicationSearchResult,
 } from './publication-search.types';
@@ -27,6 +28,28 @@ export class PublicationSearchService {
     limit = 20,
     cursor?: string,
   ): Promise<PublicationSearchResult> {
+    const result = await this.searchItems(userId, query, limit, cursor);
+    const items = result.items.map((item) =>
+      PublicationSearchMapper.toResult(
+        item,
+        result.criteria.type === 'FAMILY' ? result.criteria.value : undefined,
+      ),
+    );
+    return {
+      criteria: result.criteria,
+      done: result.done,
+      nextCursor: result.nextCursor,
+      itemsCount: items.length,
+      items,
+    };
+  }
+
+  async searchItems(
+    userId: string,
+    query: unknown,
+    limit = 20,
+    cursor?: string,
+  ): Promise<PublicationItemsSearchResult> {
     const criteria = parsePublicationSearchCriteria(query);
 
     if (criteria.type === 'FAMILY') {
@@ -43,9 +66,9 @@ export class PublicationSearchService {
     if (criteria.type === 'MLA') {
       const item = await this.itemsService.getOne(criteria.value, accessToken);
       const items = this.belongsToSeller(item, connection.seller_id)
-        ? [PublicationSearchMapper.toResult(item)]
+        ? [item]
         : [];
-      return this.complete(criteria, items);
+      return this.complete(criteria, connection.seller_id, accessToken, items);
     }
 
     const result = await this.titleSearchService.search(
@@ -55,43 +78,47 @@ export class PublicationSearchService {
       limit,
       cursor,
     );
-    const items = result.items.map((item) =>
-      PublicationSearchMapper.toResult(item),
-    );
     return {
       criteria,
       done: result.done,
       nextCursor: result.nextCursor,
-      itemsCount: items.length,
-      items,
+      sellerId: connection.seller_id,
+      accessToken,
+      items: result.items,
     };
   }
 
   private async searchFamily(
     userId: string,
     criteria: Extract<PublicationSearchCriteria, { type: 'FAMILY' }>,
-  ): Promise<PublicationSearchResult> {
-    const family = await this.familiesService.getFamilyItems(
+  ): Promise<PublicationItemsSearchResult> {
+    const result = await this.familiesService.getFamilyItems(
       userId,
       criteria.value,
     );
     return this.complete(
       criteria,
-      family.items.map((item) =>
-        PublicationSearchMapper.toResult(item, criteria.value),
-      ),
+      Number(result.family.user_id),
+      result.accessToken,
+      result.items.map((item) => ({
+        ...item,
+        family_id: criteria.value,
+      })),
     );
   }
 
   private complete(
     criteria: PublicationSearchCriteria,
-    items: PublicationSearchResult['items'],
-  ): PublicationSearchResult {
+    sellerId: number,
+    accessToken: string,
+    items: MlItem[],
+  ): PublicationItemsSearchResult {
     return {
       criteria,
       done: true,
       nextCursor: null,
-      itemsCount: items.length,
+      sellerId,
+      accessToken,
       items,
     };
   }

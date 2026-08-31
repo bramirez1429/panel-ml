@@ -20,7 +20,7 @@ describe('PublicationSearchService', () => {
   it('familyId devuelve todos los MLA actuales y fuerza el familyId buscado', async () => {
     const context = createService();
     context.families.getFamilyItems.mockResolvedValue({
-      family: {},
+      family: { user_id: 42 },
       itemIds: ['MLA1', 'MLA2'],
       accessToken: 'token',
       items: [item('MLA1'), item('MLA2')],
@@ -53,6 +53,21 @@ describe('PublicationSearchService', () => {
       'valid-token',
     );
     expect(context.families.getFamilyItems).not.toHaveBeenCalled();
+  });
+
+  it('normaliza MLA en minúsculas antes de consultar el item', async () => {
+    const context = createService();
+    context.items.getOne.mockResolvedValue({
+      ...item('MLA1947917494'),
+      seller_id: 42,
+    });
+
+    await context.service.searchItems(USER_ID, 'mla1947917494');
+
+    expect(context.items.getOne).toHaveBeenCalledWith(
+      'MLA1947917494',
+      'valid-token',
+    );
   });
 
   it('TITLE devuelve coincidencias normalizadas y paginadas', async () => {
@@ -144,6 +159,26 @@ describe('PublicationSearchService', () => {
     expect(context.token.getValidAccessToken).toHaveBeenCalledTimes(1);
     expect(context.items.getOne).toHaveBeenCalledTimes(1);
     expect(context.title.search).not.toHaveBeenCalled();
+  });
+
+  it('expone MlItem completo internamente sin otra consulta', async () => {
+    const context = createService();
+    const completeItem = {
+      ...item('MLA123'),
+      seller_id: 42,
+      domain_id: 'MLA-WOMEN_TSHIRTS',
+      category_id: 'MLA-CAT',
+      attributes: [{ id: 'GENDER', value_name: 'Mujer' }],
+      listing_type_id: 'gold_special',
+      shipping: { mode: 'me2', logistic_type: 'self_service' },
+    };
+    context.items.getOne.mockResolvedValue(completeItem);
+
+    const result = await context.service.searchItems(USER_ID, 'MLA123');
+
+    expect(result.items).toEqual([completeItem]);
+    expect(result.accessToken).toBe('valid-token');
+    expect(context.items.getOne).toHaveBeenCalledTimes(1);
   });
 });
 

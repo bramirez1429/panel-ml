@@ -5,6 +5,7 @@ import { PUBLICATION_REQUEST_CONCURRENCY } from '../../publications/publication.
 import { PublicationSourceService } from '../../publications/sync/publication-source.service';
 import { ItemsService } from '../items/items.service';
 import type { MlItem } from '../items/items.types';
+import { PublicationSearchService } from '../publications/publication-search.service';
 
 import {
   currentPromotion,
@@ -29,12 +30,17 @@ export class PromotionsCatalogService {
     private readonly publicationSource: PublicationSourceService,
     private readonly itemsService: ItemsService,
     private readonly promotionsService: PromotionsService,
+    private readonly publicationSearchService: PublicationSearchService,
   ) {}
 
   async getCatalog(userId: string, query: PromotionCatalogQuery) {
     const limit = query.limit ?? 20;
     if (!Number.isInteger(limit) || limit < 1 || limit > 20)
       throw new BadRequestException('limit debe estar entre 1 y 20');
+    if (query.search?.trim()) {
+      return this.getSearchCatalog(userId, query, limit);
+    }
+
     const offset = decodePromotionsCursor(query.cursor);
     if (offset === null)
       throw new BadRequestException('cursor de promociones inválido');
@@ -62,6 +68,39 @@ export class PromotionsCatalogService {
       nextCursor: collected.reachedEnd
         ? null
         : encodePromotionsCursor(nextOffset),
+      count: publications.length,
+      publications,
+    };
+  }
+
+  private async getSearchCatalog(
+    userId: string,
+    query: PromotionCatalogQuery,
+    limit: number,
+  ) {
+    const search = await this.publicationSearchService.searchItems(
+      userId,
+      query.search,
+      limit,
+      query.cursor,
+    );
+    const candidates = search.items.flatMap((item) => {
+      const candidate = toPromotionCandidate(item);
+      return candidate &&
+        matchesProductFilters(candidate, { ...query, search: undefined })
+        ? [candidate]
+        : [];
+    });
+    const matches = await this.loadPromotionMatches(
+      userId,
+      search.accessToken,
+      candidates,
+      query,
+    );
+    const publications = matches.map((match) => this.toRow(match));
+    return {
+      done: search.done,
+      nextCursor: search.nextCursor,
       count: publications.length,
       publications,
     };
@@ -102,25 +141,15 @@ export class PromotionsCatalogService {
           index,
           index + PUBLICATION_REQUEST_CONCURRENCY,
         );
-        const promotions = await Promise.all(
-          batch.map((candidate) =>
-            this.promotionsService.getPromotions(
-              userId,
-              candidate.itemId,
-              accessToken,
-            ),
-          ),
+        const batchMatches = await this.loadPromotionMatches(
+          userId,
+          accessToken,
+          batch,
+          query,
         );
-        for (let batchIndex = 0; batchIndex < batch.length; batchIndex += 1) {
-          const candidate = batch[batchIndex];
-          const itemPromotions = promotions[batchIndex];
-          if (!candidate || !itemPromotions) continue;
-          const summary = summarizePromotions(itemPromotions);
-          if (!matchesPromotionFilters(itemPromotions, summary, query))
-            continue;
+        for (const match of batchMatches) {
           matchedCount += 1;
-          if (matchedCount > offset)
-            matches.push({ candidate, promotions: itemPromotions, summary });
+          if (matchedCount > offset) matches.push(match);
           if (matchedCount >= target) return { matches, reachedEnd: false };
         }
       }
@@ -128,6 +157,43 @@ export class PromotionsCatalogService {
       scrollId = scan.scrollId;
     }
     return { matches, reachedEnd: false };
+  }
+
+  private async loadPromotionMatches(
+    userId: string,
+    accessToken: string,
+    candidates: readonly PromotionCatalogMatch['candidate'][],
+    query: PromotionCatalogQuery,
+  ): Promise<PromotionCatalogMatch[]> {
+    const matches: PromotionCatalogMatch[] = [];
+    for (
+      let index = 0;
+      index < candidates.length;
+      index += PUBLICATION_REQUEST_CONCURRENCY
+    ) {
+      const batch = candidates.slice(
+        index,
+        index + PUBLICATION_REQUEST_CONCURRENCY,
+      );
+      const promotions = await Promise.all(
+        batch.map((candidate) =>
+          this.promotionsService.getPromotions(
+            userId,
+            candidate.itemId,
+            accessToken,
+          ),
+        ),
+      );
+      for (let batchIndex = 0; batchIndex < batch.length; batchIndex += 1) {
+        const candidate = batch[batchIndex];
+        const itemPromotions = promotions[batchIndex];
+        if (!candidate || !itemPromotions) continue;
+        const summary = summarizePromotions(itemPromotions);
+        if (!matchesPromotionFilters(itemPromotions, summary, query)) continue;
+        matches.push({ candidate, promotions: itemPromotions, summary });
+      }
+    }
+    return matches;
   }
 
   private cheapCandidates(

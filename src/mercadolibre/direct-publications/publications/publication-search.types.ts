@@ -1,3 +1,5 @@
+import type { MlItem } from '../items/items.types';
+
 export type PublicationSearchCriteria =
   | { type: 'FAMILY'; value: string }
   | { type: 'MLA'; value: string }
@@ -23,4 +25,14 @@ export type PublicationSearchResult = {
   nextCursor: string | null;
   itemsCount: number;
   items: PublicationSearchItem[];
+};
+
+/** Resultado interno; nunca se serializa directamente desde un controller. */
+export type PublicationItemsSearchResult = {
+  criteria: PublicationSearchCriteria;
+  done: boolean;
+  nextCursor: string | null;
+  sellerId: number;
+  accessToken: string;
+  items: MlItem[];
 };

@@ -17,6 +17,13 @@ describe('parsePublicationSearchCriteria', () => {
     });
   });
 
+  it('normaliza un MLA en minúsculas', () => {
+    expect(parsePublicationSearchCriteria('mla1947917494')).toEqual({
+      type: 'MLA',
+      value: 'MLA1947917494',
+    });
+  });
+
   it('detecta una búsqueda por título', () => {
     expect(parsePublicationSearchCriteria('remera mujer')).toEqual({
       type: 'TITLE',
