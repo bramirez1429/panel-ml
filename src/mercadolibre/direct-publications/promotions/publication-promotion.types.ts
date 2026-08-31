@@ -64,6 +64,7 @@ export type PromotionItemResult = Readonly<{
   stage: PromotionExecutionStage;
   errorCode?: PromotionErrorCode;
   providerMessage?: string;
+  providerStatus?: number;
   promotionStatus?: 'pending' | 'started';
 }>;
 
@@ -72,6 +73,7 @@ export type PublicationPromotionResult = Readonly<{
   status: 'SUCCESS' | 'PARTIAL_FAILURE' | 'FAILURE';
   errorCode?: PromotionErrorCode;
   providerMessage?: string;
+  providerStatus?: number;
   totalItems: number;
   successfulItems: number;
   failedItems: number;

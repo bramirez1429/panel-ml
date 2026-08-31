@@ -1,9 +1,10 @@
-import { HttpException, Injectable } from '@nestjs/common';
+import { HttpException, Injectable, Logger } from '@nestjs/common';
 
 import { PromotionApplicationService } from './promotion-application.service';
 import {
   findRequestedCandidate,
   findConfirmedParticipation,
+  promotionMatchesRemoval,
   promotionMatchesRequest,
   samePromotion,
 } from './promotion-candidate.helpers';
@@ -11,6 +12,7 @@ import {
   normalizePromotionError,
   isTimeout,
   promotionProviderMessage,
+  promotionProviderStatus,
 } from './promotion-error-mapper';
 import { promotionError } from './promotion-errors';
 import type { ManagedActivePromotion } from './promotion-manager.types';
@@ -28,9 +30,14 @@ const PROMOTION_TIMEOUT = { timeoutMs: 30_000 } as const;
 const POLL_INTERVAL_MS = 1_000;
 const MAX_POLL_ATTEMPTS = 10;
 const UNCERTAIN_WRITE_RETRY_DELAYS_MS = [300, 600, 1_000, 1_500] as const;
+const UNCERTAIN_REMOVAL_RETRY_DELAYS_MS = [0, 300, 600, 1_000, 1_500] as const;
 
 @Injectable()
 export class PublicationPromotionExecutorService {
+  private readonly logger = new Logger(
+    PublicationPromotionExecutorService.name,
+  );
+
   constructor(
     private readonly promotionsService: PromotionsService,
     private readonly removalService: PromotionRemovalService,
@@ -123,12 +130,14 @@ export class PublicationPromotionExecutorService {
       };
     } catch (error) {
       const providerMessage = promotionProviderMessage(error);
+      const providerStatus = promotionProviderStatus(error);
       return {
         itemId,
         success: false,
         stage,
         errorCode: normalizePromotionError(error, fallbackForStage(stage)),
         ...(providerMessage ? { providerMessage } : {}),
+        ...(providerStatus ? { providerStatus } : {}),
       };
     }
   }
@@ -165,12 +174,14 @@ export class PublicationPromotionExecutorService {
       return { itemId, success: true, stage: 'COMPLETED' };
     } catch (error) {
       const providerMessage = promotionProviderMessage(error);
+      const providerStatus = promotionProviderStatus(error);
       return {
         itemId,
         success: false,
         stage,
         errorCode: normalizePromotionError(error, fallbackForStage(stage)),
         ...(providerMessage ? { providerMessage } : {}),
+        ...(providerStatus ? { providerStatus } : {}),
       };
     }
   }
@@ -192,7 +203,13 @@ export class PublicationPromotionExecutorService {
         return { itemId, success: true, stage: 'ALREADY_INACTIVE' };
       }
       stage = 'REMOVAL';
-      await this.removeSafely({ userId, accessToken, resolvedItem }, selected);
+      const reconciled = await this.removeSafely(
+        { userId, accessToken, resolvedItem },
+        selected,
+      );
+      if (reconciled) {
+        return { itemId, success: true, stage: 'COMPLETED' };
+      }
       stage = 'REMOVAL_VERIFICATION';
       await this.waitUntil(userId, itemId, accessToken, (promotions) =>
         [...promotions.active, ...promotions.pending].every(
@@ -202,12 +219,18 @@ export class PublicationPromotionExecutorService {
       return { itemId, success: true, stage: 'COMPLETED' };
     } catch (error) {
       const providerMessage = promotionProviderMessage(error);
+      const providerStatus = promotionProviderStatus(error);
+      const errorCode =
+        stage === 'REMOVAL' && isServerError(error)
+          ? 'PROMOTION_REMOVAL_FAILED'
+          : normalizePromotionError(error, fallbackForStage(stage));
       return {
         itemId,
         success: false,
         stage,
-        errorCode: normalizePromotionError(error, fallbackForStage(stage)),
+        errorCode,
         ...(providerMessage ? { providerMessage } : {}),
+        ...(providerStatus ? { providerStatus } : {}),
       };
     }
   }
@@ -218,7 +241,7 @@ export class PublicationPromotionExecutorService {
       'userId' | 'accessToken' | 'resolvedItem'
     >,
     promotion: ManagedActivePromotion,
-  ): Promise<void> {
+  ): Promise<boolean> {
     try {
       await this.removalService.removePromotion(
         context.userId,
@@ -226,24 +249,57 @@ export class PublicationPromotionExecutorService {
         promotion,
         PROMOTION_TIMEOUT,
       );
+      return false;
     } catch (error) {
-      if (!isTimeout(error)) throw error;
-      const state = await this.current(
-        context.userId,
-        context.resolvedItem.item.id,
-        context.accessToken,
-      );
-      if (
-        [...state.active, ...state.pending].every(
-          (active) => !samePromotion(active, promotion),
-        )
-      )
-        return;
-      throw promotionError(
-        'PROMOTION_TIMEOUT',
-        'La eliminación agotó el tiempo y no pudo confirmarse',
-      );
+      if (!isUncertainWrite(error)) throw error;
+      this.logUncertainRemoval(context.resolvedItem.item.id, promotion, error);
+      if (await this.reconcileUncertainRemoval(context, promotion)) return true;
+      throw error;
     }
+  }
+
+  private async reconcileUncertainRemoval(
+    context: Pick<
+      PromotionExecutionContext,
+      'userId' | 'accessToken' | 'resolvedItem'
+    >,
+    promotion: ManagedActivePromotion,
+  ): Promise<boolean> {
+    const selection = removalSelectionFor(promotion);
+    for (const delayMs of UNCERTAIN_REMOVAL_RETRY_DELAYS_MS) {
+      if (delayMs > 0) await delay(delayMs);
+      try {
+        const state = await this.current(
+          context.userId,
+          context.resolvedItem.item.id,
+          context.accessToken,
+        );
+        const remains = [...state.active, ...state.pending].some((current) =>
+          selection
+            ? promotionMatchesRemoval(current, selection)
+            : samePromotion(current, promotion),
+        );
+        if (!remains) return true;
+      } catch {
+        // La lectura también puede ser eventual; se conserva el error del DELETE.
+      }
+    }
+    return false;
+  }
+
+  private logUncertainRemoval(
+    itemId: string,
+    promotion: ManagedActivePromotion,
+    error: unknown,
+  ): void {
+    this.logger.warn({
+      operation: 'promotion.remove',
+      itemId,
+      promotionType: promotion.type,
+      promotionId: promotion.id ?? null,
+      httpStatus: promotionProviderStatus(error) ?? null,
+      providerMessage: promotionProviderMessage(error) ?? null,
+    });
   }
 
   private async applySafely(
@@ -332,19 +388,6 @@ function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-function promotionMatchesRemoval(
-  promotion: ManagedActivePromotion,
-  selection: PromotionRemovalSelection,
-): boolean {
-  return (
-    promotion.type === selection.type &&
-    (selection.promotionId === null ||
-      promotion.id === selection.promotionId) &&
-    (selection.offerId === null ||
-      (promotion.ref_id ?? promotion.offer_id) === selection.offerId)
-  );
-}
-
 function uniquePromotions(
   promotions: ManagedActivePromotion[],
 ): ManagedActivePromotion[] {
@@ -356,9 +399,31 @@ function uniquePromotions(
   );
 }
 
+function removalSelectionFor(
+  promotion: ManagedActivePromotion,
+): PromotionRemovalSelection | null {
+  if (typeof promotion.type !== 'string' || !promotion.type.trim()) return null;
+  const promotionId =
+    typeof promotion.id === 'string' && promotion.id.trim()
+      ? promotion.id
+      : null;
+  const offerId = promotion.ref_id ?? promotion.offer_id ?? null;
+  if (promotion.type !== 'PRICE_DISCOUNT' && !promotionId) return null;
+  if (promotion.type === 'SMART' && !offerId) return null;
+  return {
+    type: promotion.type,
+    promotionId: promotion.type === 'PRICE_DISCOUNT' ? null : promotionId,
+    offerId: promotion.type === 'SMART' ? offerId : null,
+  };
+}
+
 function isUncertainWrite(error: unknown): boolean {
   return (
     isTimeout(error) ||
     (error instanceof HttpException && error.getStatus() >= 500)
   );
+}
+
+function isServerError(error: unknown): boolean {
+  return error instanceof HttpException && error.getStatus() >= 500;
 }

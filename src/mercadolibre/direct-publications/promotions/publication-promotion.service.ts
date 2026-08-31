@@ -165,6 +165,9 @@ function summarize(results: PromotionItemResult[]): PublicationPromotionResult {
     ...(failedItems > 0 && firstFailure?.providerMessage
       ? { providerMessage: firstFailure.providerMessage }
       : {}),
+    ...(failedItems > 0 && firstFailure?.providerStatus
+      ? { providerStatus: firstFailure.providerStatus }
+      : {}),
     totalItems: results.length,
     successfulItems,
     failedItems,

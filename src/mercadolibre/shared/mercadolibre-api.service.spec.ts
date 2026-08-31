@@ -176,6 +176,48 @@ describe('MercadolibreApiService', () => {
     expect((caught as HttpException).getResponse()).toMatchObject({
       mercadoLibreMessage: 'provider could not confirm write',
       mercadoLibreError: 'internal_error',
+      mercadoLibreStatus: 503,
+    });
+    expect(
+      JSON.stringify((caught as HttpException).getResponse()),
+    ).not.toContain('SECRET');
+  });
+
+  it('extrae cause y error_code seguros cuando ML no informa message', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        {
+          error: 'internal_error',
+          error_code: 'promotion_delete_uncertain',
+          cause: [
+            {
+              error_message: 'promotion state is being updated',
+              authorization: 'SECRET',
+            },
+          ],
+          access_token: 'SECRET',
+        },
+        500,
+      ),
+    );
+
+    let caught: unknown;
+    try {
+      await service.delete(
+        '/seller-promotions/items/MLA3679412006',
+        'private-token',
+        'promotion',
+      );
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(HttpException);
+    expect((caught as HttpException).getResponse()).toMatchObject({
+      mercadoLibreStatus: 500,
+      mercadoLibreMessage: 'promotion state is being updated',
+      mercadoLibreError: 'internal_error',
+      mercadoLibreErrorCode: 'promotion_delete_uncertain',
     });
     expect(
       JSON.stringify((caught as HttpException).getResponse()),

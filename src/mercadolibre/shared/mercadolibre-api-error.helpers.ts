@@ -69,7 +69,7 @@ function throwPromotionApiError(status: number, safeData: unknown): void {
   if (status === 400 || status === 409) {
     throw new BadRequestException({
       message: 'La promoción cambió o ya no es aplicable',
-      ...promotionProviderDetails(safeData),
+      ...promotionProviderDetails(status, safeData),
     });
   }
   if (status === 429)
@@ -77,22 +77,27 @@ function throwPromotionApiError(status: number, safeData: unknown): void {
   if (status >= 500)
     throw new ServiceUnavailableException({
       message: 'Mercado Libre no está disponible temporalmente',
-      ...promotionProviderDetails(safeData),
+      ...promotionProviderDetails(status, safeData),
     });
 }
 
-function promotionProviderDetails(safeData: unknown) {
-  const mercadoLibreMessage = providerText(safeData, 'message', 500);
+function promotionProviderDetails(status: number, safeData: unknown) {
+  const mercadoLibreMessage =
+    providerText(safeData, 'message', 500) ?? providerCauseMessage(safeData);
   const mercadoLibreError = providerText(safeData, 'error', 100);
+  const mercadoLibreErrorCode =
+    providerText(safeData, 'error_code', 100) ?? providerCauseCode(safeData);
   return {
+    mercadoLibreStatus: status,
     ...(mercadoLibreMessage ? { mercadoLibreMessage } : {}),
     ...(mercadoLibreError ? { mercadoLibreError } : {}),
+    ...(mercadoLibreErrorCode ? { mercadoLibreErrorCode } : {}),
   };
 }
 
 function providerText(
   safeData: unknown,
-  field: 'message' | 'error',
+  field: 'message' | 'error' | 'error_code',
   maximumLength: number,
 ): string | undefined {
   if (!isJsonObject(safeData)) return undefined;
@@ -100,6 +105,34 @@ function providerText(
   return isNonEmptyString(value)
     ? value.trim().slice(0, maximumLength)
     : undefined;
+}
+
+function providerCauseMessage(safeData: unknown): string | undefined {
+  return providerCauseText(safeData, ['message', 'error_message'], 500);
+}
+
+function providerCauseCode(safeData: unknown): string | undefined {
+  return providerCauseText(safeData, ['error_code', 'code'], 100);
+}
+
+function providerCauseText(
+  safeData: unknown,
+  fields: readonly string[],
+  maximumLength: number,
+): string | undefined {
+  if (!isJsonObject(safeData)) return undefined;
+  const value = safeData.cause;
+  const causes = Array.isArray(value) ? value : [value];
+  for (const cause of causes) {
+    if (!isJsonObject(cause)) continue;
+    for (const field of fields) {
+      const text = cause[field];
+      if (isNonEmptyString(text)) {
+        return text.trim().slice(0, maximumLength);
+      }
+    }
+  }
+  return undefined;
 }
 
 export function sanitizeMercadoLibreData<T>(value: T): T {

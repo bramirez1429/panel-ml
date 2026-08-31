@@ -1,3 +1,5 @@
+import { HttpException } from '@nestjs/common';
+
 import type { PublicationPromotionExecutorService } from './publication-promotion-executor.service';
 import type { PublicationPromotionPreflightService } from './publication-promotion-preflight.service';
 import type { PublicationPromotionSourceService } from './publication-promotion-source.service';
@@ -11,6 +13,33 @@ const REQUEST = {
 };
 
 describe('PublicationPromotionService', () => {
+  it('preserva diagnóstico ML si falla resolve de item individual', async () => {
+    const dependencies = createService(1, 1);
+    dependencies.sourceService.resolve.mockRejectedValue(
+      new HttpException(
+        {
+          mercadoLibreMessage: 'item temporarily unavailable',
+          mercadoLibreStatus: 502,
+        },
+        503,
+      ),
+    );
+
+    await expect(
+      dependencies.service.removeSelected('user', 'item:MLA3679412006', {
+        type: 'DEAL',
+        promotionId: 'P-MLA123',
+        offerId: null,
+      }),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'PROMOTION_PROVIDER_UNAVAILABLE',
+        providerMessage: 'item temporarily unavailable',
+        providerStatus: 502,
+      },
+    });
+  });
+
   it('permite escribir sólo después de un preflight 8/8', async () => {
     const dependencies = createService(8, 8);
 
@@ -101,6 +130,7 @@ describe('PublicationPromotionService', () => {
       stage: 'APPLICATION',
       errorCode: 'PROMOTION_APPLICATION_FAILED',
       providerMessage: 'invalid deal price',
+      providerStatus: 400,
     });
 
     const result = await dependencies.service.apply(
@@ -114,6 +144,7 @@ describe('PublicationPromotionService', () => {
       status: 'FAILURE',
       errorCode: 'PROMOTION_APPLICATION_FAILED',
       providerMessage: 'invalid deal price',
+      providerStatus: 400,
       totalItems: 1,
       successfulItems: 0,
       failedItems: 1,
@@ -124,6 +155,7 @@ describe('PublicationPromotionService', () => {
           stage: 'APPLICATION',
           errorCode: 'PROMOTION_APPLICATION_FAILED',
           providerMessage: 'invalid deal price',
+          providerStatus: 400,
         },
       ],
     });

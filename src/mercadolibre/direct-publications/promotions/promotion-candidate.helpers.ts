@@ -3,6 +3,7 @@ import type {
   PromotionSwitchRequest,
 } from './promotion-manager.types';
 import type { MlPromotions } from './promotions.types';
+import type { PromotionRemovalSelection } from './publication-promotion.types';
 
 export function findConfirmedParticipation(
   promotions: Pick<MlPromotions, 'active' | 'pending'>,
@@ -75,6 +76,19 @@ export function samePromotion(
     left.type === right.type &&
     left.id === right.id &&
     (left.ref_id ?? left.offer_id) === (right.ref_id ?? right.offer_id)
+  );
+}
+
+export function promotionMatchesRemoval(
+  promotion: ManagedActivePromotion,
+  selection: PromotionRemovalSelection,
+): boolean {
+  return (
+    promotion.type === selection.type &&
+    (selection.promotionId === null ||
+      promotion.id === selection.promotionId) &&
+    (selection.offerId === null ||
+      (promotion.ref_id ?? promotion.offer_id) === selection.offerId)
   );
 }
 

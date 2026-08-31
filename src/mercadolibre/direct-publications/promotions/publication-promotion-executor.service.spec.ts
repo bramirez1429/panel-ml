@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   GatewayTimeoutException,
   HttpException,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
   UnauthorizedException,
@@ -32,6 +33,17 @@ const ACTIVE = { id: 'new', type: 'DEAL', status: 'started', price: 80 };
 const PREVIOUS = { id: 'old', type: 'DEAL', status: 'started', price: 90 };
 
 describe('PublicationPromotionExecutorService', () => {
+  let loggerWarn: jest.SpyInstance;
+
+  beforeEach(() => {
+    loggerWarn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
+
   it('mantiene success si el POST fue 2xx aunque el GET siga en candidate', async () => {
     const dependencies = createExecutor([
       state([], [CANDIDATE]),
@@ -251,6 +263,183 @@ describe('PublicationPromotionExecutorService', () => {
     expect(dependencies.removal.removePromotion).toHaveBeenCalledTimes(1);
   });
 
+  it('DELETE DEAL 200 termina en success', async () => {
+    const dependencies = createExecutor([state([PREVIOUS], []), state([], [])]);
+
+    const result = await dependencies.service.removeSelected(
+      'user',
+      'token',
+      RESOLVED,
+      { type: 'DEAL', promotionId: 'old', offerId: null },
+    );
+
+    expect(result).toEqual({
+      itemId: 'MLA1',
+      success: true,
+      stage: 'COMPLETED',
+    });
+    expect(dependencies.removal.removePromotion).toHaveBeenCalledTimes(1);
+  });
+
+  it('DELETE timeout se reconcilia si la promoción desapareció', async () => {
+    const dependencies = createExecutor(
+      [state([PREVIOUS], []), state([], [])],
+      jest.fn().mockRejectedValue(new GatewayTimeoutException()),
+    );
+
+    const result = await dependencies.service.removeSelected(
+      'user',
+      'token',
+      RESOLVED,
+      { type: 'DEAL', promotionId: 'old', offerId: null },
+    );
+
+    expect(result.success).toBe(true);
+    expect(dependencies.removal.removePromotion).toHaveBeenCalledTimes(1);
+  });
+
+  it('DELETE 500 se reconcilia si la promoción desapareció', async () => {
+    const dependencies = createExecutor(
+      [state([PREVIOUS], []), state([], [])],
+      jest.fn().mockRejectedValue(providerError(500, 'delete accepted later')),
+    );
+
+    const result = await dependencies.service.removeSelected(
+      'user',
+      'token',
+      RESOLVED,
+      { type: 'DEAL', promotionId: 'old', offerId: null },
+    );
+
+    expect(result.success).toBe(true);
+    expect(dependencies.removal.removePromotion).toHaveBeenCalledTimes(1);
+  });
+
+  it('DELETE 503 reintenta sólo GET hasta confirmar desaparición', async () => {
+    jest.useFakeTimers();
+    const dependencies = createExecutor(
+      [state([PREVIOUS], []), state([PREVIOUS], []), state([], [])],
+      jest.fn().mockRejectedValue(providerError(503, 'uncertain delete')),
+    );
+
+    const operation = dependencies.service.removeSelected(
+      'user',
+      'token',
+      RESOLVED,
+      { type: 'DEAL', promotionId: 'old', offerId: null },
+    );
+    await jest.runAllTimersAsync();
+    const result = await operation;
+
+    expect(result.success).toBe(true);
+    expect(dependencies.promotions.getPromotionsStrict).toHaveBeenCalledTimes(
+      3,
+    );
+    expect(dependencies.removal.removePromotion).toHaveBeenCalledTimes(1);
+  });
+
+  it('DELETE 500 conserva failure y mensaje si sigue activa', async () => {
+    jest.useFakeTimers();
+    const error = providerError(500, 'promotion could not be removed');
+    const dependencies = createExecutor(
+      [
+        state([PREVIOUS], []),
+        state([PREVIOUS], []),
+        state([PREVIOUS], []),
+        state([PREVIOUS], []),
+        state([PREVIOUS], []),
+        state([PREVIOUS], []),
+      ],
+      jest.fn().mockRejectedValue(error),
+    );
+
+    const operation = dependencies.service.removeSelected(
+      'user',
+      'token',
+      RESOLVED,
+      { type: 'DEAL', promotionId: 'old', offerId: null },
+    );
+    await jest.runAllTimersAsync();
+    const result = await operation;
+
+    expect(result).toMatchObject({
+      success: false,
+      stage: 'REMOVAL',
+      errorCode: 'PROMOTION_REMOVAL_FAILED',
+      providerMessage: 'promotion could not be removed',
+      providerStatus: 500,
+    });
+    expect(dependencies.removal.removePromotion).toHaveBeenCalledTimes(1);
+    expect(loggerWarn).toHaveBeenCalledWith({
+      operation: 'promotion.remove',
+      itemId: 'MLA1',
+      promotionType: 'DEAL',
+      promotionId: 'old',
+      httpStatus: 500,
+      providerMessage: 'promotion could not be removed',
+    });
+    expect(JSON.stringify(loggerWarn.mock.calls)).not.toContain('token');
+  });
+
+  it('considera success aunque permanezca otra promoción activa', async () => {
+    const other = { id: 'other', type: 'DEAL', status: 'started' };
+    const dependencies = createExecutor(
+      [state([PREVIOUS, other], []), state([other], [])],
+      jest.fn().mockRejectedValue(providerError(502, 'uncertain delete')),
+    );
+
+    const result = await dependencies.service.removeSelected(
+      'user',
+      'token',
+      RESOLVED,
+      { type: 'DEAL', promotionId: 'old', offerId: null },
+    );
+
+    expect(result.success).toBe(true);
+    expect(dependencies.removal.removePromotion).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [
+      'SELLER_CAMPAIGN',
+      { id: 'campaign', type: 'SELLER_CAMPAIGN', status: 'started' },
+      { type: 'SELLER_CAMPAIGN', promotionId: 'campaign', offerId: null },
+    ],
+    [
+      'SMART',
+      { id: 'smart', type: 'SMART', ref_id: 'offer', status: 'started' },
+      { type: 'SMART', promotionId: 'smart', offerId: 'offer' },
+    ],
+    [
+      'PRICE_DISCOUNT',
+      { id: 'discount', type: 'PRICE_DISCOUNT', status: 'started' },
+      { type: 'PRICE_DISCOUNT', promotionId: null, offerId: null },
+    ],
+  ])(
+    'mantiene removal específico para %s',
+    async (_type, promotion, selection) => {
+      const dependencies = createExecutor([
+        state([promotion], []),
+        state([], []),
+      ]);
+
+      const result = await dependencies.service.removeSelected(
+        'user',
+        'token',
+        RESOLVED,
+        selection,
+      );
+
+      expect(result.success).toBe(true);
+      expect(dependencies.removal.removePromotion).toHaveBeenCalledWith(
+        'user',
+        RESOLVED.publication,
+        promotion,
+        { timeoutMs: 30_000 },
+      );
+    },
+  );
+
   it('acepta POST timeout cuando GET confirma la promoción ACTIVE', async () => {
     const dependencies = createExecutor(
       [
@@ -401,4 +590,16 @@ function createExecutor(
     removal,
     application,
   };
+}
+
+function providerError(status: number, message: string): HttpException {
+  return new HttpException(
+    {
+      message: 'Mercado Libre no está disponible temporalmente',
+      mercadoLibreMessage: message,
+      mercadoLibreError: 'provider_error',
+      mercadoLibreStatus: status,
+    },
+    status,
+  );
 }

@@ -30,16 +30,32 @@ export function isTimeout(error: unknown): boolean {
 export function promotionProviderMessage(error: unknown): string | undefined {
   if (!(error instanceof HttpException)) return undefined;
   const response = error.getResponse();
-  if (
-    typeof response !== 'object' ||
-    response === null ||
-    !('mercadoLibreMessage' in response)
-  )
-    return undefined;
-  const message = response.mercadoLibreMessage;
-  return typeof message === 'string' && message.trim()
-    ? message.trim().slice(0, 500)
-    : undefined;
+  if (typeof response === 'string') return safeProviderText(response);
+  if (typeof response !== 'object' || response === null) return undefined;
+  const body = response as Record<string, unknown>;
+  return (
+    safeProviderText(body.mercadoLibreMessage) ??
+    safeProviderText(body.message) ??
+    providerCauseMessage(body.cause)
+  );
+}
+
+export function promotionProviderStatus(error: unknown): number | undefined {
+  if (!(error instanceof HttpException)) return undefined;
+  const response = error.getResponse();
+  if (typeof response === 'object' && response !== null) {
+    const body = response as Record<string, unknown>;
+    const original = body.mercadoLibreStatus ?? body.status;
+    if (
+      typeof original === 'number' &&
+      Number.isInteger(original) &&
+      original >= 100 &&
+      original <= 599
+    ) {
+      return original;
+    }
+  }
+  return error.getStatus();
 }
 
 export function normalizedPromotionException(
@@ -53,7 +69,36 @@ export function normalizedPromotionException(
     code === 'PROMOTION_PERMISSION_DENIED' && sourceStatus === 401
       ? HttpStatus.UNAUTHORIZED
       : statusForCode(code);
-  return new HttpException({ code, message: messageForCode(code) }, status);
+  const providerMessage = promotionProviderMessage(error);
+  const providerStatus = promotionProviderStatus(error);
+  return new HttpException(
+    {
+      code,
+      message: messageForCode(code),
+      ...(providerMessage ? { providerMessage } : {}),
+      ...(providerStatus ? { providerStatus } : {}),
+    },
+    status,
+  );
+}
+
+function providerCauseMessage(value: unknown): string | undefined {
+  const causes = Array.isArray(value) ? value : [value];
+  for (const cause of causes) {
+    if (typeof cause !== 'object' || cause === null) continue;
+    const detail = cause as Record<string, unknown>;
+    const message =
+      safeProviderText(detail.message) ??
+      safeProviderText(detail.error_message);
+    if (message) return message;
+  }
+  return undefined;
+}
+
+function safeProviderText(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim()
+    ? value.trim().slice(0, 500)
+    : undefined;
 }
 
 function statusForCode(code: PromotionErrorCode): number {
