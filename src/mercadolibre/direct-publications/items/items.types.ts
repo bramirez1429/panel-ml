@@ -16,6 +16,7 @@ export type MlPicture = {
 
 export type MlItem = {
   id: string;
+  seller_id?: number | string;
   title?: string;
 
   family_name?: string | null;

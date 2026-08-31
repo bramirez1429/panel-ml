@@ -3,6 +3,7 @@ import type { FamiliesService } from '../families/families.service';
 import type { FamilySummary } from '../families/family.types';
 import type { ItemsService } from '../items/items.service';
 import type { MlItem } from '../items/items.types';
+import { PublicationCatalogScannerService } from './publication-catalog-scanner.service';
 import { PublicationsGlobalSearchService } from './publications-global-search.service';
 
 const USER_ID = '11111111-1111-4111-8111-111111111111';
@@ -159,13 +160,16 @@ function createService(pages: string[][], catalog: MlItem[]) {
     ),
   };
   const families = { getSummary: jest.fn() };
+  const scanner = new PublicationCatalogScannerService(
+    source as unknown as PublicationSourceService,
+    items as unknown as ItemsService,
+  );
   return {
     source,
     items,
     families,
     service: new PublicationsGlobalSearchService(
-      source as unknown as PublicationSourceService,
-      items as unknown as ItemsService,
+      scanner,
       families as unknown as FamiliesService,
     ),
   };

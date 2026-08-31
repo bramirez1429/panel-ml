@@ -1,5 +1,6 @@
 import type { SafeUser } from '../../../auth/domain/auth.models';
 import type { PublicationDetailService } from './publication-detail.service';
+import type { PublicationSearchService } from './publication-search.service';
 import { PublicationsController } from './publications.controller';
 import type { PublicationsService } from './publications.service';
 
@@ -20,6 +21,7 @@ describe('PublicationsController', () => {
     const controller = new PublicationsController(
       service as unknown as PublicationsService,
       {} as PublicationDetailService,
+      {} as PublicationSearchService,
     );
 
     void controller.getGrouped(USER, '20', 'title-search:20', 'algodon nena');
@@ -29,6 +31,26 @@ describe('PublicationsController', () => {
       20,
       'title-search:20',
       'algodon nena',
+    );
+  });
+
+  it('delega la búsqueda reusable con query y paginación', () => {
+    const searchService = {
+      search: jest.fn().mockResolvedValue({ items: [] }),
+    };
+    const controller = new PublicationsController(
+      {} as PublicationsService,
+      {} as PublicationDetailService,
+      searchService as unknown as PublicationSearchService,
+    );
+
+    void controller.search(USER, 'remera mujer', '10', 'title-search:10');
+
+    expect(searchService.search).toHaveBeenCalledWith(
+      USER.id,
+      'remera mujer',
+      10,
+      'title-search:10',
     );
   });
 });

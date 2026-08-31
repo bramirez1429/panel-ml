@@ -1,11 +1,10 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 
-import { PublicationSourceService } from '../../publications/sync/publication-source.service';
 import { FamiliesService } from '../families/families.service';
 import type { FamilySummary } from '../families/family.types';
-import { ItemsService } from '../items/items.service';
 import type { MlItem } from '../items/items.types';
 import type { SharedProduct } from './publication.types';
+import { PublicationCatalogScannerService } from './publication-catalog-scanner.service';
 import {
   decodeTitleSearchCursor,
   encodeTitleSearchCursor,
@@ -20,8 +19,7 @@ type GroupedReference =
 @Injectable()
 export class PublicationsGlobalSearchService {
   constructor(
-    private readonly publicationSource: PublicationSourceService,
-    private readonly itemsService: ItemsService,
+    private readonly scanner: PublicationCatalogScannerService,
     private readonly familiesService: FamiliesService,
   ) {}
 
@@ -73,23 +71,12 @@ export class PublicationsGlobalSearchService {
     const references: GroupedReference[] = [];
     const seenItems = new Set<string>();
     const families = new Map<string, GroupedReference>();
-    let scrollId: string | undefined;
-
-    while (references.length < target) {
-      const scan = await this.publicationSource.fetchNextScanPage(
-        sellerId,
-        accessToken,
-        scrollId,
-      );
-      if (scan.itemIds.length === 0) return { references, reachedEnd: true };
-
-      const items = await this.itemsService.getMany(scan.itemIds, accessToken);
+    const scan = await this.scanner.scan(sellerId, accessToken, (items) => {
       this.appendMatches(items, search, references, families, seenItems);
-      if (!scan.scrollId) return { references, reachedEnd: true };
-      scrollId = scan.scrollId;
-    }
+      return references.length >= target;
+    });
 
-    return { references, reachedEnd: false };
+    return { references, reachedEnd: scan.reachedEnd };
   }
 
   private appendMatches(
