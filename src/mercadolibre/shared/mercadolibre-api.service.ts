@@ -171,6 +171,26 @@ export class MercadolibreApiService {
     );
   }
 
+  /** Envía multipart sin fijar el boundary que administra FormData. */
+  postMultipart<T>(
+    path: string,
+    form: FormData,
+    accessToken: string,
+    kind?: MercadoLibreRequestKind,
+    options?: MercadolibreApiRequestOptions,
+  ): Promise<T> {
+    return this.requestJson<T>(
+      path,
+      {
+        method: 'POST',
+        headers: this.headers(accessToken),
+        body: form,
+      },
+      kind,
+      options,
+    );
+  }
+
   /** Ejecuta una solicitud y devuelve solamente el JSON. */
   private async requestJson<T>(
     path: string,

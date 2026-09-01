@@ -1,0 +1,364 @@
+import { BadRequestException, HttpException, Injectable } from '@nestjs/common';
+
+import { MercadolibreApiService } from '../../shared/mercadolibre-api.service';
+import { isJsonObject } from '../../shared/mercadolibre.types';
+import type {
+  SimilarPublicationAttribute,
+  SimilarPublicationCreatedItem,
+  SimilarPublicationCreateInput,
+  SimilarPublicationCreationResult,
+  SimilarPublicationSaleTerm,
+} from './similar-publication.types';
+import { SimilarPublicationSourceService } from './similar-publication-source.service';
+import { SimilarPublicationValidationService } from './similar-publication-validation.service';
+
+@Injectable()
+export class SimilarPublicationCreationService {
+  constructor(
+    private readonly sourceService: SimilarPublicationSourceService,
+    private readonly validationService: SimilarPublicationValidationService,
+    private readonly apiService: MercadolibreApiService,
+  ) {}
+
+  async create(
+    userId: string,
+    rawInput: unknown,
+  ): Promise<SimilarPublicationCreationResult> {
+    const input = this.validationService.parse(rawInput);
+    const source = await this.sourceService.load(userId, input.sourceKey);
+    this.validationService.validateNewData(
+      input,
+      source.originalIdentifierValues,
+      source.originalPictureIds,
+    );
+    await this.validationService.validateCategory(input, source.accessToken);
+    const sellerUsesUserProducts =
+      await this.sourceService.sellerUsesUserProducts(
+        source.sellerId,
+        source.accessToken,
+      );
+    const useUserProducts =
+      sellerUsesUserProducts || source.draft.sourceType === 'USER_PRODUCT';
+
+    if (useUserProducts) {
+      this.validateFamilyName(input.familyName, source.draft.familyName);
+      return this.createUserProducts(input, source.accessToken);
+    }
+    return this.createLegacy(input, source.accessToken);
+  }
+
+  private async createUserProducts(
+    input: SimilarPublicationCreateInput,
+    accessToken: string,
+  ): Promise<SimilarPublicationCreationResult> {
+    const results: SimilarPublicationCreatedItem[] = [];
+    for (const variant of input.variants) {
+      const payload = {
+        family_name: input.familyName,
+        category_id: input.categoryId,
+        price: variant.price,
+        currency_id: input.currencyId,
+        available_quantity: variant.stock,
+        buying_mode: input.buyingMode,
+        listing_type_id: input.listingTypeId,
+        pictures: variant.pictureIds.map((id) => ({ id })),
+        attributes: withSku(variant.attributes, variant.sku).map(toMlAttribute),
+        sale_terms: input.saleTerms.map(toMlSaleTerm),
+        ...(input.shipping
+          ? { shipping: { free_shipping: input.shipping.freeShipping } }
+          : {}),
+        ...(input.channels.length > 0 ? { channels: input.channels } : {}),
+      };
+      results.push(
+        await this.createOne(
+          variant.sourceReference,
+          payload,
+          input.description,
+          accessToken,
+        ),
+      );
+    }
+    return summarize(results);
+  }
+
+  private async createLegacy(
+    input: SimilarPublicationCreateInput,
+    accessToken: string,
+  ): Promise<SimilarPublicationCreationResult> {
+    if (!input.titleTemplate) {
+      throw new BadRequestException(
+        'El título es obligatorio para publicar en Legacy',
+      );
+    }
+    const allPictures = [
+      ...new Set(input.variants.flatMap(({ pictureIds }) => pictureIds)),
+    ];
+    const commonAttributes = commonAttributesFor(input);
+    const base = {
+      title: input.titleTemplate,
+      category_id: input.categoryId,
+      price: input.variants[0].price,
+      currency_id: input.currencyId,
+      buying_mode: input.buyingMode,
+      listing_type_id: input.listingTypeId,
+      pictures: allPictures.map((id) => ({ id })),
+      attributes: commonAttributes.map(toMlAttribute),
+      sale_terms: input.saleTerms.map(toMlSaleTerm),
+      ...(input.shipping
+        ? { shipping: { free_shipping: input.shipping.freeShipping } }
+        : {}),
+      ...(input.channels.length > 0 ? { channels: input.channels } : {}),
+    };
+    const payload =
+      input.variants.length === 1
+        ? {
+            ...base,
+            available_quantity: input.variants[0].stock,
+            attributes: withSku(
+              input.variants[0].attributes,
+              input.variants[0].sku,
+            ).map(toMlAttribute),
+          }
+        : {
+            ...base,
+            variations: input.variants.map((variant) => ({
+              price: variant.price,
+              available_quantity: variant.stock,
+              attribute_combinations: differentAttributes(
+                variant.attributes,
+                commonAttributes,
+              ).map(toMlAttribute),
+              attributes: variant.sku
+                ? [toMlAttribute(skuAttribute(variant.sku))]
+                : [],
+              picture_ids: variant.pictureIds,
+            })),
+          };
+    const result = await this.createOne(
+      input.variants[0].sourceReference,
+      payload,
+      input.description,
+      accessToken,
+    );
+    return summarize([result]);
+  }
+
+  private async createOne(
+    variantKey: string,
+    payload: unknown,
+    description: string | null,
+    accessToken: string,
+  ): Promise<SimilarPublicationCreatedItem> {
+    let itemId: string | null = null;
+    let userProductId: string | null = null;
+    let familyId: string | null = null;
+    try {
+      const response = await this.apiService.post<unknown>(
+        '/items',
+        payload,
+        accessToken,
+      );
+      if (!isJsonObject(response) || !validItemId(response.id)) {
+        throw new BadRequestException('Mercado Libre no informó el nuevo MLA');
+      }
+      itemId = response.id;
+      userProductId = text(response.user_product_id);
+      familyId = identifier(response.family_id);
+      if (description) {
+        await this.apiService.post(
+          `/items/${encodeURIComponent(itemId)}/description`,
+          { plain_text: description },
+          accessToken,
+        );
+      }
+      return {
+        variantKey,
+        status: 'CREATED',
+        itemId,
+        userProductId,
+        familyId,
+        error: null,
+      };
+    } catch (error) {
+      return {
+        variantKey,
+        status: 'ERROR',
+        itemId,
+        userProductId,
+        familyId,
+        error: safeError(error),
+      };
+    }
+  }
+
+  private validateFamilyName(
+    familyName: string | null,
+    originalFamilyName: string | null,
+  ): void {
+    if (!familyName) {
+      throw new BadRequestException(
+        'familyName es obligatorio para User Products',
+      );
+    }
+    if (
+      originalFamilyName &&
+      familyName.localeCompare(originalFamilyName, 'es', {
+        sensitivity: 'base',
+      }) === 0
+    ) {
+      throw new BadRequestException(
+        'Modificá el nombre de la familia para crear una publicación similar.',
+      );
+    }
+  }
+}
+
+function summarize(
+  items: SimilarPublicationCreatedItem[],
+): SimilarPublicationCreationResult {
+  const successful = items.filter(({ status }) => status === 'CREATED');
+  const status =
+    successful.length === items.length
+      ? 'SUCCESS'
+      : successful.length > 0
+        ? 'PARTIAL'
+        : 'FAILED';
+  return { status, items, sourceKey: newSourceKey(successful) };
+}
+
+function newSourceKey(items: SimilarPublicationCreatedItem[]): string | null {
+  if (items.length === 0) return null;
+  const familyIds = [
+    ...new Set(items.flatMap(({ familyId }) => familyId ?? [])),
+  ];
+  if (familyIds.length === 1) return `family:${familyIds[0]}`;
+  return items.length === 1 && items[0].itemId
+    ? `item:${items[0].itemId}`
+    : null;
+}
+
+function commonAttributesFor(
+  input: SimilarPublicationCreateInput,
+): SimilarPublicationAttribute[] {
+  const [first, ...rest] = input.variants;
+  return first.attributes.filter(
+    (candidate) =>
+      hasPayloadValue(candidate) &&
+      rest.every((variant) =>
+        variant.attributes.some(
+          (attribute) =>
+            attribute.id === candidate.id &&
+            attributeSignature(attribute) === attributeSignature(candidate),
+        ),
+      ),
+  );
+}
+
+function differentAttributes(
+  attributes: SimilarPublicationAttribute[],
+  common: SimilarPublicationAttribute[],
+): SimilarPublicationAttribute[] {
+  const ids = new Set(common.map(({ id }) => id));
+  return attributes.filter(
+    (attribute) =>
+      !ids.has(attribute.id) &&
+      attribute.id !== 'SELLER_SKU' &&
+      hasPayloadValue(attribute),
+  );
+}
+
+function attributeSignature(attribute: SimilarPublicationAttribute): string {
+  return JSON.stringify({
+    valueId: attribute.valueId,
+    valueName: attribute.valueName,
+    values: attribute.values,
+  });
+}
+
+function withSku(
+  attributes: SimilarPublicationAttribute[],
+  sku: string | null,
+): SimilarPublicationAttribute[] {
+  const withoutSku = attributes.filter(
+    (attribute) => attribute.id !== 'SELLER_SKU' && hasPayloadValue(attribute),
+  );
+  return sku ? [...withoutSku, skuAttribute(sku)] : withoutSku;
+}
+
+function hasPayloadValue(attribute: SimilarPublicationAttribute): boolean {
+  return Boolean(
+    attribute.valueId ||
+    attribute.valueName ||
+    attribute.values.some(({ id, name }) => Boolean(id || name)),
+  );
+}
+
+function skuAttribute(value: string): SimilarPublicationAttribute {
+  return {
+    id: 'SELLER_SKU',
+    name: null,
+    valueId: null,
+    valueName: value,
+    values: [],
+  };
+}
+
+function toMlAttribute(attribute: SimilarPublicationAttribute) {
+  return {
+    id: attribute.id,
+    ...(attribute.valueId ? { value_id: attribute.valueId } : {}),
+    ...(attribute.valueName ? { value_name: attribute.valueName } : {}),
+    ...(attribute.values.length > 0
+      ? {
+          values: attribute.values.map(({ id, name }) => ({
+            ...(id ? { id } : {}),
+            ...(name ? { name } : {}),
+          })),
+        }
+      : {}),
+  };
+}
+
+function toMlSaleTerm(term: SimilarPublicationSaleTerm) {
+  return {
+    id: term.id,
+    ...(term.valueId ? { value_id: term.valueId } : {}),
+    ...(term.valueName ? { value_name: term.valueName } : {}),
+  };
+}
+
+function safeError(error: unknown): { message: string; errorCode?: string } {
+  if (error instanceof HttpException) {
+    const response = error.getResponse();
+    if (isJsonObject(response)) {
+      const message =
+        text(response.mercadoLibreMessage) ?? text(response.message);
+      const errorCode =
+        text(response.errorCode) ?? text(response.mercadoLibreError);
+      return {
+        message: message ?? 'Mercado Libre rechazó la nueva publicación',
+        ...(errorCode ? { errorCode } : {}),
+      };
+    }
+    if (typeof response === 'string')
+      return { message: response.slice(0, 500) };
+  }
+  return { message: 'No se pudo crear la publicación en Mercado Libre' };
+}
+
+function validItemId(value: unknown): value is string {
+  return typeof value === 'string' && /^MLA\d+$/u.test(value);
+}
+
+function identifier(value: unknown): string | null {
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value > 0) {
+    return String(value);
+  }
+  return text(value);
+}
+
+function text(value: unknown): string | null {
+  return typeof value === 'string' && value.trim()
+    ? value.trim().slice(0, 500)
+    : null;
+}

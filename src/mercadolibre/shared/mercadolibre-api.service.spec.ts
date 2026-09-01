@@ -75,6 +75,23 @@ describe('MercadolibreApiService', () => {
     expect(new Headers(formInit?.headers).has('authorization')).toBe(false);
   });
 
+  it('envía multipart autenticado sin fijar Content-Type ni boundary', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 'PICTURE' }));
+    const form = new FormData();
+    form.append('file', new Blob(['image']), 'new.jpg');
+
+    await service.postMultipart('/pictures/items/upload', form, 'token');
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://api.mercadolibre.com/pictures/items/upload');
+    expect(init?.method).toBe('POST');
+    expect(init?.body).toBe(form);
+    expect(new Headers(init?.headers).get('authorization')).toBe(
+      'Bearer token',
+    );
+    expect(new Headers(init?.headers).has('content-type')).toBe(false);
+  });
+
   it('sanea los errores OAuth antes de exponerlos', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse(

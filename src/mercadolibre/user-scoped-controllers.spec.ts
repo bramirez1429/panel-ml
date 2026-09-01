@@ -15,6 +15,7 @@ import { SellerCampaignController } from './direct-publications/promotions/selle
 import { SmartPromotionController } from './direct-publications/promotions/smart-promotion.controller';
 import { PublicationsController } from './direct-publications/publications/publications.controller';
 import { ShippingController } from './direct-publications/shipping/shipping.controller';
+import { SimilarPublicationController } from './direct-publications/similar-publications/similar-publication.controller';
 import { SkuController } from './direct-publications/sku/sku.controller';
 import { StockController } from './direct-publications/stock/stock.controller';
 import { MercadolibreController } from './mercadolibre.controller';
@@ -38,6 +39,7 @@ const USER_SCOPED_CONTROLLERS = [
   SmartPromotionController,
   PromotionManagerController,
   PromotionsCatalogController,
+  SimilarPublicationController,
 ] as const;
 
 function guardsFor(controller: object): unknown[] {

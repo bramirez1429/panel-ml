@@ -78,6 +78,12 @@ import { AttributesService } from './direct-publications/attributes/attributes.s
 import { AttributesController } from './direct-publications/attributes/attributes.controller';
 import { ShippingService } from './direct-publications/shipping/shipping.service';
 import { ShippingController } from './direct-publications/shipping/shipping.controller';
+import { SimilarPublicationController } from './direct-publications/similar-publications/similar-publication.controller';
+import { SimilarPublicationDraftMapper } from './direct-publications/similar-publications/similar-publication.mapper';
+import { SimilarPublicationSourceService } from './direct-publications/similar-publications/similar-publication-source.service';
+import { SimilarPublicationValidationService } from './direct-publications/similar-publications/similar-publication-validation.service';
+import { SimilarPublicationCreationService } from './direct-publications/similar-publications/similar-publication-creation.service';
+import { MercadoLibrePictureUploadService } from './direct-publications/similar-publications/mercadolibre-picture-upload.service';
 
 @Module({
   imports: [AuthModule],
@@ -100,6 +106,7 @@ import { ShippingController } from './direct-publications/shipping/shipping.cont
     SmartPromotionController,
     PromotionManagerController,
     PromotionsCatalogController,
+    SimilarPublicationController,
   ],
   providers: [
     SupabaseService,
@@ -160,6 +167,11 @@ import { ShippingController } from './direct-publications/shipping/shipping.cont
     PromotionBulkJobRepository,
     PromotionBulkJobService,
     PromotionBulkJobQueue,
+    SimilarPublicationDraftMapper,
+    SimilarPublicationSourceService,
+    SimilarPublicationValidationService,
+    SimilarPublicationCreationService,
+    MercadoLibrePictureUploadService,
   ],
   exports: [
     MercadolibreProductsRepository,
