@@ -7,7 +7,10 @@ export const NEST_APPLICATION_OPTIONS: Readonly<NestApplicationOptions> = {
   rawBody: true,
 };
 
+const JSON_BODY_LIMIT = '5mb';
+
 export function configureApp(app: NestExpressApplication): void {
+  app.useBodyParser('json', { limit: JSON_BODY_LIMIT });
   app.use(helmet());
   app.useGlobalPipes(
     new ValidationPipe({

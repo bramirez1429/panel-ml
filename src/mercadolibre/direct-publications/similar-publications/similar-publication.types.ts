@@ -154,6 +154,12 @@ export type SimilarPublicationPictureUpload = {
   secureUrl: string;
 };
 
+export type SimilarPublicationBase64PictureInput = {
+  fileName: string;
+  mimeType: string;
+  base64: string;
+};
+
 export type SimilarPublicationSourceContext = {
   sellerId: number;
   accessToken: string;

@@ -14,6 +14,7 @@ import type { SafeUser } from '../../../auth/domain/auth.models';
 import { AccessTokenGuard } from '../../../auth/presentation/access-token.guard';
 import { CurrentUser } from '../../../auth/presentation/current-user.decorator';
 import { MercadoLibrePictureUploadService } from './mercadolibre-picture-upload.service';
+import { SimilarPublicationBase64UploadService } from './similar-publication-base64-upload.service';
 import { SimilarPublicationCreationService } from './similar-publication-creation.service';
 import { SimilarPublicationSourceService } from './similar-publication-source.service';
 import type { SimilarPublicationUploadFile } from './similar-publication.types';
@@ -25,6 +26,7 @@ export class SimilarPublicationController {
     private readonly sourceService: SimilarPublicationSourceService,
     private readonly pictureUploadService: MercadoLibrePictureUploadService,
     private readonly creationService: SimilarPublicationCreationService,
+    private readonly base64UploadService: SimilarPublicationBase64UploadService,
   ) {}
 
   @Get('draft')
@@ -46,6 +48,11 @@ export class SimilarPublicationController {
     @UploadedFile() file?: SimilarPublicationUploadFile,
   ) {
     return this.pictureUploadService.upload(user.id, file);
+  }
+
+  @Post('pictures/base64')
+  uploadBase64Picture(@CurrentUser() user: SafeUser, @Body() input: unknown) {
+    return this.base64UploadService.upload(user.id, input);
   }
 
   @Post()

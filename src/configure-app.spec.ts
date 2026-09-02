@@ -5,6 +5,7 @@ import { configureApp } from './configure-app';
 describe('configureApp CORS', () => {
   it('habilita credenciales solo para los origenes exactos configurados', () => {
     const enableCors = jest.fn();
+    const useBodyParser = jest.fn();
     const configService = {
       get: jest.fn((key: string) =>
         key === 'CORS_ORIGINS'
@@ -14,6 +15,7 @@ describe('configureApp CORS', () => {
     } as unknown as ConfigService;
     const app = {
       use: jest.fn(),
+      useBodyParser,
       useGlobalPipes: jest.fn(),
       get: jest.fn().mockReturnValue(configService),
       enableCors,
@@ -22,6 +24,7 @@ describe('configureApp CORS', () => {
 
     configureApp(app);
 
+    expect(useBodyParser).toHaveBeenCalledWith('json', { limit: '5mb' });
     expect(enableCors).toHaveBeenCalledWith({
       origin: ['https://panel.example.com', 'http://localhost:3001'],
       allowedHeaders: ['Authorization', 'Content-Type'],
