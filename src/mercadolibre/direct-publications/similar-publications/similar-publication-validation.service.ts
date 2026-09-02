@@ -65,13 +65,17 @@ export class SimilarPublicationValidationService {
     input: SimilarPublicationCreateInput,
     accessToken: string,
   ): Promise<SimilarPublicationCreationCategoryRules> {
-    const [category, attributes] = await Promise.all([
+    const [category, attributes, saleTerms] = await Promise.all([
       this.apiService.get<unknown>(
         `/categories/${encodeURIComponent(input.categoryId)}`,
         accessToken,
       ),
       this.apiService.get<unknown>(
         `/categories/${encodeURIComponent(input.categoryId)}/attributes`,
+        accessToken,
+      ),
+      this.apiService.get<unknown>(
+        `/categories/${encodeURIComponent(input.categoryId)}/sale_terms`,
         accessToken,
       ),
     ]);
@@ -85,6 +89,12 @@ export class SimilarPublicationValidationService {
     if (!Array.isArray(attributes)) {
       throw invalid('Mercado Libre devolvió atributos de categoría inválidos');
     }
+    const writableAttributeIds =
+      writableAttributeIdsOf(attributes);
+
+    const allowedSaleTermIds =
+      saleTermIdsOf(saleTerms);
+
     const requiredIds = attributes.flatMap((attribute) => {
       if (!isJsonObject(attribute) || !isJsonObject(attribute.tags)) return [];
       const id = optionalText(attribute.id);
@@ -118,7 +128,11 @@ export class SimilarPublicationValidationService {
         );
       }
     }
-    return { packageAttributeIds };
+    return {
+      packageAttributeIds,
+      writableAttributeIds,
+      allowedSaleTermIds,
+    };
   }
 
   validateNewData(
@@ -191,20 +205,45 @@ function parsePackage(value: unknown): SimilarPublicationPackage | undefined {
   };
 }
 
-function packageAttributeIdsOf(
+function writableAttributeIdsOf(
   attributes: unknown[],
-): SimilarPublicationPackageAttributeIds {
-  const writableIds = attributes.flatMap((attribute) => {
+): string[] {
+  return attributes.flatMap((attribute) => {
     if (!isJsonObject(attribute)) return [];
-    const tags = isJsonObject(attribute.tags) ? attribute.tags : {};
+
     const id = optionalText(attribute.id);
-    return id &&
-      tags.read_only !== true &&
+    if (!id) return [];
+
+    const tags = isJsonObject(attribute.tags)
+      ? attribute.tags
+      : {};
+
+    return tags.read_only !== true &&
       tags.inferred !== true &&
       tags.fixed !== true
       ? [id]
       : [];
   });
+}
+
+function saleTermIdsOf(value: unknown): string[] {
+  const entries = Array.isArray(value)
+    ? value
+    : isJsonObject(value) && Array.isArray(value.sale_terms)
+      ? value.sale_terms
+      : [];
+
+  return entries.flatMap((entry) => {
+    if (!isJsonObject(entry)) return [];
+    return optionalText(entry.id) ?? [];
+  });
+}
+
+function packageAttributeIdsOf(
+  attributes: unknown[],
+): SimilarPublicationPackageAttributeIds {
+  const writableIds =
+    writableAttributeIdsOf(attributes);
   const first = (candidates: string[]): string | null =>
     candidates.find((id) => writableIds.includes(id)) ?? null;
   return {

@@ -157,6 +157,8 @@ export type SimilarPublicationPackageAttributeIds = {
 
 export type SimilarPublicationCreationCategoryRules = {
   packageAttributeIds: SimilarPublicationPackageAttributeIds;
+  writableAttributeIds: string[];
+  allowedSaleTermIds: string[];
 };
 
 export type SimilarPublicationPictureUpload = {

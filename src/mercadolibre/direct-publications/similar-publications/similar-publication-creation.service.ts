@@ -47,8 +47,11 @@ export class SimilarPublicationCreationService {
       source.accessToken,
     );
 
-    const creationInput = withPackageAttributes(
-      completedInput,
+    const creationInput = withCategoryWritableFields(
+      withPackageAttributes(
+        completedInput,
+        categoryRules,
+      ),
       categoryRules,
     );
     const sellerUsesUserProducts =
@@ -344,6 +347,46 @@ function summarize(
         : 'FAILED';
   const sourceKey = newSourceKey(successful);
   return { status, items, sourceKey, newSourceKey: sourceKey };
+}
+
+function withCategoryWritableFields(
+  input: SimilarPublicationCreateInput,
+  rules: SimilarPublicationCreationCategoryRules,
+): SimilarPublicationCreateInput {
+  const writableAttributes =
+    new Set(rules.writableAttributeIds);
+
+  const allowedSaleTerms =
+    new Set(rules.allowedSaleTermIds);
+
+  return {
+    ...input,
+
+    /*
+     * Una publicación existente puede contener sale_terms
+     * generados por campañas de Mercado Libre.
+     *
+     * Para crear la nueva publicación solamente enviamos
+     * términos actualmente permitidos por la categoría.
+     */
+    saleTerms: input.saleTerms.filter(({ id }) =>
+      allowedSaleTerms.has(id),
+    ),
+
+    /*
+     * ML puede devolver atributos calculados/read-only en
+     * el ítem original. No deben copiarse al POST /items.
+     *
+     * La whitelist sale dinámicamente de:
+     * GET /categories/{categoryId}/attributes
+     */
+    variants: input.variants.map((variant) => ({
+      ...variant,
+      attributes: variant.attributes.filter(({ id }) =>
+        writableAttributes.has(id),
+      ),
+    })),
+  };
 }
 
 function withPackageAttributes(

@@ -391,8 +391,128 @@ describe('SimilarPublicationCreationService', () => {
     );
   });
 
+  it('filtra atributos no modificables y sale terms administrados por Mercado Libre', async () => {
+    const { service, apiService } = setup({
+      sellerUsesUp: false,
+      categoryAttributes: [
+        {
+          id: 'BRAND',
+          tags: { required: true },
+        },
+        {
+          id: 'IS_TOM_BRAND',
+          tags: { read_only: true },
+        },
+        {
+          id: 'FILTERABLE_SIZE',
+          tags: { inferred: true },
+        },
+      ],
+      saleTerms: [
+        {
+          id: 'WARRANTY_TYPE',
+        },
+      ],
+    });
+
+    apiService.post.mockResolvedValueOnce({
+      id: 'MLA780',
+    });
+
+    await service.create('user', {
+      ...input,
+      saleTerms: [
+        {
+          id: 'INSTALLMENTS_CAMPAIGN',
+          valueId: null,
+          valueName: '3x',
+        },
+        {
+          id: 'WARRANTY_TYPE',
+          valueId: null,
+          valueName: 'Garantía del vendedor',
+        },
+      ],
+      variants: [
+        {
+          ...input.variants[0],
+          attributes: [
+            ...input.variants[0].attributes,
+            {
+              id: 'IS_TOM_BRAND',
+              name: null,
+              valueId: null,
+              valueName: 'No',
+              values: [],
+            },
+            {
+              id: 'FILTERABLE_SIZE',
+              name: null,
+              valueId: null,
+              valueName: 'M',
+              values: [],
+            },
+          ],
+        },
+      ],
+    });
+
+    const [, payload] =
+      safeMockCall(apiService.post, 0);
+
+    expect(payload).toHaveProperty(
+      'sale_terms',
+      [
+        {
+          id: 'WARRANTY_TYPE',
+          value_name: 'Garantía del vendedor',
+        },
+      ],
+    );
+
+    expect(payload).toHaveProperty(
+      'attributes',
+      expect.arrayContaining([
+        {
+          id: 'BRAND',
+          value_name: 'Acme',
+        },
+      ]),
+    );
+
+    expect(payload).not.toHaveProperty(
+      'attributes',
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'IS_TOM_BRAND',
+        }),
+      ]),
+    );
+
+    expect(payload).not.toHaveProperty(
+      'attributes',
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'FILTERABLE_SIZE',
+        }),
+      ]),
+    );
+  });
+
   it('aplica commonAttributes y variantAttributes editados al POST final', async () => {
-    const { service, apiService } = setup({ sellerUsesUp: false });
+    const { service, apiService } = setup({
+      sellerUsesUp: false,
+      categoryAttributes: [
+        {
+          id: 'BRAND',
+          tags: { required: true },
+        },
+        {
+          id: 'COLOR',
+          tags: { variation_attribute: true },
+        },
+      ],
+    });
     apiService.post.mockResolvedValueOnce({ id: 'MLA778' });
 
     await service.create('user', {
@@ -439,6 +559,7 @@ describe('SimilarPublicationCreationService', () => {
     originalPictures?: Set<string>;
     categoryAttributes?: unknown[];
     categorySettings?: Record<string, unknown>;
+    saleTerms?: unknown[];
   }) {
     const source: SimilarPublicationSourceContext = {
       sellerId: 10,
@@ -452,21 +573,27 @@ describe('SimilarPublicationCreationService', () => {
       sellerUsesUserProducts: jest.fn().mockResolvedValue(options.sellerUsesUp),
     };
     const apiService = {
-      get: jest.fn().mockImplementation((path: string) =>
-        Promise.resolve(
-          path.endsWith('/attributes')
-            ? (options.categoryAttributes ?? [
-                { id: 'BRAND', tags: { required: true } },
-              ])
-            : {
-                id: 'MLA1',
-                settings: {
-                  listing_allowed: true,
-                  ...options.categorySettings,
-                },
-              },
-        ),
-      ),
+      get: jest.fn().mockImplementation((path: string) => {
+        if (path.endsWith('/attributes')) {
+          return Promise.resolve(
+            options.categoryAttributes ?? [
+              { id: 'BRAND', tags: { required: true } },
+            ],
+          );
+        }
+
+        if (path.endsWith('/sale_terms')) {
+          return Promise.resolve(options.saleTerms ?? []);
+        }
+
+        return Promise.resolve({
+          id: 'MLA1',
+          settings: {
+            listing_allowed: true,
+            ...options.categorySettings,
+          },
+        });
+      }),
       post: jest.fn(),
       put: jest.fn(),
     };
