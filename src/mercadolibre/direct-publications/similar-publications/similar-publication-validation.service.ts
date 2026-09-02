@@ -235,7 +235,29 @@ function saleTermIdsOf(value: unknown): string[] {
 
   return entries.flatMap((entry) => {
     if (!isJsonObject(entry)) return [];
-    return optionalText(entry.id) ?? [];
+
+    const id = optionalText(entry.id);
+    if (!id) return [];
+
+    const tags = isJsonObject(entry.tags)
+      ? entry.tags
+      : {};
+
+    /*
+     * El endpoint /sale_terms también puede devolver
+     * términos administrados por Mercado Libre.
+     * Que aparezcan en el recurso no significa que el
+     * seller pueda enviarlos en POST /items.
+     */
+    if (
+      tags.read_only === true ||
+      tags.inferred === true ||
+      tags.fixed === true
+    ) {
+      return [];
+    }
+
+    return [id];
   });
 }
 
