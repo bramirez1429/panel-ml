@@ -88,7 +88,13 @@ export class SimilarPublicationValidationService {
     const requiredIds = attributes.flatMap((attribute) => {
       if (!isJsonObject(attribute) || !isJsonObject(attribute.tags)) return [];
       const id = optionalText(attribute.id);
-      return id && attribute.tags.required === true ? [id] : [];
+      return id &&
+        (
+          attribute.tags.required === true ||
+          attribute.tags.new_required === true
+        )
+        ? [id]
+        : [];
     });
     const packageAttributeIds = packageAttributeIdsOf(attributes);
     validateCondition(input, category);

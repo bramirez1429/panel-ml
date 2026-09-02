@@ -2,12 +2,14 @@ import { BadRequestException, HttpException, Injectable } from '@nestjs/common';
 
 import { MercadolibreApiService } from '../../shared/mercadolibre-api.service';
 import { isJsonObject } from '../../shared/mercadolibre.types';
+import { isIdentifierAttribute } from './similar-publication.mapper';
 import type {
   SimilarPublicationAttribute,
   SimilarPublicationCreatedItem,
   SimilarPublicationCreateInput,
   SimilarPublicationCreationCategoryRules,
   SimilarPublicationCreationResult,
+  SimilarPublicationDraft,
   SimilarPublicationErrorCause,
   SimilarPublicationSaleTerm,
 } from './similar-publication.types';
@@ -28,16 +30,27 @@ export class SimilarPublicationCreationService {
   ): Promise<SimilarPublicationCreationResult> {
     const input = this.validationService.parse(rawInput);
     const source = await this.sourceService.load(userId, input.sourceKey);
-    this.validationService.validateNewData(
+
+    const completedInput = withSourceDefaults(
       input,
+      source.draft,
+    );
+
+    this.validationService.validateNewData(
+      completedInput,
       source.originalIdentifierValues,
       source.originalPictureIds,
     );
+
     const categoryRules = await this.validationService.validateCategory(
-      input,
+      completedInput,
       source.accessToken,
     );
-    const creationInput = withPackageAttributes(input, categoryRules);
+
+    const creationInput = withPackageAttributes(
+      completedInput,
+      categoryRules,
+    );
     const sellerUsesUserProducts =
       await this.sourceService.sellerUsesUserProducts(
         source.sellerId,
@@ -222,6 +235,101 @@ export class SimilarPublicationCreationService {
       );
     }
   }
+}
+
+function withSourceDefaults(
+  input: SimilarPublicationCreateInput,
+  source: SimilarPublicationDraft,
+): SimilarPublicationCreateInput {
+  const sourceVariants = new Map(
+    source.variants.map((variant) => [
+      variant.sourceReference,
+      variant,
+    ]),
+  );
+
+  const commonDefaults = mergePreferredAttributes(
+    source.commonAttributes ?? [],
+    source.mainAttributes ?? [],
+  ).filter(
+    (attribute) => !isIdentifierAttribute(attribute.id),
+  );
+
+  return {
+    ...input,
+
+    /*
+     * La condición se hereda automáticamente de la
+     * publicación original si el front no la envía.
+     */
+    condition:
+      input.condition ??
+      source.condition ??
+      null,
+
+    variants: input.variants.map((variant) => {
+      const sourceVariant =
+        sourceVariants.get(variant.sourceReference);
+
+      const sourceAttributes =
+        sourceVariant?.attributes ?? [];
+
+      const defaults = mergePreferredAttributes(
+        commonDefaults,
+        sourceAttributes.filter(
+          (attribute) =>
+            !isIdentifierAttribute(attribute.id),
+        ),
+      );
+
+      return {
+        ...variant,
+
+        /*
+         * Los valores enviados por el usuario tienen prioridad.
+         * Si vienen vacíos, conservamos el valor válido
+         * de la publicación original.
+         *
+         * Nunca heredamos SKU / GTIN / EAN / UPC.
+         */
+        attributes: mergePreferredAttributes(
+          defaults,
+          variant.attributes,
+        ),
+      };
+    }),
+  };
+}
+
+function mergePreferredAttributes(
+  ...groups: SimilarPublicationAttribute[][]
+): SimilarPublicationAttribute[] {
+  const result = new Map<
+    string,
+    SimilarPublicationAttribute
+  >();
+
+  for (const attribute of groups.flat()) {
+    if (isIdentifierAttribute(attribute.id)) {
+      /*
+       * Un identificador solamente puede venir del
+       * nuevo formulario. Nunca lo copiamos como default.
+       */
+      if (hasPayloadValue(attribute)) {
+        result.set(attribute.id, attribute);
+      }
+      continue;
+    }
+
+    if (
+      hasPayloadValue(attribute) ||
+      !result.has(attribute.id)
+    ) {
+      result.set(attribute.id, attribute);
+    }
+  }
+
+  return [...result.values()];
 }
 
 function summarize(

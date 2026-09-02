@@ -310,6 +310,87 @@ describe('SimilarPublicationCreationService', () => {
     });
   });
 
+  it('completa automáticamente condition y atributos desde la publicación original', async () => {
+    const automaticDraft: SimilarPublicationDraft = {
+      ...draft,
+      condition: {
+        id: 'new',
+        name: 'Nuevo',
+      },
+      commonAttributes: [
+        {
+          id: 'BRAND',
+          name: 'Marca',
+          valueId: null,
+          valueName: 'Sael',
+          values: [],
+        },
+      ],
+      mainAttributes: [
+        {
+          id: 'BRAND',
+          name: 'Marca',
+          valueId: null,
+          valueName: 'Sael',
+          values: [],
+        },
+      ],
+    };
+
+    const { service, apiService } = setup({
+      sellerUsesUp: false,
+      draft: automaticDraft,
+      categoryAttributes: [
+        {
+          id: 'BRAND',
+          tags: { new_required: true },
+        },
+        {
+          id: 'ITEM_CONDITION',
+          tags: { new_required: true },
+        },
+      ],
+      categorySettings: {
+        item_conditions: ['new'],
+      },
+    });
+
+    apiService.post.mockResolvedValueOnce({
+      id: 'MLA779',
+    });
+
+    await service.create('user', {
+      ...input,
+      condition: null,
+      variants: [
+        {
+          ...input.variants[0],
+          attributes:
+            input.variants[0].attributes.filter(
+              ({ id }) => id !== 'BRAND',
+            ),
+        },
+      ],
+    });
+
+    const [, payload] =
+      safeMockCall(apiService.post, 0);
+
+    expect(payload).toMatchObject({
+      condition: 'new',
+    });
+
+    expect(payload).toHaveProperty(
+      'attributes',
+      expect.arrayContaining([
+        {
+          id: 'BRAND',
+          value_name: 'Sael',
+        },
+      ]),
+    );
+  });
+
   it('aplica commonAttributes y variantAttributes editados al POST final', async () => {
     const { service, apiService } = setup({ sellerUsesUp: false });
     apiService.post.mockResolvedValueOnce({ id: 'MLA778' });
