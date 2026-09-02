@@ -8,6 +8,7 @@ import type {
   SimilarPublicationCreateInput,
   SimilarPublicationCreationCategoryRules,
   SimilarPublicationCreationResult,
+  SimilarPublicationErrorCause,
   SimilarPublicationSaleTerm,
 } from './similar-publication.types';
 import { SimilarPublicationSourceService } from './similar-publication-source.service';
@@ -390,23 +391,66 @@ function toMlSaleTerm(term: SimilarPublicationSaleTerm) {
   };
 }
 
-function safeError(error: unknown): { message: string; errorCode?: string } {
+function safeError(error: unknown): {
+  message: string;
+  errorCode?: string;
+  causes?: SimilarPublicationErrorCause[];
+} {
   if (error instanceof HttpException) {
     const response = error.getResponse();
+
     if (isJsonObject(response)) {
+      const causes = safeCauses(response.cause);
+
       const message =
-        text(response.mercadoLibreMessage) ?? text(response.message);
+        text(response.mercadoLibreMessage) ??
+        text(response.message) ??
+        causes[0]?.message ??
+        null;
+
       const errorCode =
-        text(response.errorCode) ?? text(response.mercadoLibreError);
+        text(response.errorCode) ??
+        text(response.mercadoLibreErrorCode) ??
+        text(response.mercadoLibreError) ??
+        text(response.error_code) ??
+        text(response.error) ??
+        causes[0]?.code ??
+        null;
+
       return {
         message: message ?? 'Mercado Libre rechazó la nueva publicación',
         ...(errorCode ? { errorCode } : {}),
+        ...(causes.length > 0 ? { causes } : {}),
       };
     }
-    if (typeof response === 'string')
+
+    if (typeof response === 'string') {
       return { message: response.slice(0, 500) };
+    }
   }
+
   return { message: 'No se pudo crear la publicación en Mercado Libre' };
+}
+
+function safeCauses(value: unknown): SimilarPublicationErrorCause[] {
+  const values = Array.isArray(value) ? value : value ? [value] : [];
+
+  return values
+    .filter(isJsonObject)
+    .map((cause) => ({
+      code:
+        text(cause.code) ??
+        text(cause.error_code),
+      message:
+        text(cause.message) ??
+        text(cause.error_message),
+      department: text(cause.department),
+    }))
+    .filter(
+      ({ code, message, department }) =>
+        Boolean(code || message || department),
+    )
+    .slice(0, 20);
 }
 
 function validItemId(value: unknown): value is string {

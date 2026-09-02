@@ -208,6 +208,43 @@ describe('SimilarPublicationCreationService', () => {
     expect(apiService.post).toHaveBeenCalledTimes(2);
   });
 
+  it('conserva los cause de Mercado Libre cuando rechaza /items', async () => {
+    const { service, apiService } = setup({ sellerUsesUp: false });
+
+    apiService.post.mockRejectedValueOnce(
+      new BadRequestException({
+        message: 'Validation error',
+        error: 'validation_error',
+        cause: [
+          {
+            code: 'item.attributes.missing_required',
+            message: 'Falta completar el atributo BRAND',
+            department: 'items',
+          },
+        ],
+      }),
+    );
+
+    const result = await service.create('user', input);
+
+    expect(result.status).toBe('FAILED');
+    expect(result.items[0]).toMatchObject({
+      variantKey: 'variant:1',
+      status: 'ERROR',
+      error: {
+        message: 'Validation error',
+        errorCode: 'validation_error',
+        causes: [
+          {
+            code: 'item.attributes.missing_required',
+            message: 'Falta completar el atributo BRAND',
+            department: 'items',
+          },
+        ],
+      },
+    });
+  });
+
   it('rechaza SKU, GTIN o pictureId heredados', async () => {
     const { service, apiService } = setup({
       sellerUsesUp: false,

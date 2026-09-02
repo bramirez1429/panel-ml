@@ -121,13 +121,23 @@ export type SimilarPublicationCreateInput = Omit<
   >;
 };
 
+export type SimilarPublicationErrorCause = {
+  code: string | null;
+  message: string | null;
+  department: string | null;
+};
+
 export type SimilarPublicationCreatedItem = {
   variantKey: string;
   status: 'CREATED' | 'ERROR';
   itemId: string | null;
   userProductId: string | null;
   familyId: string | null;
-  error: { message: string; errorCode?: string } | null;
+  error: {
+    message: string;
+    errorCode?: string;
+    causes?: SimilarPublicationErrorCause[];
+  } | null;
 };
 
 export type SimilarPublicationCreationResult = {
