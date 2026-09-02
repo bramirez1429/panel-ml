@@ -92,6 +92,7 @@ describe('SimilarPublicationCreationService', () => {
     expect(result).toMatchObject({
       status: 'SUCCESS',
       sourceKey: 'item:MLA999',
+      newSourceKey: 'item:MLA999',
     });
     expect(result.sourceKey).not.toBe(input.sourceKey);
   });
@@ -228,11 +229,98 @@ describe('SimilarPublicationCreationService', () => {
     expect(apiService.post).not.toHaveBeenCalled();
   });
 
+  it('envía condition y dimensiones writable sin reutilizar IDs internos', async () => {
+    const { service, apiService } = setup({
+      sellerUsesUp: false,
+      categoryAttributes: [
+        { id: 'BRAND', tags: { required: true } },
+        { id: 'SELLER_PACKAGE_WIDTH' },
+        { id: 'SELLER_PACKAGE_HEIGHT' },
+        { id: 'SELLER_PACKAGE_LENGTH' },
+        { id: 'SELLER_PACKAGE_WEIGHT' },
+      ],
+      categorySettings: { item_conditions: ['new'] },
+    });
+    apiService.post.mockResolvedValueOnce({ id: 'MLA777' });
+
+    const result = await service.create('user', {
+      ...input,
+      condition: { id: 'new', name: 'Nuevo' },
+      package: {
+        hasFactoryPackaging: null,
+        widthCm: 25,
+        heightCm: 6,
+        lengthCm: 31,
+        weightKg: 0.214,
+      },
+    });
+
+    const [, payload] = safeMockCall(apiService.post, 0);
+    expect(payload).toMatchObject({ condition: 'new' });
+    expect(payload).toHaveProperty(
+      'attributes',
+      expect.arrayContaining([
+        { id: 'SELLER_PACKAGE_WIDTH', value_name: '25 cm' },
+        { id: 'SELLER_PACKAGE_HEIGHT', value_name: '6 cm' },
+        { id: 'SELLER_PACKAGE_LENGTH', value_name: '31 cm' },
+        { id: 'SELLER_PACKAGE_WEIGHT', value_name: '214 g' },
+      ]),
+    );
+    expect(result).toMatchObject({
+      sourceKey: 'item:MLA777',
+      newSourceKey: 'item:MLA777',
+      items: [expect.objectContaining({ itemId: 'MLA777' })],
+    });
+  });
+
+  it('aplica commonAttributes y variantAttributes editados al POST final', async () => {
+    const { service, apiService } = setup({ sellerUsesUp: false });
+    apiService.post.mockResolvedValueOnce({ id: 'MLA778' });
+
+    await service.create('user', {
+      ...input,
+      commonAttributes: [
+        {
+          id: 'BRAND',
+          name: 'Marca',
+          valueId: null,
+          valueName: 'Marca nueva',
+          values: [],
+        },
+      ],
+      variants: [
+        {
+          ...input.variants[0],
+          variantAttributes: [
+            {
+              id: 'COLOR',
+              name: 'Color',
+              valueId: 'BLACK',
+              valueName: 'Negro',
+              values: [],
+            },
+          ],
+        },
+      ],
+    });
+
+    const [, payload] = safeMockCall(apiService.post, 0);
+    expect(payload).toHaveProperty(
+      'attributes',
+      expect.arrayContaining([
+        { id: 'BRAND', value_name: 'Marca nueva' },
+        { id: 'COLOR', value_id: 'BLACK', value_name: 'Negro' },
+      ]),
+    );
+  });
+
   function setup(options: {
     sellerUsesUp: boolean;
     draft?: SimilarPublicationDraft;
     originalIdentifiers?: Set<string>;
     originalPictures?: Set<string>;
+    categoryAttributes?: unknown[];
+    categorySettings?: Record<string, unknown>;
   }) {
     const source: SimilarPublicationSourceContext = {
       sellerId: 10,
@@ -246,15 +334,21 @@ describe('SimilarPublicationCreationService', () => {
       sellerUsesUserProducts: jest.fn().mockResolvedValue(options.sellerUsesUp),
     };
     const apiService = {
-      get: jest
-        .fn()
-        .mockImplementation((path: string) =>
-          Promise.resolve(
-            path.endsWith('/attributes')
-              ? [{ id: 'BRAND', tags: { required: true } }]
-              : { id: 'MLA1', settings: { listing_allowed: true } },
-          ),
+      get: jest.fn().mockImplementation((path: string) =>
+        Promise.resolve(
+          path.endsWith('/attributes')
+            ? (options.categoryAttributes ?? [
+                { id: 'BRAND', tags: { required: true } },
+              ])
+            : {
+                id: 'MLA1',
+                settings: {
+                  listing_allowed: true,
+                  ...options.categorySettings,
+                },
+              },
         ),
+      ),
       post: jest.fn(),
       put: jest.fn(),
     };

@@ -6,6 +6,9 @@ import { isIdentifierAttribute } from './similar-publication.mapper';
 import type {
   SimilarPublicationAttribute,
   SimilarPublicationCreateInput,
+  SimilarPublicationCreationCategoryRules,
+  SimilarPublicationPackage,
+  SimilarPublicationPackageAttributeIds,
   SimilarPublicationSaleTerm,
 } from './similar-publication.types';
 
@@ -18,8 +21,14 @@ export class SimilarPublicationValidationService {
   parse(value: unknown): SimilarPublicationCreateInput {
     if (!isJsonObject(value)) throw invalid('El borrador es obligatorio');
     const sourceKey = requiredText(value.sourceKey, 'sourceKey');
+    const commonAttributes = mergeAttributes(
+      parseAttributes(value.commonAttributes),
+      parseAttributes(value.mainAttributes),
+    );
     const variants = Array.isArray(value.variants)
-      ? value.variants.map((variant, index) => parseVariant(variant, index))
+      ? value.variants.map((variant, index) =>
+          parseVariant(variant, index, commonAttributes),
+        )
       : [];
     if (variants.length === 0)
       throw invalid('Debe existir al menos una variante');
@@ -42,6 +51,8 @@ export class SimilarPublicationValidationService {
       currencyId: requiredText(value.currencyId, 'currencyId'),
       listingTypeId: requiredText(value.listingTypeId, 'listingTypeId'),
       buyingMode: requiredText(value.buyingMode, 'buyingMode'),
+      condition: parseCondition(value.condition),
+      package: parsePackage(value.package),
       saleTerms: parseSaleTerms(value.saleTerms),
       shipping: parseShipping(value.shipping),
       channels,
@@ -53,7 +64,7 @@ export class SimilarPublicationValidationService {
   async validateCategory(
     input: SimilarPublicationCreateInput,
     accessToken: string,
-  ): Promise<void> {
+  ): Promise<SimilarPublicationCreationCategoryRules> {
     const [category, attributes] = await Promise.all([
       this.apiService.get<unknown>(
         `/categories/${encodeURIComponent(input.categoryId)}`,
@@ -79,17 +90,29 @@ export class SimilarPublicationValidationService {
       const id = optionalText(attribute.id);
       return id && attribute.tags.required === true ? [id] : [];
     });
+    const packageAttributeIds = packageAttributeIdsOf(attributes);
+    validateCondition(input, category);
+    const suppliedPackageIds = packageIdsWithValues(
+      input.package,
+      packageAttributeIds,
+    );
     for (const variant of input.variants) {
       const present = new Set(
         variant.attributes.filter(hasAttributeValue).map(({ id }) => id),
       );
-      const missing = requiredIds.filter((id) => !present.has(id));
+      const missing = requiredIds.filter(
+        (id) =>
+          !present.has(id) &&
+          !suppliedPackageIds.has(id) &&
+          !(id === 'ITEM_CONDITION' && input.condition !== null),
+      );
       if (missing.length > 0) {
         throw invalid(
           `Faltan atributos obligatorios para ${variant.sourceReference}: ${missing.join(', ')}`,
         );
       }
     }
+    return { packageAttributeIds };
   }
 
   validateNewData(
@@ -135,12 +158,117 @@ export class SimilarPublicationValidationService {
   }
 }
 
-function parseVariant(value: unknown, index: number) {
+function parseCondition(
+  value: unknown,
+): SimilarPublicationCreateInput['condition'] {
+  if (value === undefined || value === null) return null;
+  if (!isJsonObject(value)) throw invalid('condition inválida');
+  return {
+    id: requiredText(value.id, 'condition.id'),
+    name: optionalText(value.name),
+  };
+}
+
+function parsePackage(value: unknown): SimilarPublicationPackage | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return parsePackage({});
+  if (!isJsonObject(value)) throw invalid('package inválido');
+  return {
+    hasFactoryPackaging: nullableBoolean(
+      value.hasFactoryPackaging,
+      'package.hasFactoryPackaging',
+    ),
+    widthCm: positiveNullableNumber(value.widthCm, 'package.widthCm'),
+    heightCm: positiveNullableNumber(value.heightCm, 'package.heightCm'),
+    lengthCm: positiveNullableNumber(value.lengthCm, 'package.lengthCm'),
+    weightKg: positiveNullableNumber(value.weightKg, 'package.weightKg'),
+  };
+}
+
+function packageAttributeIdsOf(
+  attributes: unknown[],
+): SimilarPublicationPackageAttributeIds {
+  const writableIds = attributes.flatMap((attribute) => {
+    if (!isJsonObject(attribute)) return [];
+    const tags = isJsonObject(attribute.tags) ? attribute.tags : {};
+    const id = optionalText(attribute.id);
+    return id &&
+      tags.read_only !== true &&
+      tags.inferred !== true &&
+      tags.fixed !== true
+      ? [id]
+      : [];
+  });
+  const first = (candidates: string[]): string | null =>
+    candidates.find((id) => writableIds.includes(id)) ?? null;
+  return {
+    hasFactoryPackaging:
+      writableIds.find((id) => /(?:FACTORY|ORIGINAL)_PACKAG/iu.test(id)) ??
+      null,
+    width: first(['SELLER_PACKAGE_WIDTH', 'PACKAGE_WIDTH']),
+    height: first(['SELLER_PACKAGE_HEIGHT', 'PACKAGE_HEIGHT']),
+    length: first(['SELLER_PACKAGE_LENGTH', 'PACKAGE_LENGTH']),
+    weight: first(['SELLER_PACKAGE_WEIGHT', 'PACKAGE_WEIGHT']),
+  };
+}
+
+function packageIdsWithValues(
+  value: SimilarPublicationPackage | undefined,
+  ids: SimilarPublicationPackageAttributeIds,
+): Set<string> {
+  const result = new Set<string>();
+  if (!value) return result;
+  if (value.hasFactoryPackaging !== null && ids.hasFactoryPackaging) {
+    result.add(ids.hasFactoryPackaging);
+  }
+  if (value.widthCm !== null && ids.width) result.add(ids.width);
+  if (value.heightCm !== null && ids.height) result.add(ids.height);
+  if (value.lengthCm !== null && ids.length) result.add(ids.length);
+  if (value.weightKg !== null && ids.weight) result.add(ids.weight);
+  return result;
+}
+
+function validateCondition(
+  input: SimilarPublicationCreateInput,
+  category: Record<string, unknown>,
+): void {
+  if (!input.condition) return;
+  const settings = isJsonObject(category.settings) ? category.settings : null;
+  if (!Array.isArray(settings?.item_conditions)) return;
+  const allowed = settings.item_conditions.flatMap(
+    (value: unknown) => optionalText(value) ?? [],
+  );
+  if (allowed.length > 0 && !allowed.includes(input.condition.id)) {
+    throw invalid('La condición no está permitida para la categoría');
+  }
+}
+
+function nullableBoolean(value: unknown, field: string): boolean | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'boolean') throw invalid(`${field} debe ser booleano`);
+  return value;
+}
+
+function positiveNullableNumber(value: unknown, field: string): number | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    throw invalid(`${field} debe ser mayor a 0`);
+  }
+  return value;
+}
+
+function parseVariant(
+  value: unknown,
+  index: number,
+  commonAttributes: SimilarPublicationAttribute[],
+) {
   if (!isJsonObject(value))
     throw invalid(`La variante ${index + 1} es inválida`);
-  const attributes = Array.isArray(value.attributes)
-    ? value.attributes.map((attribute) => parseAttribute(attribute))
-    : [];
+  const attributes = mergeAttributes(
+    parseAttributes(value.attributes),
+    commonAttributes,
+    parseAttributes(value.variantAttributes),
+  );
   return {
     sourceReference: requiredText(value.sourceReference, 'sourceReference'),
     price: requiredNumber(value.price, 'price'),
@@ -149,6 +277,20 @@ function parseVariant(value: unknown, index: number) {
     attributes,
     pictureIds: parseStrings(value.pictureIds, 'pictureIds'),
   };
+}
+
+function parseAttributes(value: unknown): SimilarPublicationAttribute[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) throw invalid('attributes debe ser un array');
+  return value.map((attribute) => parseAttribute(attribute));
+}
+
+function mergeAttributes(
+  ...groups: SimilarPublicationAttribute[][]
+): SimilarPublicationAttribute[] {
+  const result = new Map<string, SimilarPublicationAttribute>();
+  for (const attribute of groups.flat()) result.set(attribute.id, attribute);
+  return [...result.values()];
 }
 
 function parseAttribute(value: unknown): SimilarPublicationAttribute {

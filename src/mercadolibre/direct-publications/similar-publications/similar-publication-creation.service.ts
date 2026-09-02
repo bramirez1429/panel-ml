@@ -6,6 +6,7 @@ import type {
   SimilarPublicationAttribute,
   SimilarPublicationCreatedItem,
   SimilarPublicationCreateInput,
+  SimilarPublicationCreationCategoryRules,
   SimilarPublicationCreationResult,
   SimilarPublicationSaleTerm,
 } from './similar-publication.types';
@@ -31,7 +32,11 @@ export class SimilarPublicationCreationService {
       source.originalIdentifierValues,
       source.originalPictureIds,
     );
-    await this.validationService.validateCategory(input, source.accessToken);
+    const categoryRules = await this.validationService.validateCategory(
+      input,
+      source.accessToken,
+    );
+    const creationInput = withPackageAttributes(input, categoryRules);
     const sellerUsesUserProducts =
       await this.sourceService.sellerUsesUserProducts(
         source.sellerId,
@@ -41,10 +46,13 @@ export class SimilarPublicationCreationService {
       sellerUsesUserProducts || source.draft.sourceType === 'USER_PRODUCT';
 
     if (useUserProducts) {
-      this.validateFamilyName(input.familyName, source.draft.familyName);
-      return this.createUserProducts(input, source.accessToken);
+      this.validateFamilyName(
+        creationInput.familyName,
+        source.draft.familyName,
+      );
+      return this.createUserProducts(creationInput, source.accessToken);
     }
-    return this.createLegacy(input, source.accessToken);
+    return this.createLegacy(creationInput, source.accessToken);
   }
 
   private async createUserProducts(
@@ -61,6 +69,7 @@ export class SimilarPublicationCreationService {
         available_quantity: variant.stock,
         buying_mode: input.buyingMode,
         listing_type_id: input.listingTypeId,
+        ...(input.condition ? { condition: input.condition.id } : {}),
         pictures: variant.pictureIds.map((id) => ({ id })),
         attributes: withSku(variant.attributes, variant.sku).map(toMlAttribute),
         sale_terms: input.saleTerms.map(toMlSaleTerm),
@@ -101,6 +110,7 @@ export class SimilarPublicationCreationService {
       currency_id: input.currencyId,
       buying_mode: input.buyingMode,
       listing_type_id: input.listingTypeId,
+      ...(input.condition ? { condition: input.condition.id } : {}),
       pictures: allPictures.map((id) => ({ id })),
       attributes: commonAttributes.map(toMlAttribute),
       sale_terms: input.saleTerms.map(toMlSaleTerm),
@@ -223,7 +233,60 @@ function summarize(
       : successful.length > 0
         ? 'PARTIAL'
         : 'FAILED';
-  return { status, items, sourceKey: newSourceKey(successful) };
+  const sourceKey = newSourceKey(successful);
+  return { status, items, sourceKey, newSourceKey: sourceKey };
+}
+
+function withPackageAttributes(
+  input: SimilarPublicationCreateInput,
+  rules: SimilarPublicationCreationCategoryRules,
+): SimilarPublicationCreateInput {
+  if (!input.package) return input;
+  const ids = rules.packageAttributeIds;
+  const packageIds = new Set(
+    Object.values(ids).filter((id): id is string => id !== null),
+  );
+  const packageAttributes: SimilarPublicationAttribute[] = [];
+  addMeasurement(packageAttributes, ids.width, input.package.widthCm, 'cm');
+  addMeasurement(packageAttributes, ids.height, input.package.heightCm, 'cm');
+  addMeasurement(packageAttributes, ids.length, input.package.lengthCm, 'cm');
+  addMeasurement(
+    packageAttributes,
+    ids.weight,
+    input.package.weightKg === null ? null : input.package.weightKg * 1000,
+    'g',
+  );
+  return {
+    ...input,
+    variants: input.variants.map((variant) => ({
+      ...variant,
+      attributes: [
+        ...variant.attributes.filter(({ id }) => !packageIds.has(id)),
+        ...packageAttributes,
+      ],
+    })),
+  };
+}
+
+function addMeasurement(
+  target: SimilarPublicationAttribute[],
+  id: string | null,
+  value: number | null,
+  unit: 'cm' | 'g',
+): void {
+  if (!id || value === null) return;
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new BadRequestException(
+      `La medida ${id} debe convertirse a un entero positivo en ${unit}`,
+    );
+  }
+  target.push({
+    id,
+    name: null,
+    valueId: null,
+    valueName: `${value} ${unit}`,
+    values: [],
+  });
 }
 
 function newSourceKey(items: SimilarPublicationCreatedItem[]): string | null {

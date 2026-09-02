@@ -84,6 +84,7 @@ import { SimilarPublicationSourceService } from './direct-publications/similar-p
 import { SimilarPublicationValidationService } from './direct-publications/similar-publications/similar-publication-validation.service';
 import { SimilarPublicationCreationService } from './direct-publications/similar-publications/similar-publication-creation.service';
 import { MercadoLibrePictureUploadService } from './direct-publications/similar-publications/mercadolibre-picture-upload.service';
+import { SimilarPublicationMetadataService } from './direct-publications/similar-publications/similar-publication-metadata.service';
 
 @Module({
   imports: [AuthModule],
@@ -172,6 +173,7 @@ import { MercadoLibrePictureUploadService } from './direct-publications/similar-
     SimilarPublicationValidationService,
     SimilarPublicationCreationService,
     MercadoLibrePictureUploadService,
+    SimilarPublicationMetadataService,
   ],
   exports: [
     MercadolibreProductsRepository,

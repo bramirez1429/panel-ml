@@ -14,6 +14,7 @@ import { UserProductFamilyService } from '../../user-products/user-product-famil
 import type { MercadoLibreUserProduct } from '../../user-products/user-product.types';
 import { DescriptionService } from '../description/description.service';
 import { SimilarPublicationDraftMapper } from './similar-publication.mapper';
+import { SimilarPublicationMetadataService } from './similar-publication-metadata.service';
 import type {
   SimilarPublicationDraft,
   SimilarPublicationSourceContext,
@@ -29,6 +30,7 @@ export class SimilarPublicationSourceService {
     private readonly descriptionService: DescriptionService,
     private readonly apiService: MercadolibreApiService,
     private readonly mapper: SimilarPublicationDraftMapper,
+    private readonly metadataService: SimilarPublicationMetadataService,
   ) {}
 
   async getDraft(
@@ -64,12 +66,19 @@ export class SimilarPublicationSourceService {
       requireItemId(source.items[0]),
       accessToken,
     );
-    const draft = this.mapper.map({
+    const baseDraft = this.mapper.map({
       sourceKey: normalizedSourceKey,
       sourceType: source.sourceType,
       items: source.items,
       userProducts: source.userProducts,
       description,
+    });
+    const draft = await this.metadataService.enrich({
+      draft: baseDraft,
+      sellerId: connection.seller_id,
+      accessToken,
+      items: source.items,
+      userProducts: source.userProducts,
     });
     return {
       sellerId: connection.seller_id,

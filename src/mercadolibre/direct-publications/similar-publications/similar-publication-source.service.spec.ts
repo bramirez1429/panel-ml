@@ -27,6 +27,7 @@ describe('SimilarPublicationSourceService', () => {
       description as never,
       apiService as never,
       new SimilarPublicationDraftMapper(),
+      { enrich: jest.fn() } as never,
     );
     let caught: unknown;
     try {
