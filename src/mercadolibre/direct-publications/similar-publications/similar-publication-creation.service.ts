@@ -36,20 +36,26 @@ export class SimilarPublicationCreationService {
       source.draft,
     );
 
+    const normalizedInput =
+      await this.validationService.normalizeAddedSizeGridRows(
+        completedInput,
+        source.accessToken,
+      );
+
     this.validationService.validateNewData(
-      completedInput,
+      normalizedInput,
       source.originalIdentifierValues,
       source.originalPictureIds,
     );
 
     const categoryRules = await this.validationService.validateCategory(
-      completedInput,
+      normalizedInput,
       source.accessToken,
     );
 
     const creationInput = withCategoryWritableFields(
       withPackageAttributes(
-        completedInput,
+        normalizedInput,
         categoryRules,
       ),
       categoryRules,

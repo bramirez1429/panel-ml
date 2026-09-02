@@ -61,6 +61,61 @@ export class SimilarPublicationValidationService {
     };
   }
 
+  async normalizeAddedSizeGridRows(
+    input: SimilarPublicationCreateInput,
+    accessToken: string,
+  ): Promise<SimilarPublicationCreateInput> {
+    const addedSizes = input.variants.filter(
+      ({ sourceReference }) =>
+        sourceReference.startsWith('added-size:'),
+    );
+
+    const gridIds = [
+      ...new Set(
+        addedSizes.flatMap((variant) => {
+          const gridId = sizeGridIdOfVariant(variant);
+          return gridId ? [gridId] : [];
+        }),
+      ),
+    ];
+
+    if (gridIds.length === 0) return input;
+
+    const charts = new Map<string, unknown>();
+
+    for (const gridId of gridIds) {
+      const chart = await this.apiService.get<unknown>(
+        `/catalog/charts/${encodeURIComponent(gridId)}`,
+        accessToken,
+      );
+
+      charts.set(gridId, chart);
+    }
+
+    return {
+      ...input,
+      variants: input.variants.map((variant) => {
+        if (
+          !variant.sourceReference.startsWith(
+            'added-size:',
+          )
+        ) {
+          return variant;
+        }
+
+        const gridId = sizeGridIdOfVariant(variant);
+
+        if (!gridId) return variant;
+
+        return normalizeSizeGridVariant(
+          variant,
+          gridId,
+          charts.get(gridId),
+        );
+      }),
+    };
+  }
+
   async validateCategory(
     input: SimilarPublicationCreateInput,
     accessToken: string,
@@ -176,6 +231,278 @@ export class SimilarPublicationValidationService {
       }
     }
   }
+}
+
+type SimilarPublicationInputVariant =
+  SimilarPublicationCreateInput['variants'][number];
+
+type SizeGridRow = {
+  rowReference: string;
+  sizeId: string | null;
+  sizeName: string | null;
+};
+
+function sizeGridIdOfVariant(
+  variant: SimilarPublicationInputVariant,
+): string | null {
+  const attribute = variant.attributes.find(
+    ({ id }) => id === 'SIZE_GRID_ID',
+  );
+
+  return attributeValue(attribute).name ??
+    attributeValue(attribute).id;
+}
+
+function normalizeSizeGridVariant(
+  variant: SimilarPublicationInputVariant,
+  gridId: string,
+  chart: unknown,
+): SimilarPublicationInputVariant {
+  const sizeAttribute = variant.attributes.find(
+    ({ id }) => id === 'SIZE',
+  );
+
+  const requested = attributeValue(sizeAttribute);
+
+  if (!requested.id && !requested.name) {
+    throw invalid(
+      `El talle agregado no tiene un valor SIZE válido`,
+    );
+  }
+
+  const rows = sizeGridRowsOf(chart, gridId);
+
+  const row = rows.find((candidate) =>
+    sameSize(requested, candidate),
+  );
+
+  if (!row) {
+    const label =
+      requested.name ??
+      requested.id ??
+      'seleccionado';
+
+    throw invalid(
+      `El talle ${label} no existe en la guía de talles ${gridId} de Mercado Libre`,
+    );
+  }
+
+  let hasRowAttribute = false;
+
+  const attributes = variant.attributes.map(
+    (attribute) => {
+      if (attribute.id === 'SIZE') {
+        return {
+          ...attribute,
+          valueId: row.sizeId,
+          valueName:
+            row.sizeName ??
+            requested.name,
+          values: [],
+        };
+      }
+
+      if (attribute.id === 'SIZE_GRID_ROW_ID') {
+        hasRowAttribute = true;
+
+        return {
+          ...attribute,
+          valueId: null,
+          valueName: row.rowReference,
+          values: [],
+        };
+      }
+
+      return attribute;
+    },
+  );
+
+  if (!hasRowAttribute) {
+    attributes.push({
+      id: 'SIZE_GRID_ROW_ID',
+      name: 'Fila de guía de talles',
+      valueId: null,
+      valueName: row.rowReference,
+      values: [],
+    });
+  }
+
+  return {
+    ...variant,
+    attributes,
+  };
+}
+
+function sizeGridRowsOf(
+  chart: unknown,
+  fallbackGridId: string,
+): SizeGridRow[] {
+  if (
+    !isJsonObject(chart) ||
+    !Array.isArray(chart.rows)
+  ) {
+    throw invalid(
+      `Mercado Libre no devolvió las filas de la guía de talles ${fallbackGridId}`,
+    );
+  }
+
+  const chartId =
+    scalarIdentifier(chart.id) ??
+    fallbackGridId;
+
+  const mainAttributeId =
+    optionalText(chart.main_attribute_id) ??
+    mainAttributeIdOf(chart.main_attribute) ??
+    'SIZE';
+
+  return chart.rows.flatMap((rawRow) => {
+    if (!isJsonObject(rawRow)) return [];
+
+    const rowId = scalarIdentifier(rawRow.id);
+
+    if (!rowId) return [];
+
+    const attributes = Array.isArray(
+      rawRow.attributes,
+    )
+      ? rawRow.attributes.filter(isJsonObject)
+      : [];
+
+    const sizeAttribute =
+      attributes.find(
+        (attribute) =>
+          optionalText(attribute.id) === 'SIZE',
+      ) ??
+      attributes.find(
+        (attribute) =>
+          optionalText(attribute.id) ===
+          mainAttributeId,
+      );
+
+    if (!sizeAttribute) return [];
+
+    const value = firstChartValue(
+      sizeAttribute.values,
+    );
+
+    if (!value.id && !value.name) return [];
+
+    return [
+      {
+        rowReference: rowId.includes(':')
+          ? rowId
+          : `${chartId}:${rowId}`,
+        sizeId: value.id,
+        sizeName: value.name,
+      },
+    ];
+  });
+}
+
+function mainAttributeIdOf(
+  value: unknown,
+): string | null {
+  if (
+    !isJsonObject(value) ||
+    !Array.isArray(value.attributes)
+  ) {
+    return null;
+  }
+
+  for (const attribute of value.attributes) {
+    if (!isJsonObject(attribute)) continue;
+
+    const id = optionalText(attribute.id);
+
+    if (id) return id;
+  }
+
+  return null;
+}
+
+function firstChartValue(
+  value: unknown,
+): { id: string | null; name: string | null } {
+  if (!Array.isArray(value)) {
+    return { id: null, name: null };
+  }
+
+  for (const candidate of value) {
+    if (!isJsonObject(candidate)) continue;
+
+    const id = scalarIdentifier(candidate.id);
+    const name = optionalText(candidate.name);
+
+    if (id || name) {
+      return { id, name };
+    }
+  }
+
+  return { id: null, name: null };
+}
+
+function attributeValue(
+  attribute: SimilarPublicationAttribute | undefined,
+): { id: string | null; name: string | null } {
+  if (!attribute) {
+    return { id: null, name: null };
+  }
+
+  const value = attribute.values.find(
+    ({ id, name }) => Boolean(id || name),
+  );
+
+  return {
+    id: attribute.valueId ?? value?.id ?? null,
+    name:
+      attribute.valueName ??
+      value?.name ??
+      null,
+  };
+}
+
+function sameSize(
+  requested: {
+    id: string | null;
+    name: string | null;
+  },
+  row: SizeGridRow,
+): boolean {
+  if (
+    requested.id &&
+    row.sizeId &&
+    requested.id === row.sizeId
+  ) {
+    return true;
+  }
+
+  if (!requested.name || !row.sizeName) {
+    return false;
+  }
+
+  return normalizeSizeValue(requested.name) ===
+    normalizeSizeValue(row.sizeName);
+}
+
+function normalizeSizeValue(
+  value: string,
+): string {
+  return value
+    .trim()
+    .toLocaleUpperCase('es-AR');
+}
+
+function scalarIdentifier(
+  value: unknown,
+): string | null {
+  if (
+    typeof value === 'number' &&
+    Number.isFinite(value)
+  ) {
+    return String(value);
+  }
+
+  return optionalText(value);
 }
 
 function parseCondition(

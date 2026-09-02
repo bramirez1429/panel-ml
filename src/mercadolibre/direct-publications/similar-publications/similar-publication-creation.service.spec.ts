@@ -391,6 +391,189 @@ describe('SimilarPublicationCreationService', () => {
     );
   });
 
+  it('resuelve la fila real de la guía para un talle agregado', async () => {
+    const { service, apiService } = setup({
+      sellerUsesUp: false,
+      categoryAttributes: [
+        {
+          id: 'BRAND',
+          tags: { required: true },
+        },
+        { id: 'SIZE', tags: {} },
+        { id: 'SIZE_GRID_ID', tags: {} },
+        { id: 'SIZE_GRID_ROW_ID', tags: {} },
+      ],
+      sizeChart: {
+        id: '232382',
+        main_attribute_id: 'SIZE',
+        rows: [
+          {
+            id: 1,
+            attributes: [
+              {
+                id: 'SIZE',
+                values: [
+                  {
+                    id: 'SIZE-M',
+                    name: 'M',
+                  },
+                ],
+              },
+            ],
+          },
+          {
+            id: 4,
+            attributes: [
+              {
+                id: 'SIZE',
+                values: [
+                  {
+                    id: 'SIZE-XL',
+                    name: 'XL',
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    apiService.post.mockResolvedValueOnce({
+      id: 'MLA781',
+    });
+
+    await service.create('user', {
+      ...input,
+      variants: [
+        {
+          ...input.variants[0],
+          sourceReference:
+            'added-size:variant%3A1:XL',
+          attributes: [
+            ...input.variants[0].attributes,
+            {
+              id: 'SIZE',
+              name: 'Talle',
+              valueId: null,
+              valueName: 'XL',
+              values: [],
+            },
+            {
+              id: 'SIZE_GRID_ID',
+              name: 'Guía',
+              valueId: null,
+              valueName: '232382',
+              values: [],
+            },
+            {
+              id: 'SIZE_GRID_ROW_ID',
+              name: 'Fila',
+              valueId: null,
+              valueName: '232382:1',
+              values: [],
+            },
+          ],
+        },
+      ],
+    });
+
+    const itemCall =
+      apiService.post.mock.calls.find(
+        ([path]) => path === '/items',
+      );
+
+    expect(itemCall).toBeDefined();
+
+    const payload = itemCall?.[1];
+
+    expect(payload).toHaveProperty(
+      'attributes',
+      expect.arrayContaining([
+        {
+          id: 'SIZE',
+          value_id: 'SIZE-XL',
+          value_name: 'XL',
+        },
+        {
+          id: 'SIZE_GRID_ROW_ID',
+          value_name: '232382:4',
+        },
+      ]),
+    );
+  });
+
+  it('rechaza un talle fuera de la guía antes de crear items', async () => {
+    const { service, apiService } = setup({
+      sellerUsesUp: false,
+      sizeChart: {
+        id: '232382',
+        main_attribute_id: 'SIZE',
+        rows: [
+          {
+            id: 1,
+            attributes: [
+              {
+                id: 'SIZE',
+                values: [
+                  {
+                    id: 'SIZE-M',
+                    name: 'M',
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await expect(
+      service.create('user', {
+        ...input,
+        variants: [
+          {
+            ...input.variants[0],
+            sourceReference:
+              'added-size:variant%3A1:XL',
+            attributes: [
+              ...input.variants[0].attributes,
+              {
+                id: 'SIZE',
+                name: 'Talle',
+                valueId: null,
+                valueName: 'XL',
+                values: [],
+              },
+              {
+                id: 'SIZE_GRID_ID',
+                name: 'Guía',
+                valueId: null,
+                valueName: '232382',
+                values: [],
+              },
+              {
+                id: 'SIZE_GRID_ROW_ID',
+                name: 'Fila',
+                valueId: null,
+                valueName: '232382:1',
+                values: [],
+              },
+            ],
+          },
+        ],
+      }),
+    ).rejects.toThrow(
+      'El talle XL no existe en la guía de talles 232382 de Mercado Libre',
+    );
+
+    expect(
+      apiService.post.mock.calls.some(
+        ([path]) => path === '/items',
+      ),
+    ).toBe(false);
+  });
+
   it('filtra atributos no modificables y sale terms administrados por Mercado Libre', async () => {
     const { service, apiService } = setup({
       sellerUsesUp: false,
@@ -560,6 +743,7 @@ describe('SimilarPublicationCreationService', () => {
     categoryAttributes?: unknown[];
     categorySettings?: Record<string, unknown>;
     saleTerms?: unknown[];
+    sizeChart?: unknown;
   }) {
     const source: SimilarPublicationSourceContext = {
       sellerId: 10,
@@ -584,6 +768,10 @@ describe('SimilarPublicationCreationService', () => {
 
         if (path.endsWith('/sale_terms')) {
           return Promise.resolve(options.saleTerms ?? []);
+        }
+
+        if (path.startsWith('/catalog/charts/')) {
+          return Promise.resolve(options.sizeChart ?? null);
         }
 
         return Promise.resolve({
