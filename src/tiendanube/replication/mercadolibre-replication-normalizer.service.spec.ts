@@ -63,6 +63,75 @@ describe('MercadoLibreReplicationNormalizerService', () => {
     expect(result.variants).toHaveLength(2);
     expect(result.variants[0]).toMatchObject({ price: 100, stock: 7 });
   });
+
+  it('reintenta cuando Mercado Libre todavía no indexó las ofertas', async () => {
+    const publicationSource = {
+      getItemIdsForUserProducts: jest
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValue(['MLA1']),
+      getItemWithAllAttributes: jest
+        .fn()
+        .mockResolvedValue(
+          item('MLA1', 'MLAU1', 'Negro', 100, 3),
+        ),
+    };
+
+    const familyService = {
+      createCache: jest.fn().mockReturnValue({}),
+      getFamily: jest.fn().mockResolvedValue({
+        familyId: '99',
+        siteId: 'MLA',
+        userId: 42,
+        userProductIds: ['MLAU1'],
+      }),
+      getUserProduct: jest.fn().mockResolvedValue({
+        id: 'MLAU1',
+        attributes: [
+          {
+            id: 'COLOR',
+            name: 'Color',
+            values: [{ id: null, name: 'Negro' }],
+          },
+        ],
+        pictures: [
+          {
+            secure_url: 'https://img/MLAU1.jpg',
+          },
+        ],
+      }),
+    };
+
+    const descriptionService = {
+      getPlainTextByItemId: jest
+        .fn()
+        .mockResolvedValue('Descripción'),
+    };
+
+    const service =
+      new MercadoLibreReplicationNormalizerService(
+        publicationSource as unknown as PublicationSourceService,
+        familyService as unknown as UserProductFamilyService,
+        descriptionService as unknown as DescriptionService,
+      );
+
+    const result = await service.normalize(
+      'family:99',
+      42,
+      'ml-token',
+    );
+
+    expect(
+      publicationSource.getItemIdsForUserProducts,
+    ).toHaveBeenCalledTimes(2);
+
+    expect(result.variants).toHaveLength(1);
+    expect(result.variants[0]).toMatchObject({
+      price: 100,
+      stock: 3,
+    });
+  });
+
 });
 
 function item(
