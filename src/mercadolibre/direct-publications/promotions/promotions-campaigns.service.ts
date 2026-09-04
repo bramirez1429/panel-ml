@@ -129,7 +129,11 @@ export class PromotionsCampaignsService {
         : [];
     });
     const estimates = feeRequests.length
-      ? await this.sellingFeeService.getMany(feeRequests, accessToken)
+      ? await this.sellingFeeService.getMany(
+          feeRequests,
+          accessToken,
+          connection.seller_id,
+        )
       : [];
     const estimateByItemId = new Map(
       feeRequests.map((request, index) => [
@@ -372,6 +376,12 @@ function toSellingFeeRequest(
         billableWeight: billableWeightOf(item),
         campaignTag:
           financingCampaignTagOf(item),
+        itemId,
+        freeShipping:
+          typeof item.shipping?.free_shipping === 'boolean'
+            ? item.shipping.free_shipping
+            : null,
+        condition: textOrNull(item.condition),
       },
     },
   ];

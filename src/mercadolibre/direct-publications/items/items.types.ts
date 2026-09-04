@@ -30,6 +30,7 @@ export type MlItem = {
   base_price?: number;
   original_price?: number | null;
   currency_id?: string;
+  billable_weight?: number | null;
 
   initial_quantity?: number;
   available_quantity?: number;

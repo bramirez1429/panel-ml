@@ -26,6 +26,85 @@ describe('MercadoLibreSellingFeeService', () => {
     expect(calls[0]?.[0]).toContain('billable_weight=462');
   });
 
+  it('resta el costo de envío gratis del neto', async () => {
+    const api = {
+      get: jest.fn().mockImplementation((path: string) => {
+        if (path.startsWith('/sites/MLA/listing_prices')) {
+          return Promise.resolve([
+            { sale_fee_amount: 25 },
+          ]);
+        }
+
+        if (
+          path.startsWith(
+            '/users/42/shipping_options/free',
+          )
+        ) {
+          return Promise.resolve({
+            coverage: {
+              all_country: {
+                list_cost: 10,
+                currency_id: 'ARS',
+              },
+            },
+          });
+        }
+
+        throw new Error('Ruta inesperada');
+      }),
+    };
+
+    const service =
+      new MercadoLibreSellingFeeService(
+        api as unknown as MercadolibreApiService,
+      );
+
+    const request = match();
+
+    const result = await service.getMany(
+      [
+        {
+          ...request,
+          candidate: {
+            ...request.candidate,
+            freeShipping: true,
+            condition: 'new',
+          },
+        },
+      ],
+      'token',
+      42,
+    );
+
+    expect(result).toEqual([
+      {
+        saleFeeAmount: 25,
+        estimatedNetAmount: 65,
+      },
+    ]);
+
+    const calls =
+      api.get.mock.calls as unknown as Array<
+        [string]
+      >;
+
+    expect(calls[1]?.[0]).toContain(
+      '/users/42/shipping_options/free?',
+    );
+    expect(calls[1]?.[0]).toContain(
+      'item_id=MLA1',
+    );
+    expect(calls[1]?.[0]).toContain(
+      'item_price=100',
+    );
+    expect(calls[1]?.[0]).toContain(
+      'free_shipping=true',
+    );
+    expect(calls[1]?.[0]).toContain(
+      'condition=new',
+    );
+  });
+
   it('devuelve null si listing_prices falla', async () => {
     const api = { get: jest.fn().mockRejectedValue(new Error('ML')) };
     const service = new MercadoLibreSellingFeeService(

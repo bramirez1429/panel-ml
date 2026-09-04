@@ -59,12 +59,12 @@ export function normalizePromotionFinancialPreview(input: {
             contribution,
           ),
         )
-      : (percentageAmount(totalDiscount, input.sellerPercentage) ??
-        sellerDiscountOf(
+      : (sellerDiscountOf(
           input.currentPrice,
           effectiveCalculationPrice,
           contribution,
-        ));
+        ) ??
+        percentageAmount(totalDiscount, input.sellerPercentage));
   return {
     promotionPrice,
     minPromotionPrice: input.minPromotionPrice,

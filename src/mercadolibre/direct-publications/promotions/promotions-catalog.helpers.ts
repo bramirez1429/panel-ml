@@ -10,6 +10,10 @@ import type {
 } from './promotions-catalog.types';
 import type { MlPromotion, MlPromotions } from './promotions.types';
 import { classifyPromotionProductGroup } from './promotions-product-group';
+import {
+  financingCampaignTagOf,
+  promotionCampaignItemCommerceOf,
+} from './promotion-campaign-item-commerce';
 
 const CURSOR_PREFIX = 'promotions:';
 
@@ -44,9 +48,15 @@ export function toPromotionCandidate(
     familyId: familyIdOf(item.family_id),
     title: item.title.trim(),
     thumbnail: isText(item.thumbnail) ? item.thumbnail.trim() : null,
+    ...promotionCampaignItemCommerceOf(item),
     productGroup,
     price: item.price,
     categoryId: item.category_id.trim(),
+    currencyId: isText(item.currency_id) ? item.currency_id.trim() : null,
+    domainId: isText(item.domain_id) ? item.domain_id.trim() : null,
+    catalogProductId: isText(item.catalog_product_id)
+      ? item.catalog_product_id.trim()
+      : null,
     listingTypeId: isText(item.listing_type_id)
       ? item.listing_type_id.trim()
       : null,
@@ -56,6 +66,9 @@ export function toPromotionCandidate(
     logisticType: isText(item.shipping?.logistic_type)
       ? item.shipping.logistic_type.trim()
       : null,
+    condition: isText(item.condition) ? item.condition.trim() : null,
+    billableWeight: finiteNumber(item.billable_weight),
+    campaignTag: financingCampaignTagOf(item),
   };
 }
 

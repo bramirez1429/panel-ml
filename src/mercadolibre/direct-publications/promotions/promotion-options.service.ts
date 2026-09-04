@@ -118,7 +118,11 @@ export class PromotionOptionsService {
       ({ request }) => request,
     );
     const estimates = requests.length
-      ? await this.sellingFeeService.getMany(requests, accessToken)
+      ? await this.sellingFeeService.getMany(
+          requests,
+          accessToken,
+          connection.seller_id,
+        )
       : [];
     const estimateByIndex = new Map<number, SellingFeeResult | null>();
     const suggestedEstimateByIndex = new Map<number, SellingFeeResult | null>();

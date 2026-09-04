@@ -155,6 +155,7 @@ describe('PromotionsCampaignsService', () => {
         }),
       ],
       TOKEN,
+      42,
     );
   });
 
@@ -236,6 +237,7 @@ describe('PromotionsCampaignsService', () => {
         }),
       ],
       TOKEN,
+      42,
     );
   });
 
@@ -356,6 +358,7 @@ describe('PromotionsCampaignsService', () => {
         }),
       ],
       TOKEN,
+      42,
     );
   });
 
@@ -428,6 +431,7 @@ describe('PromotionsCampaignsService', () => {
     expect(fees.getMany).toHaveBeenCalledWith(
       [expect.objectContaining({ itemId: 'MLA1' })],
       TOKEN,
+      42,
     );
   });
 
@@ -468,6 +472,7 @@ describe('PromotionsCampaignsService', () => {
     expect(fees.getMany).toHaveBeenCalledWith(
       [expect.objectContaining({ itemId: 'MLA1', effectivePrice: 17000 })],
       TOKEN,
+      42,
     );
   });
 
@@ -576,6 +581,7 @@ describe('PromotionsCampaignsService', () => {
     expect(fees.getMany).toHaveBeenCalledWith(
       [expect.objectContaining({ itemId: 'MLA1', effectivePrice: 16000 })],
       TOKEN,
+      42,
     );
   });
 

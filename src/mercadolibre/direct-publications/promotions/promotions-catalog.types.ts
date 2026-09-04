@@ -51,12 +51,22 @@ export type PromotionCatalogCandidate = Readonly<{
   familyId: string | null;
   title: string;
   thumbnail: string | null;
+  sku: string | null;
+  stock: number | null;
+  freeShipping: boolean | null;
+  installmentLabel: string | null;
   productGroup: PromotionProductGroup;
   price: number;
   categoryId: string;
+  currencyId: string | null;
+  domainId: string | null;
+  catalogProductId: string | null;
   listingTypeId: string | null;
   shippingMode: string | null;
   logisticType: string | null;
+  condition: string | null;
+  billableWeight: number | null;
+  campaignTag: string | null;
 }>;
 
 export type PromotionSummary = Readonly<{
@@ -77,6 +87,10 @@ export type PromotionCatalogRow = Readonly<{
   familyId: string | null;
   title: string;
   thumbnail: string | null;
+  sku: string | null;
+  stock: number | null;
+  freeShipping: boolean | null;
+  installmentLabel: string | null;
   productGroup: PromotionProductGroup;
   price: number;
   currentPromotion: NormalizedPromotion | null;
