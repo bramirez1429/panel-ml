@@ -7,6 +7,10 @@ import type { MlItem } from '../items/items.types';
 
 import type { PromotionCampaign } from './promotions-campaigns.types';
 import { normalizePromotionFinancialPreview } from './promotion-financial-preview';
+import {
+  financingCampaignTagOf,
+  promotionCampaignItemCommerceOf,
+} from './promotion-campaign-item-commerce';
 import type {
   PromotionDiagnostic,
   PromotionDiagnosticEntry,
@@ -328,6 +332,7 @@ function toCampaignItem(
       itemId,
       title: textOrNull(detail?.title),
       thumbnail: textOrNull(detail?.thumbnail),
+      ...promotionCampaignItemCommerceOf(detail),
       status,
       eligible: status === null ? null : status === 'candidate',
       currentPrice,
@@ -365,6 +370,8 @@ function toSellingFeeRequest(
         shippingMode: textOrNull(item.shipping?.mode),
         logisticType: textOrNull(item.shipping?.logistic_type),
         billableWeight: billableWeightOf(item),
+        campaignTag:
+          financingCampaignTagOf(item),
       },
     },
   ];

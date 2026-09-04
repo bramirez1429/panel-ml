@@ -20,6 +20,7 @@ export type SellingFeeCandidate = Readonly<{
   shippingMode: string | null;
   logisticType: string | null;
   billableWeight?: number | null;
+  campaignTag?: string | null;
 }>;
 
 @Injectable()
@@ -63,7 +64,17 @@ export class MercadoLibreSellingFeeService {
     addParam(params, 'currency_id', candidate.currencyId ?? null);
     addParam(params, 'shipping_mode', candidate.shippingMode);
     addParam(params, 'logistic_type', candidate.logisticType);
-    addNumberParam(params, 'billable_weight', candidate.billableWeight ?? null);
+    addNumberParam(
+      params,
+      'billable_weight',
+      candidate.billableWeight ?? null,
+    );
+    addParam(
+      params,
+      'tags',
+      candidate.campaignTag ?? null,
+    );
+
     try {
       const response = await this.apiService.get<unknown>(
         `/sites/MLA/listing_prices?${params.toString()}`,

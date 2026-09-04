@@ -8,6 +8,10 @@ export type PromotionCampaignItem = Readonly<{
   itemId: string;
   title: string | null;
   thumbnail: string | null;
+  sku: string | null;
+  stock: number | null;
+  freeShipping: boolean | null;
+  installmentLabel: string | null;
   status: string | null;
   eligible: boolean | null;
   currentPrice: number | null;
