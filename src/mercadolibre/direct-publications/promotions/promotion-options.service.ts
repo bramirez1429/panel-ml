@@ -221,8 +221,9 @@ export class PromotionOptionsService {
                * precio FINAL documentado por ML.
                */
               rawPromotionPrice:
-                promotionBuyerPrice(
+                promotionBuyerPriceForOption(
                   promotion,
+                  status,
                 ),
 
               minPromotionPrice:
@@ -634,8 +635,64 @@ function enrichPromotion(
       campaign?.type,
     );
 
+  const dealCandidate =
+    isDealCandidate(
+      itemPromotion,
+    );
+
   return {
     ...merged,
+
+    /*
+     * En DEAL candidate conservamos los
+     * términos financieros recibidos por
+     * /seller-promotions/items/{MLA}.
+     *
+     * El detalle de campaign/items puede
+     * traer una recomendación distinta y
+     * no debe reemplazar el rango principal.
+     */
+    ...(dealCandidate
+      ? {
+          price:
+            itemPromotion.price,
+
+          original_price:
+            itemPromotion.original_price,
+
+          min_discounted_price:
+            itemPromotion.min_discounted_price,
+
+          max_discounted_price:
+            itemPromotion.max_discounted_price,
+
+          suggested_discounted_price:
+            itemPromotion.suggested_discounted_price,
+
+          meli_percentage:
+            itemPromotion.meli_percentage,
+
+          seller_percentage:
+            itemPromotion.seller_percentage,
+
+          discount_meli_amount:
+            itemPromotion.discount_meli_amount,
+
+          discount_meli_boost_amount:
+            itemPromotion.discount_meli_boost_amount,
+
+          boosted_offer:
+            itemPromotion.boosted_offer,
+
+          discount_meli_boosted_percentage:
+            itemPromotion
+              .discount_meli_boosted_percentage,
+
+          total_price_for_boosted_offer:
+            itemPromotion
+              .total_price_for_boosted_offer,
+        }
+      : {}),
 
     /*
      * El endpoint campaign/items devuelve
@@ -768,6 +825,58 @@ function promotionSellerPercentage(
         .benefits
         ?.seller_percent,
     )
+  );
+}
+
+function promotionBuyerPriceForOption(
+  promotion: MlPromotion,
+  status:
+    | 'started'
+    | 'candidate'
+    | 'pending',
+): number | null {
+  const buyerPrice =
+    promotionBuyerPrice(
+      promotion,
+    );
+
+  /*
+   * DEAL candidate llega con price = 0.
+   *
+   * En la Central de promociones ML
+   * presenta max_discounted_price como
+   * el precio de entrada para participar.
+   */
+  if (
+    status === 'candidate' &&
+    isDealCandidate(promotion) &&
+    (buyerPrice === null ||
+      buyerPrice === 0)
+  ) {
+    return (
+      finiteNumber(
+        promotion
+          .max_discounted_price,
+      ) ??
+      buyerPrice
+    );
+  }
+
+  return buyerPrice;
+}
+
+function isDealCandidate(
+  promotion: MlPromotion,
+): boolean {
+  return (
+    textOrNull(
+      promotion.type,
+    )?.toUpperCase() ===
+      'DEAL' &&
+    textOrNull(
+      promotion.status,
+    )?.toLowerCase() ===
+      'candidate'
   );
 }
 
