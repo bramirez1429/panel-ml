@@ -99,7 +99,22 @@ export class PromotionOptionsService {
               {
                 index,
                 target: 'estimated' as const,
-                request: { candidate, effectivePrice },
+                request: {
+                  candidate,
+
+                  /*
+                   * El comprador paga effectivePrice.
+                   * El aporte de ML completa parte
+                   * del ingreso bruto del vendedor.
+                   */
+                  effectivePrice: sellerGrossPrice(
+                    effectivePrice,
+                    entry.financial
+                      .mercadoLibreContributionAmount,
+                  ),
+
+                  shippingPrice: effectivePrice,
+                },
               },
             ]
           : []),
@@ -108,7 +123,15 @@ export class PromotionOptionsService {
               {
                 index,
                 target: 'suggested' as const,
-                request: { candidate, effectivePrice: suggestedPrice },
+                request: {
+                  candidate,
+                  effectivePrice: sellerGrossPrice(
+                    suggestedPrice,
+                    entry.financial
+                      .mercadoLibreContributionAmount,
+                  ),
+                  shippingPrice: suggestedPrice,
+                },
               },
             ]
           : []),
@@ -188,4 +211,20 @@ function suggestedSimulationPrice(
 
 function finiteNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+
+function sellerGrossPrice(
+  buyerPrice: number,
+  mercadoLibreContributionAmount: number | null,
+): number {
+  const contribution =
+    mercadoLibreContributionAmount !== null &&
+    mercadoLibreContributionAmount > 0
+      ? mercadoLibreContributionAmount
+      : 0;
+
+  return Math.round(
+    (buyerPrice + contribution) * 100,
+  ) / 100;
 }

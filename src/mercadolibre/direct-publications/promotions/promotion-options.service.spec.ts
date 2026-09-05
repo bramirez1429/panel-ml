@@ -200,6 +200,10 @@ describe('PromotionOptionsService', () => {
     expect(feeCalls).toHaveLength(1);
     expect(
       feeCalls[0]?.[0].map(({ effectivePrice }) => effectivePrice),
+    ).toEqual([85, 90, 92]);
+
+    expect(
+      feeCalls[0]?.[0].map(({ shippingPrice }) => shippingPrice),
     ).toEqual([80, 85, 90]);
   });
 

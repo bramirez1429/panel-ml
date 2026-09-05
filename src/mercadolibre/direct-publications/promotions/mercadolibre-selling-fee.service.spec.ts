@@ -105,6 +105,78 @@ describe('MercadoLibreSellingFeeService', () => {
     );
   });
 
+  it('separa base de comisión y precio comprador para envío', async () => {
+    const api = {
+      get: jest.fn().mockImplementation((path: string) => {
+        if (path.startsWith('/sites/MLA/listing_prices')) {
+          return Promise.resolve([
+            { sale_fee_amount: 20 },
+          ]);
+        }
+
+        if (
+          path.startsWith(
+            '/users/42/shipping_options/free',
+          )
+        ) {
+          return Promise.resolve({
+            coverage: {
+              all_country: {
+                list_cost: 5,
+              },
+            },
+          });
+        }
+
+        throw new Error('Ruta inesperada');
+      }),
+    };
+
+    const service =
+      new MercadoLibreSellingFeeService(
+        api as unknown as MercadolibreApiService,
+      );
+
+    const request = match();
+
+    const result = await service.getMany(
+      [
+        {
+          ...request,
+          effectivePrice: 100,
+          shippingPrice: 90,
+          candidate: {
+            ...request.candidate,
+            freeShipping: true,
+            condition: 'new',
+          },
+        },
+      ],
+      'token',
+      42,
+    );
+
+    expect(result).toEqual([
+      {
+        saleFeeAmount: 20,
+        estimatedNetAmount: 75,
+      },
+    ]);
+
+    const calls =
+      api.get.mock.calls as unknown as Array<
+        [string]
+      >;
+
+    expect(calls[0]?.[0]).toContain(
+      'listing_prices?price=100',
+    );
+
+    expect(calls[1]?.[0]).toContain(
+      'item_price=90',
+    );
+  });
+
   it('devuelve null si listing_prices falla', async () => {
     const api = { get: jest.fn().mockRejectedValue(new Error('ML')) };
     const service = new MercadoLibreSellingFeeService(

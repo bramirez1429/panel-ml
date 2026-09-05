@@ -10,7 +10,21 @@ export type SellingFeeResult = Readonly<{
 
 export type SellingFeeRequest = Readonly<{
   candidate: SellingFeeCandidate;
+
+  /*
+   * Importe económico sobre el cual simulamos
+   * los cargos de venta.
+   *
+   * En promociones co-fondeadas incluye
+   * el aporte de Mercado Libre.
+   */
   effectivePrice: number;
+
+  /*
+   * Precio que realmente ve/paga el comprador.
+   * Se usa para cotizar Mercado Envíos.
+   */
+  shippingPrice?: number | null;
 }>;
 
 export type SellingFeeCandidate = Readonly<{
@@ -69,6 +83,11 @@ export class MercadoLibreSellingFeeService {
   ): Promise<SellingFeeResult | null> {
     const candidate = request.candidate;
     const effectivePrice = request.effectivePrice;
+
+    const shippingPrice =
+      request.shippingPrice ??
+      effectivePrice;
+
     const params = new URLSearchParams({
       price: String(effectivePrice),
     });
@@ -109,7 +128,7 @@ export class MercadoLibreSellingFeeService {
       const shippingCostAmount =
         await this.getShippingCost(
           candidate,
-          effectivePrice,
+          shippingPrice,
           sellerId,
           accessToken,
         );
