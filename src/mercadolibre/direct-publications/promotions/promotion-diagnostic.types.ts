@@ -1,3 +1,8 @@
+import type {
+  MlPromotion,
+  MlPromotionCampaignItem,
+} from './promotions.types';
+
 export type PromotionDiagnosticEntry = Readonly<{
   id: string | null;
   type: string | null;
@@ -14,7 +19,29 @@ export type PromotionDiagnosticEntry = Readonly<{
   offerId: string | null;
 }>;
 
+export type PromotionDiagnosticRow = Readonly<{
+  promotionId: string | null;
+  promotionType: string | null;
+
+  itemPromotion: MlPromotion;
+
+  sellerCampaign:
+    MlPromotion | null;
+
+  directedCampaignItem:
+    MlPromotionCampaignItem | null;
+}>;
+
 export type PromotionDiagnostic = Readonly<{
   itemId: string;
-  promotions: PromotionDiagnosticEntry[];
+  sellerId: number;
+
+  promotions:
+    PromotionDiagnosticEntry[];
+
+  sellerCampaigns:
+    MlPromotion[];
+
+  rows:
+    PromotionDiagnosticRow[];
 }>;

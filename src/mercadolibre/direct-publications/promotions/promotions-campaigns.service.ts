@@ -63,20 +63,136 @@ export class PromotionsCampaignsService {
     userId: string,
     itemId: string,
   ): Promise<PromotionDiagnostic> {
-    const id = requiredText(itemId, 'itemId es obligatorio');
-    const connection = await this.tokenService.getStoredConnection(userId);
-    const accessToken = await this.tokenService.getValidAccessToken(
-      userId,
-      connection,
+    const id = requiredText(
+      itemId,
+      'itemId es obligatorio',
     );
-    const promotions = await this.promotionsService.getPromotionsStrict(
-      userId,
-      id,
-      accessToken,
-    );
+
+    const connection =
+      await this.tokenService
+        .getStoredConnection(userId);
+
+    const accessToken =
+      await this.tokenService
+        .getValidAccessToken(
+          userId,
+          connection,
+        );
+
+    /*
+     * FUENTE 1
+     * Promociones asociadas al MLA.
+     */
+    const promotions =
+      await this.promotionsService
+        .getPromotionsStrict(
+          userId,
+          id,
+          accessToken,
+        );
+
+    /*
+     * FUENTE 2
+     * Metadata general de las campañas
+     * disponibles para el seller.
+     */
+    const sellerCampaigns =
+      await this.promotionsService
+        .getSellerCampaigns(
+          userId,
+          connection.seller_id,
+          accessToken,
+        );
+
+    const campaignById =
+      new Map(
+        sellerCampaigns.flatMap(
+          (campaign) => {
+            const campaignId =
+              textOrNull(
+                campaign.id,
+              );
+
+            return campaignId
+              ? [[
+                  campaignId,
+                  campaign,
+                ] as const]
+              : [];
+          },
+        ),
+      );
+
+    /*
+     * FUENTE 3
+     * El MLA exacto dentro de cada
+     * promotionId.
+     */
+    const rows =
+      await Promise.all(
+        promotions.all.map(
+          async (promotion) => {
+            const promotionId =
+              textOrNull(
+                promotion.id,
+              );
+
+            const promotionType =
+              textOrNull(
+                promotion.type,
+              );
+
+            const sellerCampaign =
+              promotionId
+                ? campaignById.get(
+                    promotionId,
+                  ) ?? null
+                : null;
+
+            const directedCampaignItem =
+              promotionId &&
+              promotionType &&
+              promotionType.toUpperCase() !==
+                'PRICE_DISCOUNT'
+                ? await this.promotionsService
+                    .getCampaignItem(
+                      userId,
+                      promotionId,
+                      promotionType,
+                      id,
+                      accessToken,
+                    )
+                : null;
+
+            return {
+              promotionId,
+              promotionType,
+
+              itemPromotion:
+                promotion,
+
+              sellerCampaign,
+
+              directedCampaignItem,
+            };
+          },
+        ),
+      );
+
     return {
       itemId: id,
-      promotions: promotions.all.map(toPromotionDiagnosticEntry),
+
+      sellerId:
+        connection.seller_id,
+
+      promotions:
+        promotions.all.map(
+          toPromotionDiagnosticEntry,
+        ),
+
+      sellerCampaigns,
+
+      rows,
     };
   }
 

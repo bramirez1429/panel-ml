@@ -17,7 +17,7 @@ const USER_ID = '11111111-1111-4111-8111-111111111111';
 const TOKEN = 'token';
 
 describe('PromotionsCampaignsService', () => {
-  it('devuelve un diagnostico read-only normalizado con una sola consulta al MLA', async () => {
+  it('cruza promociones del MLA, campañas del seller y detalle dirigido', async () => {
     const diagnosticPromotion: MlPromotion = {
       id: ' P-MLA123 ',
       type: ' MARKETPLACE_CAMPAIGN ',
@@ -33,18 +33,32 @@ describe('PromotionsCampaignsService', () => {
       discount_meli_boost_amount: 0,
       ref_id: ' CANDIDATE-MLA3842290960-1 ',
     };
-    const { service, promotions } = createService(
+
+    const {
+      service,
+      promotions,
+    } = createService(
       [],
       undefined,
       [],
       [],
-      new Map([['MLA3842290960', diagnosticPromotion]]),
+      new Map([
+        [
+          'MLA3842290960',
+          diagnosticPromotion,
+        ],
+      ]),
     );
 
     await expect(
-      service.getPromotionDiagnostic(USER_ID, ' MLA3842290960 '),
-    ).resolves.toEqual({
+      service.getPromotionDiagnostic(
+        USER_ID,
+        ' MLA3842290960 ',
+      ),
+    ).resolves.toMatchObject({
       itemId: 'MLA3842290960',
+      sellerId: 42,
+
       promotions: [
         {
           id: 'P-MLA123',
@@ -59,13 +73,51 @@ describe('PromotionsCampaignsService', () => {
           sellerPercentage: 0,
           discountMeliAmount: 849.95,
           discountMeliBoostAmount: 0,
-          offerId: 'CANDIDATE-MLA3842290960-1',
+          offerId:
+            'CANDIDATE-MLA3842290960-1',
+        },
+      ],
+
+      sellerCampaigns: [],
+
+      rows: [
+        {
+          promotionId: 'P-MLA123',
+          promotionType:
+            'MARKETPLACE_CAMPAIGN',
+
+          itemPromotion:
+            diagnosticPromotion,
+
+          sellerCampaign: null,
+
+          directedCampaignItem: null,
         },
       ],
     });
-    expect(promotions.getPromotionsStrict).toHaveBeenCalledTimes(1);
-    expect(promotions.getPromotionsStrict).toHaveBeenCalledWith(
+
+    expect(
+      promotions.getPromotionsStrict,
+    ).toHaveBeenCalledWith(
       USER_ID,
+      'MLA3842290960',
+      TOKEN,
+    );
+
+    expect(
+      promotions.getSellerCampaigns,
+    ).toHaveBeenCalledWith(
+      USER_ID,
+      42,
+      TOKEN,
+    );
+
+    expect(
+      promotions.getCampaignItem,
+    ).toHaveBeenCalledWith(
+      USER_ID,
+      'P-MLA123',
+      'MARKETPLACE_CAMPAIGN',
       'MLA3842290960',
       TOKEN,
     );
@@ -753,6 +805,7 @@ function createService(
   const promotions = {
     getSellerCampaigns: jest.fn().mockResolvedValue(campaigns),
     getCampaignItems: jest.fn().mockResolvedValue(campaignItems),
+    getCampaignItem: jest.fn().mockResolvedValue(null),
     getPromotionsStrict: jest.fn((_userId: string, itemId: string) => {
       const promotion = directedPromotions.get(itemId);
       const all = promotion ? [promotion] : [];
