@@ -41,8 +41,8 @@ describe('normalizePromotionFinancialPreview', () => {
       maxPromotionPrice: null,
       suggestedPromotionPrice: null,
 
-      meliPercentage: 20,
-      sellerPercentage: 80,
+      meliPercentage: 2,
+      sellerPercentage: 8,
 
       discountMeliAmount: null,
       discountMeliBoostAmount: 0,

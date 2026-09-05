@@ -45,11 +45,15 @@ export function normalizePromotionFinancialPreview(input: {
     input.promotionType === 'DEAL'
       ? 0
       : (input.discountMeliAmount ??
-        percentageAmount(totalDiscount, input.meliPercentage));
-  const contribution = contributionOf(
-    baseContribution,
-    input.discountMeliBoostAmount,
-  );
+        percentageAmount(input.currentPrice, input.meliPercentage));
+  const contribution =
+    input.promotionType !== 'DEAL' &&
+    totalDiscount === null
+      ? null
+      : contributionOf(
+          baseContribution,
+          input.discountMeliBoostAmount,
+        );
   const sellerDiscount =
     input.promotionType === 'DEAL'
       ? roundMoney(
