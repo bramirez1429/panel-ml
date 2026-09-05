@@ -33,6 +33,14 @@ export type PromotionOption = NormalizedPromotion &
     suggestedPromotionPrice: number | null;
     requiresPriceSelection: boolean | null;
     sellerDiscountAmount: number | null;
+
+    sellerPercentage: number | null;
+    mercadoLibrePercentage: number | null;
+    mercadoLibreBoostedPercentage: number | null;
+
+    boostedOffer: boolean | null;
+    totalPriceForBoostedOffer: number | null;
+
     mercadoLibreBaseContributionAmount: number | null;
     mercadoLibreBoostAmount: number | null;
     mercadoLibreContributionAmount: number | null;

@@ -251,6 +251,146 @@ describe('PromotionOptionsService', () => {
     ]);
   });
 
+  it('enriquece una propuesta con la campaña y el detalle exacto del MLA', async () => {
+    const itemCandidate = {
+      id: 'P-CYBER',
+      type: 'SMART',
+      status: 'candidate',
+      name: 'Potencia tus ventas',
+      price: 0,
+      original_price: 100,
+      suggested_discounted_price: 85,
+    };
+
+    const promotions = {
+      getPromotions:
+        jest.fn().mockResolvedValue({
+          active: [],
+          candidates: [
+            itemCandidate,
+          ],
+          pending: [],
+          all: [
+            itemCandidate,
+          ],
+        } satisfies MlPromotions),
+
+      getSellerCampaigns:
+        jest.fn().mockResolvedValue([
+          {
+            id: 'P-CYBER',
+            type: 'SMART',
+            name: 'CYBER FEST',
+            start_date:
+              '2026-09-06T00:00:00Z',
+            finish_date:
+              '2026-09-30T23:59:59Z',
+          },
+        ]),
+
+      getCampaignItem:
+        jest.fn().mockResolvedValue({
+          id: ITEM_ID,
+          status: 'candidate',
+          price: 82,
+          original_price: 100,
+
+          meli_percentage: 5,
+          seller_percentage: 12,
+
+          discount_meli_amount: 5,
+
+          boosted_offer: true,
+          discount_meli_boosted_percentage: 3,
+          discount_meli_boost_amount: 3,
+          total_price_for_boosted_offer: 80,
+        }),
+    };
+
+    const fees = {
+      getMany:
+        jest.fn().mockResolvedValue([
+          {
+            saleFeeAmount: 18,
+            estimatedNetAmount: 70,
+          },
+        ]),
+    };
+
+    const service =
+      createService(
+        promotions,
+        fees,
+      );
+
+    const result =
+      await service.getOptions(
+        USER_ID,
+        ITEM_ID,
+      );
+
+    expect(
+      promotions.getCampaignItem,
+    ).toHaveBeenCalledWith(
+      USER_ID,
+      'P-CYBER',
+      'SMART',
+      ITEM_ID,
+      'token',
+    );
+
+    expect(result[0]).toMatchObject({
+      id: 'P-CYBER',
+      type: 'SMART',
+      name: 'CYBER FEST',
+
+      startDate:
+        '2026-09-06T00:00:00Z',
+
+      finishDate:
+        '2026-09-30T23:59:59Z',
+
+      /*
+       * total_price_for_boosted_offer
+       * tiene prioridad.
+       */
+      promotionPrice: 80,
+
+      sellerDiscountAmount: 12,
+
+      sellerPercentage: 12,
+      mercadoLibrePercentage: 5,
+      mercadoLibreBoostedPercentage: 3,
+
+      boostedOffer: true,
+      totalPriceForBoostedOffer: 80,
+
+      mercadoLibreBaseContributionAmount: 5,
+      mercadoLibreBoostAmount: 3,
+      mercadoLibreContributionAmount: 8,
+
+      estimatedNetAmount: 70,
+    });
+
+    const feeCalls =
+      fees.getMany.mock.calls as unknown as Array<
+        [SellingFeeRequest[], string]
+      >;
+
+    expect(
+      feeCalls[0]?.[0],
+    ).toEqual([
+      expect.objectContaining({
+        /*
+         * buyer = 80
+         * ML contribution = 8
+         */
+        effectivePrice: 88,
+        shippingPrice: 80,
+      }),
+    ]);
+  });
+
   it('no consulta fees ni simula neto cuando el candidate no tiene suggested', async () => {
     const candidate = {
       id: 'candidate-1',
@@ -283,6 +423,16 @@ describe('PromotionOptionsService', () => {
 });
 
 function createService(promotions: object, fees: object) {
+  const promotionApi = {
+    getSellerCampaigns:
+      jest.fn().mockResolvedValue([]),
+
+    getCampaignItem:
+      jest.fn().mockResolvedValue(null),
+
+    ...promotions,
+  };
+
   const token = {
     getStoredConnection: jest.fn().mockResolvedValue({ seller_id: 42 }),
     getValidAccessToken: jest.fn().mockResolvedValue('token'),
@@ -293,7 +443,7 @@ function createService(promotions: object, fees: object) {
   return new PromotionOptionsService(
     token as unknown as MercadolibreTokenService,
     items as unknown as ItemsService,
-    promotions as unknown as PromotionsService,
+    promotionApi as unknown as PromotionsService,
     fees as unknown as MercadoLibreSellingFeeService,
   );
 }

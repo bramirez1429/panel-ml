@@ -1,3 +1,9 @@
+export type MlPromotionBenefits = {
+  meli_percent?: number | null;
+  seller_percent?: number | null;
+  [key: string]: unknown;
+};
+
 export type MlPromotion = {
   id?: string;
   type?: string;
@@ -11,16 +17,24 @@ export type MlPromotion = {
   min_discounted_price?: number | null;
   max_discounted_price?: number | null;
   suggested_discounted_price?: number | null;
+
   meli_percentage?: number | null;
   seller_percentage?: number | null;
   discount_meli_amount?: number | null;
+
+  boosted_offer?: boolean | null;
+  discount_meli_boosted_percentage?: number | null;
   discount_meli_boost_amount?: number | null;
+  total_price_for_boosted_offer?: number | null;
 
   start_date?: string;
   finish_date?: string;
+  end_date?: string;
   deadline_date?: string;
 
   name?: string;
+
+  benefits?: MlPromotionBenefits | null;
 
   [key: string]: unknown;
 };
@@ -32,16 +46,30 @@ export type MlSellerPromotionsResponse = {
 export type MlPromotionCampaignItem = {
   id?: string;
   status?: string;
+
   price?: number;
   original_price?: number;
   promotion_price?: number;
+
   min_discounted_price?: number | null;
   max_discounted_price?: number | null;
   suggested_discounted_price?: number | null;
+
   meli_percentage?: number | null;
   seller_percentage?: number | null;
   discount_meli_amount?: number | null;
+
+  boosted_offer?: boolean | null;
+  discount_meli_boosted_percentage?: number | null;
   discount_meli_boost_amount?: number | null;
+  total_price_for_boosted_offer?: number | null;
+
+  start_date?: string;
+  finish_date?: string;
+  end_date?: string;
+
+  name?: string;
+
   [key: string]: unknown;
 };
 

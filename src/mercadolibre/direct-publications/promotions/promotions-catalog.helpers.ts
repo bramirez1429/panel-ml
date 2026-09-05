@@ -118,7 +118,8 @@ export function normalizePromotion(
   promotion: MlPromotion,
 ): NormalizedPromotion {
   const originalPrice = finiteNumber(promotion.original_price);
-  const promotionPrice = finiteNumber(promotion.price);
+  const promotionPrice =
+    promotionBuyerPrice(promotion);
   const discountPercent =
     originalPrice !== null &&
     promotionPrice !== null &&
@@ -137,8 +138,30 @@ export function normalizePromotion(
     promotionPrice,
     discountPercent,
     startDate: textOrNull(promotion.start_date),
-    finishDate: textOrNull(promotion.finish_date),
+    finishDate:
+      textOrNull(promotion.finish_date) ??
+      textOrNull(promotion.end_date),
   };
+}
+
+export function promotionBuyerPrice(
+  promotion: MlPromotion,
+): number | null {
+  /*
+   * Mercado Libre documenta
+   * total_price_for_boosted_offer como
+   * el precio final que verá el comprador.
+   */
+  const boostedPrice =
+    finiteNumber(
+      promotion.total_price_for_boosted_offer,
+    );
+
+  if (boostedPrice !== null) {
+    return boostedPrice;
+  }
+
+  return finiteNumber(promotion.price);
 }
 
 export function currentPromotion(
