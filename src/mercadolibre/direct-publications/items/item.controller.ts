@@ -1,10 +1,18 @@
-import { Body, Controller, Param, Patch, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Param,
+  Patch,
+  UseGuards,
+} from '@nestjs/common';
 
 import type { SafeUser } from '../../../auth/domain/auth.models';
 import { AccessTokenGuard } from '../../../auth/presentation/access-token.guard';
 import { CurrentUser } from '../../../auth/presentation/current-user.decorator';
 
 import { ItemUpdateService } from './item-update.service';
+import { VariationDeletionService } from './variation-deletion.service';
 
 import type {
   ClassicItemUpdate,
@@ -14,7 +22,24 @@ import type {
 @Controller('mercadolibre/direct/edicion')
 @UseGuards(AccessTokenGuard)
 export class ItemController {
-  constructor(private readonly itemUpdateService: ItemUpdateService) {}
+  constructor(
+    private readonly itemUpdateService: ItemUpdateService,
+    private readonly variationDeletionService: VariationDeletionService,
+  ) {}
+
+  /** Elimina una variaci\u00f3n cl\u00e1sica directamente en Mercado Libre. */
+  @Delete('items/:itemId/variations/:variationId')
+  deleteVariation(
+    @CurrentUser() user: SafeUser,
+    @Param('itemId') itemId: string,
+    @Param('variationId') variationId: string,
+  ) {
+    return this.variationDeletionService.deleteVariation(
+      user.id,
+      itemId,
+      variationId,
+    );
+  }
 
   /** Edita una publicación clásica. */
   @Patch('clasica/:itemId')

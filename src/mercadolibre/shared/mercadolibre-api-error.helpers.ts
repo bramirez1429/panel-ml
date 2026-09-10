@@ -49,6 +49,9 @@ export function throwMercadolibreApiError(
       'Mercado Libre no encontró la descripción solicitada',
     );
   }
+  if (kind === 'variationDelete') {
+    throwVariationDeleteApiError(status, safeData);
+  }
   if (kind === 'promotion') throwPromotionApiError(status, safeData);
   if (status === 400) {
     throw new BadRequestException(
@@ -61,6 +64,28 @@ export function throwMercadolibreApiError(
   if (status === 429)
     throw new ServiceUnavailableException('Demasiadas solicitudes');
   throw new BadGatewayException('Mercado Libre no completó la solicitud');
+}
+
+function throwVariationDeleteApiError(
+  status: number,
+  safeData: unknown,
+): never {
+  const details = isJsonObject(safeData) ? safeData : {};
+  const message = isNonEmptyString(details.message)
+    ? details.message
+    : 'Mercado Libre rechaz\u00f3 la eliminaci\u00f3n de la variante';
+
+  throw new HttpException(
+    {
+      success: false,
+      code: 'MERCADOLIBRE_VARIATION_DELETE_FAILED',
+      message,
+      ...(details.error !== undefined ? { error: details.error } : {}),
+      ...(details.cause !== undefined ? { cause: details.cause } : {}),
+      mercadoLibreStatus: status,
+    },
+    status >= 400 && status <= 599 ? status : 502,
+  );
 }
 
 function throwPromotionApiError(status: number, safeData: unknown): void {

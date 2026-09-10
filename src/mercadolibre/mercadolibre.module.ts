@@ -42,6 +42,7 @@ import { PricingService } from './direct-publications/pricing/pricing.service';
 import { PromotionsService } from './direct-publications/promotions/promotions.service';
 import { PublicationDetailService } from './direct-publications/publications/publication-detail.service';
 import { ItemUpdateService } from './direct-publications/items/item-update.service';
+import { VariationDeletionService } from './direct-publications/items/variation-deletion.service';
 import { ItemController } from './direct-publications/items/item.controller';
 import { FamilyUpdateService } from './direct-publications/families/family-update.service';
 import { PriceDiscountService } from './direct-publications/promotions/price-discount.service';
@@ -143,6 +144,7 @@ import { SimilarPublicationBase64UploadService } from './direct-publications/sim
     PromotionsService,
     PublicationDetailService,
     ItemUpdateService,
+    VariationDeletionService,
     FamilyUpdateService,
     StockService,
     SkuService,
