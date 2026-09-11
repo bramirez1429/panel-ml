@@ -14,6 +14,7 @@ import type { User } from '../domain/auth.models';
 import { JoseAccessTokenProvider } from '../infrastructure/jose-access-token.provider';
 import { AccessTokenGuard } from './access-token.guard';
 import { AuthController } from './auth.controller';
+import { REFRESH_TOKEN_COOKIE_NAME } from './refresh-token.cookie';
 
 const TEST_CONFIGURATION: AuthConfiguration = {
   jwtAccessSecret: 'http-test-access-secret-with-at-least-32-bytes',
@@ -33,12 +34,25 @@ const USER: User = {
   updatedAt: new Date('2030-01-02T00:00:00.000Z'),
 };
 
+const CURRENT_REFRESH_TOKEN = 'r'.repeat(43);
+
+const REFRESH_SESSION = {
+  id: '22222222-2222-4222-8222-222222222222',
+  userId: USER.id,
+  expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+  revokedAt: null,
+  createdAt: new Date(),
+  rotatedAt: new Date(),
+};
+
 type MockedPort<T> = jest.Mocked<Pick<T, keyof T>>;
 
 describe('AuthController HTTP', () => {
   let app: INestApplication<App>;
   let accessTokens: AccessTokenProvider;
   let users: MockedPort<UserRepository>;
+  let refreshSessions: MockedPort<RefreshSessionRepository>;
+  let passwordHasher: MockedPort<PasswordHasher>;
 
   beforeAll(async () => {
     users = {
@@ -46,12 +60,12 @@ describe('AuthController HTTP', () => {
       findByEmail: jest.fn(),
       findById: jest.fn().mockResolvedValue(USER),
     };
-    const refreshSessions: MockedPort<RefreshSessionRepository> = {
+    refreshSessions = {
       create: jest.fn(),
       rotate: jest.fn(),
       revoke: jest.fn(),
     };
-    const passwordHasher: MockedPort<PasswordHasher> = {
+    passwordHasher = {
       hash: jest.fn(),
       verify: jest.fn(),
     };
@@ -81,6 +95,11 @@ describe('AuthController HTTP', () => {
     await app.init();
   });
 
+  beforeEach(() => {
+    jest.clearAllMocks();
+    users.findById.mockResolvedValue(USER);
+  });
+
   afterAll(async () => {
     await app.close();
   });
@@ -108,5 +127,62 @@ describe('AuthController HTTP', () => {
       });
 
     expect(users.findById).toHaveBeenCalledWith(USER.id);
+  });
+
+  it('POST /auth/login guarda el refresh en cookie HttpOnly', async () => {
+    users.findByEmail.mockResolvedValue(USER);
+    passwordHasher.verify.mockResolvedValue(true);
+    refreshSessions.create.mockResolvedValue(REFRESH_SESSION);
+
+    const response = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email: USER.email, password: 'password' })
+      .expect(200);
+    const body = response.body as Record<string, unknown>;
+
+    expect(body.accessToken).toEqual(expect.any(String));
+    expect(response.headers['set-cookie']?.[0]).toContain(
+      `${REFRESH_TOKEN_COOKIE_NAME}=`,
+    );
+    expect(response.headers['set-cookie']?.[0]).toContain('HttpOnly');
+    expect(response.headers['set-cookie']?.[0]).toContain('Path=/auth');
+    expect(response.headers['set-cookie']?.[0]).toContain('SameSite=Lax');
+  });
+
+  it('POST /auth/refresh lee y rota la cookie sin exigir token en el body', async () => {
+    refreshSessions.rotate.mockResolvedValue(REFRESH_SESSION);
+
+    const response = await request(app.getHttpServer())
+      .post('/auth/refresh')
+      .set('Cookie', `${REFRESH_TOKEN_COOKIE_NAME}=${CURRENT_REFRESH_TOKEN}`)
+      .send({})
+      .expect(200);
+    const body = response.body as Record<string, unknown>;
+
+    const rotation = refreshSessions.rotate.mock.calls[0][0];
+    expect(rotation.currentRefreshTokenHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(rotation.nextRefreshTokenHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(body.accessToken).toEqual(expect.any(String));
+    expect(body.refreshToken).not.toBe(CURRENT_REFRESH_TOKEN);
+    expect(response.headers['set-cookie']?.[0]).toContain(
+      `${REFRESH_TOKEN_COOKIE_NAME}=`,
+    );
+  });
+
+  it('limpia la cookie cuando el refresh es inválido o venció', async () => {
+    refreshSessions.rotate.mockResolvedValue(null);
+
+    const response = await request(app.getHttpServer())
+      .post('/auth/refresh')
+      .set('Cookie', `${REFRESH_TOKEN_COOKIE_NAME}=${CURRENT_REFRESH_TOKEN}`)
+      .send({})
+      .expect(401);
+
+    expect(response.headers['set-cookie']?.[0]).toContain(
+      `${REFRESH_TOKEN_COOKIE_NAME}=;`,
+    );
+    expect(response.headers['set-cookie']?.[0]).toContain(
+      'Expires=Thu, 01 Jan 1970',
+    );
   });
 });

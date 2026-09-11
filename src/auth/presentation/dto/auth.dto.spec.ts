@@ -59,6 +59,12 @@ describe('Auth DTOs', () => {
     await expect(validate(input)).resolves.toHaveLength(0);
   });
 
+  it('acepta body vacío cuando el refresh llega por cookie HttpOnly', async () => {
+    const input = plainToInstance(RefreshTokenDto, {});
+
+    await expect(validate(input)).resolves.toHaveLength(0);
+  });
+
   it.each(['short', `${'a'.repeat(42)}+`, 'a'.repeat(44)])(
     'rechaza el refresh token malformado %p',
     async (refreshToken) => {
