@@ -78,11 +78,11 @@ function throwVariationDeleteApiError(
   throw new HttpException(
     {
       success: false,
-      code: 'MERCADOLIBRE_VARIATION_DELETE_FAILED',
+      code: 'MELI_VARIATION_DELETE_FAILED',
       message,
       ...(details.error !== undefined ? { error: details.error } : {}),
       ...(details.cause !== undefined ? { cause: details.cause } : {}),
-      mercadoLibreStatus: status,
+      meliStatus: status,
     },
     status >= 400 && status <= 599 ? status : 502,
   );

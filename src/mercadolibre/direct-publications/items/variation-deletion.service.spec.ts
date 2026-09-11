@@ -1,47 +1,33 @@
-import { HttpException, UnprocessableEntityException } from '@nestjs/common';
+import { BadRequestException, HttpException } from '@nestjs/common';
 
 import { MercadolibreTokenService } from '../../auth/mercadolibre-token.service';
 import { MercadolibreApiService } from '../../shared/mercadolibre-api.service';
 import { throwMercadolibreApiError } from '../../shared/mercadolibre-api-error.helpers';
-import { ItemsService } from './items.service';
 import { VariationDeletionService } from './variation-deletion.service';
 
 describe('VariationDeletionService', () => {
   const getValidAccessToken = jest.fn();
   const deleteRequest = jest.fn();
-  const getOne = jest.fn();
   const tokenService = {
     getValidAccessToken,
   } as unknown as MercadolibreTokenService;
   const apiService = {
     delete: deleteRequest,
   } as unknown as MercadolibreApiService;
-  const itemsService = {
-    getOne,
-  } as unknown as ItemsService;
-  const service = new VariationDeletionService(
-    tokenService,
-    apiService,
-    itemsService,
-  );
+  const service = new VariationDeletionService(tokenService, apiService);
 
   beforeEach(() => {
     jest.clearAllMocks();
     getValidAccessToken.mockResolvedValue('private-token');
   });
 
-  it('elimina realmente una variaci\u00f3n LEGACY aunque tenga stock 0', async () => {
-    getOne.mockResolvedValue({
-      id: 'MLA123',
-      variations: [{ id: 456, available_quantity: 0 }],
-    });
+  it('intenta el DELETE real sin consultar ni modificar previamente el item', async () => {
     deleteRequest.mockResolvedValue({ id: 'MLA123' });
 
     await expect(
       service.deleteVariation('user-1', 'MLA123', '456'),
     ).resolves.toEqual({
       success: true,
-      model: 'LEGACY',
       itemId: 'MLA123',
       variationId: '456',
     });
@@ -52,42 +38,47 @@ describe('VariationDeletionService', () => {
     );
   });
 
-  it('no ejecuta el DELETE cl\u00e1sico para USER_PRODUCT', async () => {
-    getOne.mockResolvedValue({
-      id: 'MLA123',
-      family_id: 10,
-      user_product_id: 'MLAU456',
-      variations: [],
-    });
+  it('no bloquea localmente publicaciones closed o con ventas', async () => {
+    deleteRequest.mockResolvedValue(undefined);
 
-    await expect(
-      service.deleteVariation('user-1', 'MLA123', '456'),
-    ).rejects.toBeInstanceOf(UnprocessableEntityException);
-    expect(deleteRequest).not.toHaveBeenCalled();
+    await service.deleteVariation('user-1', 'MLA123', '456');
+
+    expect(deleteRequest).toHaveBeenCalledTimes(1);
   });
 
   it('propaga el error normalizado de Mercado Libre', async () => {
     const providerError = new HttpException(
       {
         success: false,
-        code: 'MERCADOLIBRE_VARIATION_DELETE_FAILED',
+        code: 'MELI_VARIATION_DELETE_FAILED',
         message: 'variation has sales',
         error: 'validation_error',
         cause: [{ code: 'item.variation.invalid' }],
-        mercadoLibreStatus: 400,
+        meliStatus: 400,
       },
       400,
     );
-    getOne.mockResolvedValue({
-      id: 'MLA123',
-      variations: [{ id: 456 }],
-    });
     deleteRequest.mockRejectedValue(providerError);
 
     await expect(
       service.deleteVariation('user-1', 'MLA123', '456'),
     ).rejects.toBe(providerError);
   });
+
+  it.each([
+    ['MLA inv\u00e1lido', 'Crema / 38', '456'],
+    ['variationId descriptivo', 'MLA123', 'Crema / 38'],
+    ['SKU', 'MLA123', 'SKU-38'],
+  ])(
+    'rechaza %s antes de obtener el token',
+    async (_case, itemId, variationId) => {
+      await expect(
+        service.deleteVariation('user-1', itemId, variationId),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(getValidAccessToken).not.toHaveBeenCalled();
+      expect(deleteRequest).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe('error de eliminaci\u00f3n de variaci\u00f3n', () => {
@@ -106,11 +97,11 @@ describe('error de eliminaci\u00f3n de variaci\u00f3n', () => {
       expect(exception.getStatus()).toBe(409);
       expect(exception.getResponse()).toEqual({
         success: false,
-        code: 'MERCADOLIBRE_VARIATION_DELETE_FAILED',
+        code: 'MELI_VARIATION_DELETE_FAILED',
         message: 'variation cannot be deleted',
         error: 'conflict',
         cause: [{ code: 'variation_has_sales' }],
-        mercadoLibreStatus: 409,
+        meliStatus: 409,
       });
     }
   });
