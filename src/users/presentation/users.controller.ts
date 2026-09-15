@@ -7,9 +7,9 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
+import type { SafeUser } from '../../auth/domain/auth.models';
 import { AccessTokenGuard } from '../../auth/presentation/access-token.guard';
 import { CurrentUser } from '../../auth/presentation/current-user.decorator';
-import type { SafeUser } from '../../auth/domain/auth.models';
 import { UsersService } from '../application/users.service';
 import { AdminGuard } from './admin.guard';
 import {
@@ -32,9 +32,10 @@ export class UsersController {
 
   @Post()
   create(
+    @CurrentUser() actor: SafeUser,
     @Body() input: CreateManagedUserDto,
   ) {
-    return this.users.create(input);
+    return this.users.create(actor.id, input);
   }
 
   @Patch(':id/status')

@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import type { AuthenticatedRequest } from '../../auth/presentation/authenticated-request';
 import { UserAdminRepository } from '../application/ports/user-admin.repository';
+import { hasRoleAccess } from '../domain/user-access';
 
 @Injectable()
 export class AdminGuard implements CanActivate {
@@ -20,7 +21,10 @@ export class AdminGuard implements CanActivate {
 
     const user = await this.users.findById(request.auth.user.id);
 
-    if (!user?.isActive || !['SUPER_ADMIN', 'ADMIN'].includes(user.role)) {
+    if (
+      !user?.isActive ||
+      !hasRoleAccess(user.role, ['ADMIN'])
+    ) {
       throw new ForbiddenException(
         'Se requieren permisos de administrador',
       );

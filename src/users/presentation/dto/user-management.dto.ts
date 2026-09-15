@@ -1,13 +1,16 @@
 import {
   IsBoolean,
   IsEmail,
-  IsEnum,
+  IsIn,
   IsOptional,
   IsString,
   MaxLength,
   MinLength,
 } from 'class-validator';
-import type { UserRole } from '../../domain/user-management.models';
+import {
+  ASSIGNABLE_USER_ROLES,
+  type AssignableUserRole,
+} from '../../domain/user-access';
 
 export class CreateManagedUserDto {
   @IsEmail()
@@ -25,8 +28,8 @@ export class CreateManagedUserDto {
   name?: string;
 
   @IsOptional()
-  @IsEnum(['SUPER_ADMIN', 'ADMIN', 'USER'])
-  role?: UserRole;
+  @IsIn([...ASSIGNABLE_USER_ROLES])
+  role?: AssignableUserRole;
 }
 
 export class UpdateUserStatusDto {
@@ -35,7 +38,7 @@ export class UpdateUserStatusDto {
 }
 
 export class UpdateUserRoleDto {
-  @IsEnum(['SUPER_ADMIN', 'ADMIN', 'USER'])
-  role!: UserRole;
+  @IsIn([...ASSIGNABLE_USER_ROLES])
+  role!: AssignableUserRole;
 }
 
