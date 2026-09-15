@@ -20,7 +20,7 @@ export class AdminGuard implements CanActivate {
 
     const user = await this.users.findById(request.auth.user.id);
 
-    if (!user?.isActive || user.role !== 'ADMIN') {
+    if (!user?.isActive || !['SUPER_ADMIN', 'ADMIN'].includes(user.role)) {
       throw new ForbiddenException(
         'Se requieren permisos de administrador',
       );

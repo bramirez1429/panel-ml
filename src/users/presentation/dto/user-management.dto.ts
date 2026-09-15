@@ -25,7 +25,7 @@ export class CreateManagedUserDto {
   name?: string;
 
   @IsOptional()
-  @IsEnum(['ADMIN', 'USER'])
+  @IsEnum(['SUPER_ADMIN', 'ADMIN', 'USER'])
   role?: UserRole;
 }
 
@@ -35,7 +35,7 @@ export class UpdateUserStatusDto {
 }
 
 export class UpdateUserRoleDto {
-  @IsEnum(['ADMIN', 'USER'])
+  @IsEnum(['SUPER_ADMIN', 'ADMIN', 'USER'])
   role!: UserRole;
 }
 

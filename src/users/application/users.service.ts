@@ -52,6 +52,14 @@ export class UsersService {
     userId: string,
     isActive: boolean,
   ): Promise<ManagedUser> {
+    const target = await this.requireUser(userId);
+
+    if (target.role === 'SUPER_ADMIN' && !isActive) {
+      throw new BadRequestException(
+        'No se puede desactivar al super administrador',
+      );
+    }
+
     if (actorId === userId && !isActive) {
       throw new BadRequestException(
         'No podés desactivar tu propio usuario',
@@ -73,9 +81,20 @@ export class UsersService {
     userId: string,
     role: UserRole,
   ): Promise<ManagedUser> {
-    if (actorId === userId && role !== 'ADMIN') {
+    const target = await this.requireUser(userId);
+
+    if (
+      target.role === 'SUPER_ADMIN' &&
+      role !== 'SUPER_ADMIN'
+    ) {
       throw new BadRequestException(
-        'No podés quitarte tu propio rol de administrador',
+        'No se puede modificar el rol del super administrador',
+      );
+    }
+
+    if (actorId === userId && role !== 'SUPER_ADMIN') {
+      throw new BadRequestException(
+        'No podés quitarte tu propio rol de super administrador',
       );
     }
 

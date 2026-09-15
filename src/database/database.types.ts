@@ -101,7 +101,7 @@ type UserRow = {
   password_hash: string;
   name: string | null;
   is_active: boolean;
-  role: 'ADMIN' | 'USER';
+  role: 'SUPER_ADMIN' | 'ADMIN' | 'USER';
   created_at: string;
   updated_at: string;
 };
@@ -112,7 +112,7 @@ type UserInsert = {
   password_hash: string;
   name?: string | null;
   is_active?: boolean;
-  role?: 'ADMIN' | 'USER';
+  role?: 'SUPER_ADMIN' | 'ADMIN' | 'USER';
   created_at?: string;
   updated_at?: string;
 };
