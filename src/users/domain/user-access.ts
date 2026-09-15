@@ -1,6 +1,10 @@
 import type { UserRole } from './user-management.models';
 
-export const ASSIGNABLE_USER_ROLES = ['ADMIN', 'USER'] as const;
+export const ASSIGNABLE_USER_ROLES = [
+  'SUPER_ADMIN',
+  'ADMIN',
+  'USER',
+] as const;
 
 export type AssignableUserRole =
   (typeof ASSIGNABLE_USER_ROLES)[number];
@@ -10,6 +14,7 @@ export function hasRoleAccess(
   allowedRoles: readonly UserRole[],
 ): boolean {
   if (role === 'SUPER_ADMIN') return true;
+
   return allowedRoles.includes(role);
 }
 
@@ -17,15 +22,14 @@ export function canManageUser(
   actorRole: UserRole,
   targetRole: UserRole,
 ): boolean {
-  if (targetRole === 'SUPER_ADMIN') {
-    return actorRole === 'SUPER_ADMIN';
-  }
-
   if (actorRole === 'SUPER_ADMIN') {
     return true;
   }
 
-  return actorRole === 'ADMIN' && targetRole === 'USER';
+  return (
+    actorRole === 'ADMIN' &&
+    targetRole === 'USER'
+  );
 }
 
 export function canAssignRole(
@@ -36,5 +40,8 @@ export function canAssignRole(
     return true;
   }
 
-  return actorRole === 'ADMIN' && role === 'USER';
+  return (
+    actorRole === 'ADMIN' &&
+    role === 'USER'
+  );
 }

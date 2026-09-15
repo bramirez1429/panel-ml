@@ -111,6 +111,16 @@ export class UsersService {
       );
     }
 
+    if (
+      actorId === userId &&
+      actor.role === 'SUPER_ADMIN' &&
+      role !== 'SUPER_ADMIN'
+    ) {
+      throw new BadRequestException(
+        'No podés quitarte tu propio rol de super administrador',
+      );
+    }
+
     if (!canAssignRole(actor.role, role)) {
       throw new ForbiddenException(
         'No tenés permisos para asignar ese rol',
