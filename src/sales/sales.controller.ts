@@ -12,6 +12,7 @@ import { AccessTokenGuard } from '../auth/presentation/access-token.guard';
 import { CurrentUser } from '../auth/presentation/current-user.decorator';
 import { CreateVariantLinkDto } from './dto/create-variant-link.dto';
 import { RecentSalesService } from './recent-sales.service';
+import { SalesSyncService } from './sales-sync.service';
 import { VariantLinkService } from './variant-link.service';
 
 @Controller('sales')
@@ -20,6 +21,7 @@ export class SalesController {
   constructor(
     private readonly recentSales: RecentSalesService,
     private readonly variantLinks: VariantLinkService,
+    private readonly salesSync: SalesSyncService,
   ) {}
 
   @Get('recent')
@@ -30,6 +32,15 @@ export class SalesController {
   @Get('recent/:saleId/variants')
   detail(@CurrentUser() user: SafeUser, @Param('saleId') saleId: string) {
     return this.recentSales.detail(user.id, saleId);
+  }
+
+
+  @Post('sync')
+  sync(
+    @CurrentUser() user: SafeUser,
+    @Query('hours') hours?: string,
+  ) {
+    return this.salesSync.sync(user.id, hours);
   }
 
   @Post('variant-links')
