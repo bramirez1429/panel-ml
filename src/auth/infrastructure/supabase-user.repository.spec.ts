@@ -22,6 +22,7 @@ const USER_ROW: UserRow = {
   password_hash: INPUT.passwordHash,
   name: INPUT.name,
   is_active: true,
+  role: 'USER',
   created_at: CREATED_AT,
   updated_at: UPDATED_AT,
 };
@@ -75,7 +76,7 @@ describe('SupabaseUserRepository', () => {
       name: INPUT.name,
     });
     expect(select).toHaveBeenCalledWith(
-      'id,email,password_hash,name,is_active,created_at,updated_at',
+      'id,email,password_hash,name,is_active,role,created_at,updated_at',
     );
   });
 

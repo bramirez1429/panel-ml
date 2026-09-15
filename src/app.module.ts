@@ -7,8 +7,11 @@ import { MercadolibreModule } from './mercadolibre/mercadolibre.module';
 import { TiendanubeModule } from './tiendanube/tiendanube.module';
 import { SalesModule } from './sales/sales.module';
 
+import { UsersModule } from './users/users.module';
+
 @Module({
   imports: [
+    UsersModule,
     ConfigModule.forRoot({ isGlobal: true }),
     AuthModule,
     MercadolibreModule,

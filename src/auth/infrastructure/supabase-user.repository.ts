@@ -15,7 +15,7 @@ import { User } from '../domain/auth.models';
 type UserRow = Database['public']['Tables']['users']['Row'];
 
 const USER_COLUMNS =
-  'id,email,password_hash,name,is_active,created_at,updated_at';
+  'id,email,password_hash,name,is_active,role,created_at,updated_at';
 
 @Injectable()
 export class SupabaseUserRepository extends UserRepository {

@@ -20,7 +20,6 @@ import { AccessTokenGuard } from './access-token.guard';
 import { CurrentUser } from './current-user.decorator';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
-import { RegisterDto } from './dto/register.dto';
 import {
   clearRefreshTokenCookieOptions,
   readRefreshTokenCookie,
@@ -31,15 +30,6 @@ import {
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
-
-  @Post('register')
-  @UseGuards(ThrottlerGuard)
-  @Throttle({
-    default: { limit: 3, ttl: 300_000, blockDuration: 300_000 },
-  })
-  register(@Body() input: RegisterDto): Promise<SafeUser> {
-    return this.authService.register(input);
-  }
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
