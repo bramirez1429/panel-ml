@@ -14,6 +14,7 @@ import { UsersService } from '../application/users.service';
 import { AdminGuard } from './admin.guard';
 import {
   CreateManagedUserDto,
+  UpdateUserPasswordDto,
   UpdateUserRoleDto,
   UpdateUserStatusDto,
 } from './dto/user-management.dto';
@@ -61,6 +62,20 @@ export class UsersController {
       actor.id,
       userId,
       input.role,
+    );
+  }
+
+
+  @Patch(':id/password')
+  updatePassword(
+    @CurrentUser() actor: SafeUser,
+    @Param('id') userId: string,
+    @Body() input: UpdateUserPasswordDto,
+  ) {
+    return this.users.setPassword(
+      actor.id,
+      userId,
+      input.password,
     );
   }
 }

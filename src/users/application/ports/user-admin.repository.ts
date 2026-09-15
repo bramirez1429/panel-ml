@@ -14,5 +14,10 @@ export abstract class UserAdminRepository {
     id: string,
     role: UserRole,
   ): Promise<ManagedUser | null>;
+
+  abstract updatePasswordHash(
+    id: string,
+    passwordHash: string,
+  ): Promise<boolean>;
 }
 

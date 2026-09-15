@@ -69,6 +69,17 @@ export class SupabaseUserAdminRepository extends UserAdminRepository {
     });
   }
 
+  async updatePasswordHash(
+    id: string,
+    passwordHash: string,
+  ): Promise<boolean> {
+    const updated = await this.update(id, {
+      password_hash: passwordHash,
+    });
+
+    return Boolean(updated);
+  }
+
   private async update(
     id: string,
     changes: UserUpdate,

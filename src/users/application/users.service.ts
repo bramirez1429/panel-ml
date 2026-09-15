@@ -1,3 +1,4 @@
+import { hash } from 'argon2';
 import {
   BadRequestException,
   ForbiddenException,
@@ -124,6 +125,41 @@ export class UsersService {
     if (!updated) throw new NotFoundException('Usuario no encontrado');
 
     return updated;
+  }
+
+
+  async setPassword(
+    actorId: string,
+    userId: string,
+    password: string,
+  ): Promise<void> {
+    const [actor, target] = await Promise.all([
+      this.requireUser(actorId),
+      this.requireUser(userId),
+    ]);
+
+    if (actor.role !== 'SUPER_ADMIN') {
+      throw new ForbiddenException(
+        'Solo el super administrador puede cambiar contraseñas',
+      );
+    }
+
+    if (!target.isActive) {
+      throw new BadRequestException(
+        'No se puede cambiar la contraseña de un usuario inactivo',
+      );
+    }
+
+    const passwordHash = await hash(password);
+
+    const updated = await this.users.updatePasswordHash(
+      userId,
+      passwordHash,
+    );
+
+    if (!updated) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
   }
 
   private async requireUser(id: string): Promise<ManagedUser> {

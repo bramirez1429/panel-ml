@@ -18,7 +18,7 @@ export class CreateManagedUserDto {
   email!: string;
 
   @IsString()
-  @MinLength(8)
+  @MinLength(7)
   @MaxLength(128)
   password!: string;
 
@@ -42,3 +42,11 @@ export class UpdateUserRoleDto {
   role!: AssignableUserRole;
 }
 
+
+
+export class UpdateUserPasswordDto {
+  @IsString()
+  @MinLength(7)
+  @MaxLength(128)
+  password!: string;
+}
