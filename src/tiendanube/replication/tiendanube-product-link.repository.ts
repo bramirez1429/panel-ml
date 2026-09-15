@@ -109,6 +109,18 @@ export type SourceReservationRepository = Readonly<{
 }>;
 
 export abstract class TiendanubeProductLinkRepository {
+  abstract findBySourceKey(input: {
+    userId: string;
+    storeId: string;
+    sourceKey: string;
+  }): Promise<SourceLink | null>;
+
+  abstract findSourceKeyByTiendanubeProductId(input: {
+    userId: string;
+    storeId: string;
+    tiendanubeProductId: string;
+  }): Promise<string | null>;
+
   abstract reserve(
     input: ReserveTiendanubeProductLinkInput,
   ): Promise<Reservation>;

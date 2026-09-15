@@ -67,6 +67,28 @@ export class SupabaseTiendanubeProductLinkRepository extends TiendanubeProductLi
     }
   }
 
+  async findSourceKeyByTiendanubeProductId(input: {
+    userId: string;
+    storeId: string;
+    tiendanubeProductId: string;
+  }): Promise<string | null> {
+    try {
+      const { data, error } = await this.supabaseService
+        .getClient()
+        .from('tiendanube_product_links')
+        .select('ml_source_key')
+        .eq('user_id', input.userId)
+        .eq('store_id', input.storeId)
+        .eq('tiendanube_product_id', input.tiendanubeProductId)
+        .eq('status', 'COMPLETED');
+      if (error || !data) this.sourceLinkError();
+      const keys = [...new Set(data.map(({ ml_source_key }) => ml_source_key))];
+      return keys.length === 1 ? keys[0] : null;
+    } catch {
+      this.sourceLinkError();
+    }
+  }
+
   async reserveBySource(input: {
     userId: string;
     storeId: string;

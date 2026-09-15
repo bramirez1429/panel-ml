@@ -1,4 +1,5 @@
 import { PublicationSyncService } from '../publications/sync/publication-sync.service';
+import { MercadolibreSaleIngestionService } from '../../sales/mercadolibre-sale-ingestion.service';
 import { WebhookService } from './webhook.service';
 
 describe('WebhookService', () => {
@@ -11,9 +12,14 @@ describe('WebhookService', () => {
       .fn()
       .mockReturnValueOnce(pending)
       .mockResolvedValue(undefined);
-    const service = new WebhookService({
-      syncItem,
-    } as unknown as PublicationSyncService);
+    const service = new WebhookService(
+      {
+        syncItem,
+      } as unknown as PublicationSyncService,
+      {
+        receive: jest.fn(),
+      } as unknown as MercadolibreSaleIngestionService,
+    );
     const payload = {
       topic: 'items',
       resource: '/items/MLA123',
@@ -33,9 +39,15 @@ describe('WebhookService', () => {
 
   it('ignora topics y recursos no v\u00e1lidos', () => {
     const syncItem = jest.fn();
-    const service = new WebhookService({
-      syncItem,
-    } as unknown as PublicationSyncService);
+    const receive = jest.fn();
+    const service = new WebhookService(
+      {
+        syncItem,
+      } as unknown as PublicationSyncService,
+      {
+        receive,
+      } as unknown as MercadolibreSaleIngestionService,
+    );
 
     service.receive({ topic: 'orders', resource: '/items/MLA123', user_id: 1 });
     service.receive({
@@ -50,5 +62,22 @@ describe('WebhookService', () => {
     });
 
     expect(syncItem).not.toHaveBeenCalled();
+    expect(receive).not.toHaveBeenCalled();
+  });
+
+  it('delega orders_v2 al registro de ventas', () => {
+    const receive = jest.fn();
+    const service = new WebhookService(
+      { syncItem: jest.fn() } as unknown as PublicationSyncService,
+      { receive } as unknown as MercadolibreSaleIngestionService,
+    );
+
+    service.receive({
+      topic: 'orders_v2',
+      resource: '/orders/2000001234567890',
+      user_id: 456,
+    });
+
+    expect(receive).toHaveBeenCalledWith('2000001234567890', 456);
   });
 });

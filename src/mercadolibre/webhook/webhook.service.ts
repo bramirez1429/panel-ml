@@ -1,9 +1,17 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { MercadolibreSaleIngestionService } from '../../sales/mercadolibre-sale-ingestion.service';
 import { PublicationSyncService } from '../publications/sync/publication-sync.service';
 import { isJsonObject } from '../shared/mercadolibre.types';
 
 type ItemNotification = {
+  type: 'ITEM';
   itemId: string;
+  sellerId: number;
+};
+
+type OrderNotification = {
+  type: 'ORDER';
+  orderId: string;
   sellerId: number;
 };
 
@@ -13,12 +21,20 @@ export class WebhookService {
   private readonly pending = new Map<string, boolean>();
 
   /** Recibe el servicio que sincroniza publicaciones puntuales. */
-  constructor(private readonly syncService: PublicationSyncService) {}
+  constructor(
+    private readonly syncService: PublicationSyncService,
+    private readonly saleIngestion: MercadolibreSaleIngestionService,
+  ) {}
 
   /** Recibe una notificaci\u00f3n y dispara el trabajo sin esperar. */
   receive(payload: unknown): void {
-    const notification = parseItemNotification(payload);
+    const notification = parseNotification(payload);
     if (!notification) return;
+
+    if (notification.type === 'ORDER') {
+      this.saleIngestion.receive(notification.orderId, notification.sellerId);
+      return;
+    }
 
     const key = `${notification.sellerId}:${notification.itemId}`;
     if (this.pending.has(key)) {
@@ -55,8 +71,10 @@ export class WebhookService {
 }
 
 /** Extrae solamente notificaciones v\u00e1lidas de \u00edtems. */
-function parseItemNotification(payload: unknown): ItemNotification | null {
-  if (!isJsonObject(payload) || payload.topic !== 'items') return null;
+function parseNotification(
+  payload: unknown,
+): ItemNotification | OrderNotification | null {
+  if (!isJsonObject(payload)) return null;
   if (
     typeof payload.user_id !== 'number' ||
     !Number.isSafeInteger(payload.user_id) ||
@@ -66,7 +84,17 @@ function parseItemNotification(payload: unknown): ItemNotification | null {
     return null;
   }
 
-  const match = /^\/items\/(MLA\d+)$/.exec(payload.resource);
-  if (!match) return null;
-  return { itemId: match[1], sellerId: payload.user_id };
+  if (payload.topic === 'items') {
+    const match = /^\/items\/(MLA\d+)$/.exec(payload.resource);
+    return match
+      ? { type: 'ITEM', itemId: match[1], sellerId: payload.user_id }
+      : null;
+  }
+  if (payload.topic === 'orders_v2') {
+    const match = /^\/orders\/([1-9]\d*)$/.exec(payload.resource);
+    return match
+      ? { type: 'ORDER', orderId: match[1], sellerId: payload.user_id }
+      : null;
+  }
+  return null;
 }

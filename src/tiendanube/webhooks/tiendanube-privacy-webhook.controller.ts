@@ -20,6 +20,22 @@ export class TiendanubePrivacyWebhookController {
     private readonly privacyWebhookService: TiendanubePrivacyWebhookService,
   ) {}
 
+  @Post('order-paid')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  orderPaid(
+    @RawBody() rawBody: Buffer | undefined,
+    @Headers('x-linkedstore-hmac-sha256') signature: unknown,
+    @Body() payload: unknown,
+  ): TiendanubeWebhookResponse {
+    this.privacyWebhookService.handleOrderPaid({
+      rawBody,
+      signature,
+      payload,
+    });
+    return OK_RESPONSE;
+  }
+
   @Post('store-redact')
   @HttpCode(200)
   @Header('Cache-Control', 'no-store')

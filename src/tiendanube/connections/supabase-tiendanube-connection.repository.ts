@@ -3,6 +3,7 @@ import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { SupabaseService } from '../../database/supabase.service';
 import {
   SaveTiendanubeConnectionInput,
+  OwnedTiendanubeConnectionCredentials,
   TiendanubeConnectionCredentials,
   TiendanubeConnectionRepository,
   TiendanubeConnectionSummary,
@@ -66,6 +67,29 @@ export class SupabaseTiendanubeConnectionRepository extends TiendanubeConnection
       accessToken: data.access_token,
       scope: data.scope,
     };
+  }
+
+  async findCredentialsByStoreId(
+    storeId: string,
+  ): Promise<OwnedTiendanubeConnectionCredentials | null> {
+    try {
+      const { data, error } = await this.supabaseService
+        .getClient()
+        .from('tiendanube_connections')
+        .select('user_id,store_id,access_token,scope')
+        .eq('store_id', storeId)
+        .maybeSingle();
+      if (error) this.readError();
+      if (!data) return null;
+      return {
+        userId: data.user_id,
+        storeId: data.store_id,
+        accessToken: data.access_token,
+        scope: data.scope,
+      };
+    } catch {
+      this.readError();
+    }
   }
 
   async deleteByUserId(userId: string): Promise<void> {

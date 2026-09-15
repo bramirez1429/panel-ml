@@ -8,6 +8,7 @@ import request from 'supertest';
 import type { App } from 'supertest/types';
 
 import { configureApp, NEST_APPLICATION_OPTIONS } from '../../configure-app';
+import { TiendanubeSaleIngestionService } from '../../sales/tiendanube-sale-ingestion.service';
 import { TiendanubeConnectionRepository } from '../connections/tiendanube-connection.repository';
 import { TiendanubePrivacyWebhookController } from './tiendanube-privacy-webhook.controller';
 import { TiendanubePrivacyWebhookService } from './tiendanube-privacy-webhook.service';
@@ -16,12 +17,14 @@ const CLIENT_SECRET = 'test-tiendanube-client-secret';
 const ACCESS_TOKEN = 'test-tiendanube-access-token';
 const HMAC_HEADER = 'x-linkedstore-hmac-sha256';
 
+const ORDER_PAID_ROUTE = '/tiendanube/webhooks/order-paid';
 const STORE_REDACT_ROUTE = '/tiendanube/webhooks/store-redact';
 const CUSTOMER_ROUTES = [
   '/tiendanube/webhooks/customers-redact',
   '/tiendanube/webhooks/customers-data-request',
 ] as const;
 const PRIVACY_ROUTES = [STORE_REDACT_ROUTE, ...CUSTOMER_ROUTES] as const;
+const ALL_ROUTES = [ORDER_PAID_ROUTE, ...PRIVACY_ROUTES] as const;
 
 type ConnectionRepositoryMock = jest.Mocked<
   Pick<
@@ -36,6 +39,7 @@ type ConnectionRepositoryMock = jest.Mocked<
 describe('TiendanubePrivacyWebhookController HTTP', () => {
   let app: INestApplication<App>;
   let connectionRepository: ConnectionRepositoryMock;
+  let saleIngestion: { receive: jest.Mock };
 
   beforeAll(async () => {
     connectionRepository = {
@@ -44,6 +48,7 @@ describe('TiendanubePrivacyWebhookController HTTP', () => {
       findCredentialsByUserId: jest.fn(),
       deleteByStoreId: jest.fn(),
     };
+    saleIngestion = { receive: jest.fn() };
 
     const moduleFixture = await Test.createTestingModule({
       imports: [
@@ -59,6 +64,10 @@ describe('TiendanubePrivacyWebhookController HTTP', () => {
       controllers: [TiendanubePrivacyWebhookController],
       providers: [
         TiendanubePrivacyWebhookService,
+        {
+          provide: TiendanubeSaleIngestionService,
+          useValue: saleIngestion,
+        },
         {
           provide: TiendanubeConnectionRepository,
           useValue: connectionRepository,
@@ -96,6 +105,16 @@ describe('TiendanubePrivacyWebhookController HTTP', () => {
     expect(connectionRepository.findSummaryByUserId).not.toHaveBeenCalled();
   });
 
+  it('acepta order/paid firmado sin JWT y dispara el registro', async () => {
+    const rawBody = '{"store_id":987654,"event":"order/paid","id":2001}';
+
+    await postSigned(ORDER_PAID_ROUTE, rawBody)
+      .expect(200)
+      .expect({ ok: true });
+
+    expect(saleIngestion.receive).toHaveBeenCalledWith('2001', '987654');
+  });
+
   it.each(CUSTOMER_ROUTES)(
     'acepta %s sin JWT y no modifica conexiones',
     async (route) => {
@@ -110,7 +129,7 @@ describe('TiendanubePrivacyWebhookController HTTP', () => {
     },
   );
 
-  it.each(PRIVACY_ROUTES)(
+  it.each(ALL_ROUTES)(
     'rechaza con 400 un payload firmado pero inválido en %s',
     async (route) => {
       const rawBody = '{}';
@@ -122,7 +141,7 @@ describe('TiendanubePrivacyWebhookController HTTP', () => {
     },
   );
 
-  it.each(PRIVACY_ROUTES)(
+  it.each(ALL_ROUTES)(
     'rechaza con 401 la firma inválida en %s',
     async (route) => {
       const rawBody = validBodyFor(route);
@@ -139,7 +158,7 @@ describe('TiendanubePrivacyWebhookController HTTP', () => {
     },
   );
 
-  it.each(PRIVACY_ROUTES)(
+  it.each(ALL_ROUTES)(
     'rechaza con 401 una firma ausente en %s',
     async (route) => {
       const response = await request(app.getHttpServer())
@@ -198,7 +217,10 @@ function sign(rawBody: string): string {
     .digest('hex');
 }
 
-function validBodyFor(route: (typeof PRIVACY_ROUTES)[number]): string {
+function validBodyFor(route: (typeof ALL_ROUTES)[number]): string {
+  if (route === ORDER_PAID_ROUTE) {
+    return '{"store_id":987654,"event":"order/paid","id":2001}';
+  }
   if (route === STORE_REDACT_ROUTE) return '{"store_id":987654}';
   return '{"store_id":987654,"customer":{"id":12345}}';
 }

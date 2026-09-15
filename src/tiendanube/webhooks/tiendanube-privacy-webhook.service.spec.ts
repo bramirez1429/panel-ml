@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { createHmac } from 'node:crypto';
+import { TiendanubeSaleIngestionService } from '../../sales/tiendanube-sale-ingestion.service';
 
 import { TiendanubeConnectionRepository } from '../connections/tiendanube-connection.repository';
 import type { TiendanubeEnvironment } from '../shared/tiendanube.config';
@@ -15,6 +16,7 @@ type ConnectionRepositoryMock = jest.Mocked<
 describe('TiendanubePrivacyWebhookService', () => {
   let service: TiendanubePrivacyWebhookService;
   let connectionRepository: ConnectionRepositoryMock;
+  let saleIngestion: { receive: jest.Mock };
 
   beforeEach(() => {
     const configService = {
@@ -25,10 +27,23 @@ describe('TiendanubePrivacyWebhookService', () => {
     connectionRepository = {
       deleteByStoreId: jest.fn().mockResolvedValue(undefined),
     };
+    saleIngestion = { receive: jest.fn() };
     service = new TiendanubePrivacyWebhookService(
       configService,
       connectionRepository as unknown as TiendanubeConnectionRepository,
+      saleIngestion as unknown as TiendanubeSaleIngestionService,
     );
+  });
+
+  it('valida order/paid y delega los IDs externos reales', () => {
+    const webhook = createSignedWebhook({
+      store_id: 987654,
+      event: 'order/paid',
+      id: 2001,
+    });
+
+    expect(() => service.handleOrderPaid(webhook)).not.toThrow();
+    expect(saleIngestion.receive).toHaveBeenCalledWith('2001', '987654');
   });
 
   it('valida la firma y elimina exclusivamente por el storeId normalizado', async () => {

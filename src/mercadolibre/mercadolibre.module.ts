@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
+import { MercadolibreSaleIngestionService } from '../sales/mercadolibre-sale-ingestion.service';
+import { SalesPersistenceModule } from '../sales/sales-persistence.module';
 import { MercadolibreChildrenRepository } from '../database/repositories/mercadolibre-children.repository';
 import { MercadolibreProductsRepository } from '../database/repositories/mercadolibre-products.repository';
 import { MercadolibreSyncJobsRepository } from '../database/repositories/mercadolibre-sync-jobs.repository';
@@ -89,7 +91,7 @@ import { SimilarPublicationMetadataService } from './direct-publications/similar
 import { SimilarPublicationBase64UploadService } from './direct-publications/similar-publications/similar-publication-base64-upload.service';
 
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, SalesPersistenceModule],
   controllers: [
     MercadolibreController,
     PublicationsController,
@@ -132,6 +134,7 @@ import { SimilarPublicationBase64UploadService } from './direct-publications/sim
     PublicationSyncQueueService,
     PublicationsService,
     WebhookService,
+    MercadolibreSaleIngestionService,
     FamiliesService,
     FamiliesDetailService,
     ItemsService,
@@ -186,6 +189,8 @@ import { SimilarPublicationBase64UploadService } from './direct-publications/sim
     PublicationSourceService,
     UserProductFamilyService,
     DescriptionService,
+    MercadolibreApiService,
+    FamiliesService,
   ],
 })
 export class MercadolibreModule {}

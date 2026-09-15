@@ -5,6 +5,7 @@ import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { MercadolibreModule } from './mercadolibre/mercadolibre.module';
 import { TiendanubeModule } from './tiendanube/tiendanube.module';
+import { SalesModule } from './sales/sales.module';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { TiendanubeModule } from './tiendanube/tiendanube.module';
     AuthModule,
     MercadolibreModule,
     TiendanubeModule,
+    SalesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

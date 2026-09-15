@@ -233,6 +233,26 @@ describe('SupabaseTiendanubeConnectionRepository', () => {
     ).resolves.toBeNull();
   });
 
+  it('resuelve credenciales y propietario por store_id para webhooks', async () => {
+    const { repository, select, eq } = setupReadRepository({
+      user_id: USER_ID,
+      store_id: '987654',
+      access_token: ACCESS_TOKEN,
+      scope: 'write_products',
+    });
+
+    await expect(
+      repository.findCredentialsByStoreId('987654'),
+    ).resolves.toEqual({
+      userId: USER_ID,
+      storeId: '987654',
+      accessToken: ACCESS_TOKEN,
+      scope: 'write_products',
+    });
+    expect(select).toHaveBeenCalledWith('user_id,store_id,access_token,scope');
+    expect(eq).toHaveBeenCalledWith('store_id', '987654');
+  });
+
   it('oculta el token y los detalles cuando falla la lectura de credenciales', async () => {
     const { repository } = setupReadRepository(null, {
       message: `database error containing ${ACCESS_TOKEN}`,

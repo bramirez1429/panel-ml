@@ -17,6 +17,9 @@ export type TiendanubeConnectionCredentials = Readonly<{
   scope: string;
 }>;
 
+export type OwnedTiendanubeConnectionCredentials =
+  TiendanubeConnectionCredentials & Readonly<{ userId: string }>;
+
 export abstract class TiendanubeConnectionRepository {
   abstract saveConnection(input: SaveTiendanubeConnectionInput): Promise<void>;
   abstract findSummaryByUserId(
@@ -25,6 +28,9 @@ export abstract class TiendanubeConnectionRepository {
   abstract findCredentialsByUserId(
     userId: string,
   ): Promise<TiendanubeConnectionCredentials | null>;
+  abstract findCredentialsByStoreId(
+    storeId: string,
+  ): Promise<OwnedTiendanubeConnectionCredentials | null>;
   abstract deleteByUserId(userId: string): Promise<void>;
   abstract deleteByStoreId(storeId: string): Promise<void>;
 }

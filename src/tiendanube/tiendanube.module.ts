@@ -4,6 +4,8 @@ import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module';
 import { SupabaseService } from '../database/supabase.service';
 import { MercadolibreModule } from '../mercadolibre/mercadolibre.module';
+import { SalesPersistenceModule } from '../sales/sales-persistence.module';
+import { TiendanubeSaleIngestionService } from '../sales/tiendanube-sale-ingestion.service';
 import { TiendanubeOAuthService } from './auth/tiendanube-oauth.service';
 import { SupabaseTiendanubeConnectionRepository } from './connections/supabase-tiendanube-connection.repository';
 import { TiendanubeConnectionRepository } from './connections/tiendanube-connection.repository';
@@ -30,7 +32,12 @@ import { TiendanubeCategoriesController } from './categories/tiendanube-categori
 import { TiendanubeCategoriesService } from './categories/tiendanube-categories.service';
 
 @Module({
-  imports: [ConfigModule, AuthModule, MercadolibreModule],
+  imports: [
+    ConfigModule,
+    AuthModule,
+    MercadolibreModule,
+    SalesPersistenceModule,
+  ],
   controllers: [
     TiendanubeController,
     TiendanubeProductsController,
@@ -46,6 +53,7 @@ import { TiendanubeCategoriesService } from './categories/tiendanube-categories.
     TiendanubeConnectionService,
     TiendanubeProductsService,
     TiendanubePrivacyWebhookService,
+    TiendanubeSaleIngestionService,
     TiendanubeCategoriesService,
     TiendanubeReplicationService,
     TiendanubeReplicationStatusService,
@@ -64,6 +72,10 @@ import { TiendanubeCategoriesService } from './categories/tiendanube-categories.
       useClass: SupabaseTiendanubeProductLinkRepository,
     },
   ],
-  exports: [TiendanubeApiService],
+  exports: [
+    TiendanubeApiService,
+    TiendanubeConnectionRepository,
+    TiendanubeProductLinkRepository,
+  ],
 })
 export class TiendanubeModule {}

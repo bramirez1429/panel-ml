@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { TiendanubeSaleIngestionService } from '../../sales/tiendanube-sale-ingestion.service';
 
 import { TiendanubeConnectionRepository } from '../connections/tiendanube-connection.repository';
 import {
@@ -14,6 +15,7 @@ import {
 } from '../shared/tiendanube.config';
 import {
   parseCustomerPrivacyPayload,
+  parseOrderPaidPayload,
   parseStoreRedactPayload,
   TiendanubeIncomingWebhook,
 } from './tiendanube-privacy-webhook.types';
@@ -25,7 +27,15 @@ export class TiendanubePrivacyWebhookService {
   constructor(
     private readonly configService: ConfigService<TiendanubeEnvironment>,
     private readonly connectionRepository: TiendanubeConnectionRepository,
+    private readonly saleIngestion: TiendanubeSaleIngestionService,
   ) {}
+
+  handleOrderPaid(webhook: TiendanubeIncomingWebhook): void {
+    this.verifyAuthenticity(webhook.rawBody, webhook.signature);
+    const payload = parseOrderPaidPayload(webhook.payload);
+    if (!payload) this.invalidPayload();
+    this.saleIngestion.receive(payload.orderId, payload.storeId);
+  }
 
   async handleStoreRedact(webhook: TiendanubeIncomingWebhook): Promise<void> {
     this.verifyAuthenticity(webhook.rawBody, webhook.signature);

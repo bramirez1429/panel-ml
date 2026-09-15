@@ -13,6 +13,20 @@ export type TiendanubeCustomerPrivacyPayload = Readonly<{
   customerId: string;
 }>;
 
+export type TiendanubeOrderPaidPayload = Readonly<{
+  storeId: string;
+  orderId: string;
+}>;
+
+export function parseOrderPaidPayload(
+  value: unknown,
+): TiendanubeOrderPaidPayload | null {
+  if (!isJsonObject(value) || value.event !== 'order/paid') return null;
+  const storeId = normalizeExternalId(value.store_id);
+  const orderId = normalizeExternalId(value.id);
+  return storeId && orderId ? { storeId, orderId } : null;
+}
+
 export function parseStoreRedactPayload(
   value: unknown,
 ): TiendanubeStoreRedactPayload | null {

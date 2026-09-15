@@ -346,6 +346,68 @@ type PromotionBulkJobItemInsert = {
   updated_at?: string;
 };
 
+export type RecentSaleChannel = 'MERCADOLIBRE' | 'TIENDANUBE';
+export type SaleMappingStatus =
+  'LINKED' | 'AUTO_LINKED' | 'UNLINKED' | 'AMBIGUOUS';
+
+export type RecentSaleRow = {
+  id: string;
+  user_id: string;
+  channel: RecentSaleChannel;
+  external_order_id: string;
+  external_order_item_id: string;
+  sold_at: string;
+  quantity: number;
+  product_name: string;
+  sku: string | null;
+  ml_item_id: string | null;
+  ml_variation_id: string | null;
+  user_product_id: string | null;
+  family_id: string | null;
+  tn_product_id: string | null;
+  tn_variant_id: string | null;
+  color: string | null;
+  size: string | null;
+  mapping_status: SaleMappingStatus;
+  created_at: string;
+  updated_at: string;
+};
+
+export type RecentSaleInsert = Omit<
+  RecentSaleRow,
+  'id' | 'created_at' | 'updated_at'
+> & {
+  id?: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type VariantChannelLinkRow = {
+  id: string;
+  user_id: string;
+  ml_item_id: string;
+  ml_variation_id: string | null;
+  user_product_id: string | null;
+  family_id: string | null;
+  tn_product_id: string;
+  tn_variant_id: string;
+  sku: string | null;
+  normalized_color: string | null;
+  normalized_size: string | null;
+  match_source: 'MANUAL' | 'SKU' | 'ATTRIBUTES';
+  created_at: string;
+  updated_at: string;
+};
+
+export type VariantChannelLinkInsert = Omit<
+  VariantChannelLinkRow,
+  'id' | 'created_at' | 'updated_at'
+> & {
+  id?: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -451,6 +513,11 @@ export type Database = {
       mercadolibre_promotion_bulk_job_items: Table<
         PromotionBulkJobItemRow,
         PromotionBulkJobItemInsert
+      >;
+      recent_sales: Table<RecentSaleRow, RecentSaleInsert>;
+      variant_channel_links: Table<
+        VariantChannelLinkRow,
+        VariantChannelLinkInsert
       >;
     };
     Views: Record<string, never>;
