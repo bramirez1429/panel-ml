@@ -190,6 +190,7 @@ import { SimilarPublicationBase64UploadService } from './direct-publications/sim
     UserProductFamilyService,
     DescriptionService,
     MercadolibreApiService,
+    MercadolibreSaleIngestionService,
     FamiliesService,
   ],
 })
