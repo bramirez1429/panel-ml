@@ -43,7 +43,15 @@ export class SupabaseTiendanubeConnectionRepository extends TiendanubeConnection
   async findSummaryByUserId(
     userId: string,
   ): Promise<TiendanubeConnectionSummary | null> {
-    const { data, error } = await this.readSummaryRow(userId);
+    let { data, error } = await this.readSummaryRow(userId);
+
+    if (error) this.readError();
+
+    if (!data) {
+      const shared = await this.readSharedSummaryRow();
+      data = shared.data;
+      error = shared.error;
+    }
 
     if (error) this.readError();
     if (!data) return null;
@@ -57,7 +65,15 @@ export class SupabaseTiendanubeConnectionRepository extends TiendanubeConnection
   async findCredentialsByUserId(
     userId: string,
   ): Promise<TiendanubeConnectionCredentials | null> {
-    const { data, error } = await this.readCredentialsRow(userId);
+    let { data, error } = await this.readCredentialsRow(userId);
+
+    if (error) this.readError();
+
+    if (!data) {
+      const shared = await this.readSharedCredentialsRow();
+      data = shared.data;
+      error = shared.error;
+    }
 
     if (error) this.readError();
     if (!data) return null;
@@ -146,6 +162,34 @@ export class SupabaseTiendanubeConnectionRepository extends TiendanubeConnection
         .from('tiendanube_connections')
         .select('store_id,access_token,scope')
         .eq('user_id', userId)
+        .maybeSingle();
+    } catch {
+      this.readError();
+    }
+  }
+
+  private async readSharedSummaryRow() {
+    try {
+      return await this.supabaseService
+        .getClient()
+        .from('tiendanube_connections')
+        .select('store_id,scope')
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+    } catch {
+      this.readError();
+    }
+  }
+
+  private async readSharedCredentialsRow() {
+    try {
+      return await this.supabaseService
+        .getClient()
+        .from('tiendanube_connections')
+        .select('store_id,access_token,scope')
+        .order('updated_at', { ascending: false })
+        .limit(1)
         .maybeSingle();
     } catch {
       this.readError();

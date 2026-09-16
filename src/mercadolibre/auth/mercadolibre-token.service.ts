@@ -30,15 +30,12 @@ export class MercadolibreTokenService {
     private readonly authService: MercadolibreAuthService,
   ) {}
 
-  /** Lee exclusivamente la conexión del usuario autenticado. */
-  async getStoredConnection(userId: string): Promise<MercadoLibreConnection> {
-    const connection = await this.supabaseService.getConnection(userId);
-    if (!connection) {
-      throw new UnauthorizedException(
-        'Primero conectá Mercado Libre desde /mercadolibre/connect',
-      );
-    }
-    return this.requireOwnedConnection(userId, connection);
+  /**
+   * Devuelve la conexión comercial compartida de SAEL.
+   * El userId identifica al usuario del panel, no al dueño comercial de ML.
+   */
+  async getStoredConnection(_userId: string): Promise<MercadoLibreConnection> {
+    return this.getSharedStoredConnection();
   }
 
   /** Lee la conexión comercial compartida sin cambiar su owner técnico. */
@@ -61,12 +58,17 @@ export class MercadolibreTokenService {
   }
 
   async getConnectionStatus(
-    userId: string,
+    _userId: string,
   ): Promise<{ connected: false } | { connected: true; sellerId: number }> {
-    const connection = await this.supabaseService.getConnection(userId);
+    const connection =
+      await this.supabaseService.getSharedMercadoLibreConnection();
+
     if (!connection) return { connected: false };
-    this.requireOwnedConnection(userId, connection);
-    return { connected: true, sellerId: connection.seller_id };
+
+    return {
+      connected: true,
+      sellerId: connection.seller_id,
+    };
   }
 
   async disconnect(userId: string): Promise<void> {
@@ -92,10 +94,11 @@ export class MercadolibreTokenService {
     userId: string,
     storedConnection?: MercadoLibreConnection,
   ): Promise<string> {
-    const connection = this.requireOwnedConnection(
-      userId,
-      storedConnection ?? (await this.getStoredConnection(userId)),
-    );
+    const connection =
+      storedConnection ?? (await this.getStoredConnection(userId));
+
+    const ownerUserId = connection.user_id;
+
     const remainingTime = Date.parse(connection.expires_at) - Date.now();
     if (
       Number.isFinite(remainingTime) &&
@@ -103,7 +106,7 @@ export class MercadolibreTokenService {
     ) {
       return connection.access_token;
     }
-    return this.getOrStartRefresh(userId, connection);
+    return this.getOrStartRefresh(ownerUserId, connection);
   }
 
   /** Renueva el access token y guarda el reemplazo. */
