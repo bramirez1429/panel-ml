@@ -66,15 +66,9 @@ export class PromotionOptionsService {
     itemId: string,
   ): Promise<PromotionOption[]> {
     const connection =
-      await this.tokenService
-        .getStoredConnection(userId);
-
+      await this.tokenService.getSharedStoredConnection();
     const accessToken =
-      await this.tokenService
-        .getValidAccessToken(
-          userId,
-          connection,
-        );
+      await this.tokenService.getSharedValidAccessToken(connection);
 
     const item =
       await this.itemsService.getOne(

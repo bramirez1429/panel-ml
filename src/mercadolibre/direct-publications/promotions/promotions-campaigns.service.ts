@@ -41,11 +41,10 @@ export class PromotionsCampaignsService {
   ) {}
 
   async getCampaigns(userId: string) {
-    const connection = await this.tokenService.getStoredConnection(userId);
-    const accessToken = await this.tokenService.getValidAccessToken(
-      userId,
-      connection,
-    );
+    const connection =
+      await this.tokenService.getSharedStoredConnection();
+    const accessToken =
+      await this.tokenService.getSharedValidAccessToken(connection);
     return {
       campaigns: (
         await this.promotionsService.getSellerCampaigns(
@@ -69,15 +68,9 @@ export class PromotionsCampaignsService {
     );
 
     const connection =
-      await this.tokenService
-        .getStoredConnection(userId);
-
+      await this.tokenService.getSharedStoredConnection();
     const accessToken =
-      await this.tokenService
-        .getValidAccessToken(
-          userId,
-          connection,
-        );
+      await this.tokenService.getSharedValidAccessToken(connection);
 
     /*
      * FUENTE 1
@@ -206,11 +199,10 @@ export class PromotionsCampaignsService {
       query.promotionType,
       'promotionType es obligatorio',
     );
-    const connection = await this.tokenService.getStoredConnection(userId);
-    const accessToken = await this.tokenService.getValidAccessToken(
-      userId,
-      connection,
-    );
+    const connection =
+      await this.tokenService.getSharedStoredConnection();
+    const accessToken =
+      await this.tokenService.getSharedValidAccessToken(connection);
     const response = await this.promotionsService.getCampaignItems(
       userId,
       id,
