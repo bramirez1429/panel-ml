@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 
 import type { MercadolibreTokenService } from '../../auth/mercadolibre-token.service';
 import type { MercadolibreApiService } from '../../shared/mercadolibre-api.service';
@@ -32,8 +32,8 @@ describe('FamiliesService', () => {
 
     expect(result.itemIds).toEqual(['MLA1', 'MLA2', 'MLA3']);
     expect(result.items.map(({ id }) => id)).toEqual(['MLA1', 'MLA2', 'MLA3']);
-    expect(context.token.getStoredConnection).toHaveBeenCalledTimes(1);
-    expect(context.token.getValidAccessToken).toHaveBeenCalledTimes(1);
+    expect(context.token.getSharedStoredConnection).toHaveBeenCalledTimes(1);
+    expect(context.token.getSharedValidAccessToken).toHaveBeenCalledTimes(1);
     expect(context.api.get).toHaveBeenCalledWith(
       '/sites/MLA/user-products-families/123456789',
       'token',
@@ -60,15 +60,30 @@ describe('FamiliesService', () => {
     expect(context.search.searchByUserProductIds).not.toHaveBeenCalled();
     expect(context.items.getMany).not.toHaveBeenCalled();
   });
+
+  it('mantiene Forbidden cuando la familia pertenece a otro seller', async () => {
+    const context = createService();
+    context.api.get.mockResolvedValue({
+      family_id: '123456789',
+      site_id: 'MLA',
+      user_id: 999,
+      user_products_ids: ['MLAU1'],
+    });
+
+    await expect(
+      context.service.getFamilyItems('another-panel-user', '123456789'),
+    ).rejects.toThrow(ForbiddenException);
+    expect(context.search.searchByUserProductIds).not.toHaveBeenCalled();
+  });
 });
 
 function createService() {
   const token = {
-    getStoredConnection: jest.fn().mockResolvedValue({
+    getSharedStoredConnection: jest.fn().mockResolvedValue({
       user_id: USER_ID,
       seller_id: 42,
     }),
-    getValidAccessToken: jest.fn().mockResolvedValue('token'),
+    getSharedValidAccessToken: jest.fn().mockResolvedValue('token'),
   };
   const api = { get: jest.fn() };
   const search = { searchByUserProductIds: jest.fn() };

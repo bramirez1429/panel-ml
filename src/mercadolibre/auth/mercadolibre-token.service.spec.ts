@@ -23,7 +23,9 @@ const connection: MercadoLibreConnection = {
 describe('MercadolibreTokenService', () => {
   let service: MercadolibreTokenService;
   let apiService: jest.Mocked<Pick<MercadolibreApiService, 'postForm'>>;
-  let supabaseService: jest.Mocked<Pick<SupabaseService, 'getConnection'>>;
+  let supabaseService: jest.Mocked<
+    Pick<SupabaseService, 'getConnection' | 'getSharedMercadoLibreConnection'>
+  >;
   let authService: jest.Mocked<
     Pick<MercadolibreAuthService, 'saveRefreshedTokens'>
   >;
@@ -39,7 +41,10 @@ describe('MercadolibreTokenService', () => {
       }),
     } as unknown as ConfigService;
     apiService = { postForm: jest.fn() };
-    supabaseService = { getConnection: jest.fn() };
+    supabaseService = {
+      getConnection: jest.fn(),
+      getSharedMercadoLibreConnection: jest.fn(),
+    };
     authService = { saveRefreshedTokens: jest.fn() };
     service = new MercadolibreTokenService(
       configService,
@@ -66,6 +71,51 @@ describe('MercadolibreTokenService', () => {
     });
     expect(supabaseService.getConnection).toHaveBeenNthCalledWith(1, USER_ID);
     expect(supabaseService.getConnection).toHaveBeenNthCalledWith(2, USER_ID);
+  });
+
+  it('usa la conexión compartida aunque pertenezca técnicamente a otro usuario', async () => {
+    const ownerConnection = { ...connection, user_id: OTHER_USER_ID };
+    supabaseService.getSharedMercadoLibreConnection.mockResolvedValue(
+      ownerConnection,
+    );
+
+    await expect(service.getSharedStoredConnection()).resolves.toEqual(
+      ownerConnection,
+    );
+    await expect(
+      service.getSharedValidAccessToken(ownerConnection),
+    ).resolves.toBe(ownerConnection.access_token);
+
+    expect(
+      supabaseService.getSharedMercadoLibreConnection,
+    ).toHaveBeenCalledTimes(1);
+  });
+
+  it('informa Unauthorized si no existe una conexión compartida', async () => {
+    supabaseService.getSharedMercadoLibreConnection.mockResolvedValue(null);
+
+    await expect(service.getSharedStoredConnection()).rejects.toMatchObject({
+      status: 401,
+    });
+  });
+
+  it('refresca una conexión compartida vencida usando su owner técnico', async () => {
+    const now = 1_800_000_000_000;
+    jest.spyOn(Date, 'now').mockReturnValue(now);
+    const ownerConnection = {
+      ...connection,
+      user_id: OTHER_USER_ID,
+      expires_at: new Date(now).toISOString(),
+    };
+    const refresh = jest
+      .spyOn(service, 'refreshAccessToken')
+      .mockResolvedValue('shared-refreshed-token');
+
+    await expect(
+      service.getSharedValidAccessToken(ownerConnection),
+    ).resolves.toBe('shared-refreshed-token');
+
+    expect(refresh).toHaveBeenCalledWith(OTHER_USER_ID, ownerConnection);
   });
 
   it('reutiliza un token vigente y renueva uno próximo a vencer', async () => {

@@ -23,11 +23,10 @@ export class PublicationsService {
   async getPage(userId: string, limit = 20, offset = 0) {
     this.validatePage(limit, offset);
 
-    const connection = await this.tokenService.getStoredConnection(userId);
-    const accessToken = await this.tokenService.getValidAccessToken(
-      userId,
-      connection,
-    );
+    const connection =
+      await this.tokenService.getSharedStoredConnection();
+    const accessToken =
+      await this.tokenService.getSharedValidAccessToken(connection);
 
     const search = await this.searchService.searchPage(
       connection.seller_id,
@@ -56,11 +55,10 @@ export class PublicationsService {
   ) {
     this.validateLimit(limit);
 
-    const connection = await this.tokenService.getStoredConnection(userId);
-    const accessToken = await this.tokenService.getValidAccessToken(
-      userId,
-      connection,
-    );
+    const connection =
+      await this.tokenService.getSharedStoredConnection();
+    const accessToken =
+      await this.tokenService.getSharedValidAccessToken(connection);
 
     if (hasTitleSearch(search)) {
       return this.globalSearchService.search(

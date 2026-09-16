@@ -47,11 +47,9 @@ export class FamiliesService {
   }> {
     this.validateFamilyId(familyId);
 
-    const connection = await this.tokenService.getStoredConnection(userId);
-    const accessToken = await this.tokenService.getValidAccessToken(
-      userId,
-      connection,
-    );
+    const connection = await this.tokenService.getSharedStoredConnection();
+    const accessToken =
+      await this.tokenService.getSharedValidAccessToken(connection);
 
     // 1. family_id → MLAU.
     const family = await this.apiService.get<MlFamilyResponse>(

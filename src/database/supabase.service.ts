@@ -138,6 +138,26 @@ export class SupabaseService {
     return data;
   }
 
+  /** Devuelve la conexión comercial compartida más recientemente actualizada. */
+  async getSharedMercadoLibreConnection(): Promise<MercadoLibreConnection | null> {
+    const { data, error } = await this.getClient()
+      .from('mercadolibre_tokens')
+      .select(
+        'user_id,seller_id,nickname,access_token,refresh_token,expires_at,updated_at',
+      )
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      throw new ServiceUnavailableException(
+        'No se pudo leer la conexión de Mercado Libre',
+      );
+    }
+
+    return data;
+  }
+
   async deleteConnection(userId: string): Promise<void> {
     const { error } = await this.getClient()
       .from('mercadolibre_tokens')

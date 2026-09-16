@@ -41,6 +41,25 @@ export class MercadolibreTokenService {
     return this.requireOwnedConnection(userId, connection);
   }
 
+  /** Lee la conexión comercial compartida sin cambiar su owner técnico. */
+  async getSharedStoredConnection(): Promise<MercadoLibreConnection> {
+    const connection =
+      await this.supabaseService.getSharedMercadoLibreConnection();
+    if (!connection) {
+      throw new UnauthorizedException('Primero conectá Mercado Libre');
+    }
+    return connection;
+  }
+
+  /** Devuelve el token de la cuenta compartida y refresca con su owner técnico. */
+  async getSharedValidAccessToken(
+    storedConnection?: MercadoLibreConnection,
+  ): Promise<string> {
+    const connection =
+      storedConnection ?? (await this.getSharedStoredConnection());
+    return this.getValidAccessToken(connection.user_id, connection);
+  }
+
   async getConnectionStatus(
     userId: string,
   ): Promise<{ connected: false } | { connected: true; sellerId: number }> {

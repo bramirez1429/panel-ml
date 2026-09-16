@@ -61,6 +61,32 @@ describe('SupabaseService Mercado Libre connections', () => {
     expect(maybeSingle).toHaveBeenCalledTimes(1);
   });
 
+  it('lee una sola conexión compartida, priorizando la más recientemente actualizada', async () => {
+    const maybeSingle = jest
+      .fn()
+      .mockResolvedValue({ data: CONNECTION, error: null });
+    const limit = jest.fn().mockReturnValue({ maybeSingle });
+    const order = jest.fn().mockReturnValue({ limit });
+    const select = jest.fn().mockReturnValue({ order });
+    const from = jest.fn().mockReturnValue({ select });
+    jest
+      .spyOn(service, 'getClient')
+      .mockReturnValue({ from } as unknown as ReturnType<
+        SupabaseService['getClient']
+      >);
+
+    await expect(service.getSharedMercadoLibreConnection()).resolves.toEqual(
+      CONNECTION,
+    );
+
+    expect(select).toHaveBeenCalledWith(
+      'user_id,seller_id,nickname,access_token,refresh_token,expires_at,updated_at',
+    );
+    expect(order).toHaveBeenCalledWith('updated_at', { ascending: false });
+    expect(limit).toHaveBeenCalledWith(1);
+    expect(maybeSingle).toHaveBeenCalledTimes(1);
+  });
+
   it('crea y consume la transaccion OAuth mediante RPCs atomicas', async () => {
     const rpc = jest
       .fn()
