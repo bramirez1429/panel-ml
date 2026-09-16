@@ -23,24 +23,22 @@ export class SupabaseRecentSalesRepository extends RecentSalesRepository {
     if (error) this.writeError();
   }
 
-  async findSince(userId: string, since: Date): Promise<RecentSale[]> {
+  async findSince(since: Date): Promise<RecentSale[]> {
     const { data, error } = await this.supabase
       .getClient()
       .from('recent_sales')
       .select('*')
-      .eq('user_id', userId)
       .gte('sold_at', since.toISOString())
       .order('sold_at', { ascending: false });
     if (error || !data) this.readError();
     return data.map(mapSale);
   }
 
-  async findById(userId: string, saleId: string): Promise<RecentSale | null> {
+  async findById(saleId: string): Promise<RecentSale | null> {
     const { data, error } = await this.supabase
       .getClient()
       .from('recent_sales')
       .select('*')
-      .eq('user_id', userId)
       .eq('id', saleId)
       .maybeSingle();
     if (error) this.readError();

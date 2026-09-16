@@ -25,7 +25,7 @@ export class RecentSalesService {
   async list(userId: string, hoursInput?: unknown) {
     const hours = parseHours(hoursInput);
     const since = new Date(Date.now() - hours * 60 * 60 * 1000);
-    const sales = await this.sales.findSince(userId, since);
+    const sales = await this.sales.findSince(since);
     const items: ReturnType<typeof summarize>[] = [];
 
     for (let index = 0; index < sales.length; index += DETAIL_CONCURRENCY) {
@@ -51,7 +51,7 @@ export class RecentSalesService {
     if (!UUID_PATTERN.test(saleId)) {
       throw new BadRequestException('saleId inválido');
     }
-    const sale = await this.sales.findById(userId, saleId);
+    const sale = await this.sales.findById(saleId);
     if (!sale) throw new NotFoundException('Venta no encontrada');
     const variants = await this.curves.getForSale(userId, sale);
     return { sale: publicSale(sale), variants };

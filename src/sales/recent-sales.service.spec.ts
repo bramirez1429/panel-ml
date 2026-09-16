@@ -49,6 +49,15 @@ const VARIANTS: DetailedVariant[] = [
 ];
 
 describe('RecentSalesService', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-09-15T15:00:00.000Z'));
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   it('usa 48 horas por defecto y resume con stock actual', async () => {
     const sales = {
       findSince: jest.fn().mockResolvedValue([SALE]),
@@ -74,10 +83,33 @@ describe('RecentSalesService', () => {
         }),
       ],
     });
-    expect(sales.findSince).toHaveBeenCalledWith('user-a', expect.any(Date));
+    expect(sales.findSince).toHaveBeenCalledWith(expect.any(Date));
   });
 
-  it('devuelve la curva completa en el detalle sin exponer userId', async () => {
+  it('dos usuarios reciben las mismas ventas compartidas y respeta hours=24', async () => {
+    const sales = { findSince: jest.fn().mockResolvedValue([SALE]) };
+    const curves = { getForSale: jest.fn().mockResolvedValue(VARIANTS) };
+    const service = new RecentSalesService(
+      sales as unknown as RecentSalesRepository,
+      curves as unknown as SalesCurveService,
+    );
+
+    const first = await service.list('user-a', '24');
+    const second = await service.list('user-b', '24');
+
+    expect(first).toEqual(second);
+    expect(first.hours).toBe(24);
+    expect(sales.findSince).toHaveBeenNthCalledWith(
+      1,
+      new Date('2026-09-14T15:00:00.000Z'),
+    );
+    expect(sales.findSince).toHaveBeenNthCalledWith(
+      2,
+      new Date('2026-09-14T15:00:00.000Z'),
+    );
+  });
+
+  it('devuelve variantes de una venta de otro usuario sin exponer userId', async () => {
     const sales = { findById: jest.fn().mockResolvedValue(SALE) };
     const curves = { getForSale: jest.fn().mockResolvedValue(VARIANTS) };
     const service = new RecentSalesService(
@@ -85,10 +117,12 @@ describe('RecentSalesService', () => {
       curves as unknown as SalesCurveService,
     );
 
-    const result = await service.detail('user-a', SALE.id);
+    const result = await service.detail('user-b', SALE.id);
 
     expect(result.sale).not.toHaveProperty('userId');
     expect(result.variants).toEqual(VARIANTS);
+    expect(sales.findById).toHaveBeenCalledWith(SALE.id);
+    expect(curves.getForSale).toHaveBeenCalledWith('user-b', SALE);
   });
 
   it.each(['0', '745', '2.5', 'no'])(

@@ -3,6 +3,46 @@ import { SupabaseRecentSalesRepository } from './supabase-recent-sales.repositor
 import type { SaveRecentSale } from './sales.types';
 
 describe('SupabaseRecentSalesRepository', () => {
+  it('lee ventas recientes sin filtrar por user_id', async () => {
+    const order = jest.fn().mockResolvedValue({ data: [], error: null });
+    const gte = jest.fn().mockReturnValue({ order });
+    const select = jest.fn().mockReturnValue({ gte });
+    const from = jest.fn().mockReturnValue({ select });
+    const repository = new SupabaseRecentSalesRepository({
+      getClient: jest.fn().mockReturnValue({ from }),
+    } as unknown as SupabaseService);
+    const since = new Date('2026-09-14T15:00:00.000Z');
+
+    await expect(repository.findSince(since)).resolves.toEqual([]);
+
+    expect(from).toHaveBeenCalledWith('recent_sales');
+    expect(select).toHaveBeenCalledWith('*');
+    expect(gte).toHaveBeenCalledWith('sold_at', since.toISOString());
+    expect(order).toHaveBeenCalledWith('sold_at', { ascending: false });
+  });
+
+  it('lee el detalle por saleId sin validar el user_id de la venta', async () => {
+    const maybeSingle = jest
+      .fn()
+      .mockResolvedValue({ data: null, error: null });
+    const eq = jest.fn().mockReturnValue({ maybeSingle });
+    const select = jest.fn().mockReturnValue({ eq });
+    const from = jest.fn().mockReturnValue({ select });
+    const repository = new SupabaseRecentSalesRepository({
+      getClient: jest.fn().mockReturnValue({ from }),
+    } as unknown as SupabaseService);
+
+    await expect(
+      repository.findById('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'),
+    ).resolves.toBeNull();
+
+    expect(eq).toHaveBeenCalledTimes(1);
+    expect(eq).toHaveBeenCalledWith(
+      'id',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    );
+  });
+
   it('usa la clave natural de la linea para actualizar sin duplicar webhooks', async () => {
     const upsert = jest.fn().mockResolvedValue({ error: null });
     const from = jest.fn().mockReturnValue({ upsert });
