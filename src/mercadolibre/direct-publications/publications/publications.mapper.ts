@@ -69,8 +69,9 @@ export class PublicationsMapper {
       status: item.status ?? null,
 
       thumbnail: item.thumbnail ?? null,
-
-      variations: item.variations ?? [],
+      permalink: item.permalink ?? null,
+      currency: item.currency_id ?? null,
+      variantsCount: item.variations?.length ?? 0,
     };
   }
 

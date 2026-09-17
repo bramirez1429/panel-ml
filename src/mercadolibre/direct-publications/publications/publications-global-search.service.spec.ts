@@ -1,6 +1,6 @@
 import type { PublicationSourceService } from '../../publications/sync/publication-source.service';
 import type { FamiliesService } from '../families/families.service';
-import type { FamilySummary } from '../families/family.types';
+import type { FamilyListingSummary } from '../families/family.types';
 import type { ItemsService } from '../items/items.service';
 import type { MlItem } from '../items/items.types';
 import { PublicationCatalogScannerService } from './publication-catalog-scanner.service';
@@ -63,7 +63,7 @@ describe('PublicationsGlobalSearchService', () => {
 
     expect(result.products).toHaveLength(2);
     expect(source.fetchNextScanPage).toHaveBeenCalledTimes(1);
-    expect(families.getSummary).not.toHaveBeenCalled();
+    expect(families.getListingSummary).not.toHaveBeenCalled();
   });
 
   it('no duplica familias aunque sus MLA aparezcan en páginas distintas', async () => {
@@ -77,7 +77,7 @@ describe('PublicationsGlobalSearchService', () => {
         item('MLA4', 'No debe cargarse'),
       ],
     );
-    families.getSummary.mockResolvedValue(family);
+    families.getListingSummary.mockResolvedValue(family);
 
     const result = await search(service, 'brook buzo', 2);
 
@@ -87,7 +87,7 @@ describe('PublicationsGlobalSearchService', () => {
     ]);
     expect(result.rawItemsCount).toBe(3);
     expect(source.fetchNextScanPage).toHaveBeenCalledTimes(2);
-    expect(families.getSummary).toHaveBeenCalledTimes(1);
+    expect(families.getListingSummary).toHaveBeenCalledTimes(1);
   });
 
   it('resuelve la segunda página con title-search:20', async () => {
@@ -136,7 +136,7 @@ describe('PublicationsGlobalSearchService', () => {
     });
     expect(source.fetchNextScanPage).toHaveBeenCalledTimes(3);
     expect(items.getMany).toHaveBeenCalledTimes(2);
-    expect(families.getSummary).not.toHaveBeenCalled();
+    expect(families.getListingSummary).not.toHaveBeenCalled();
   });
 });
 
@@ -159,7 +159,7 @@ function createService(pages: string[][], catalog: MlItem[]) {
       Promise.resolve(ids.flatMap((id) => byId.get(id) ?? [])),
     ),
   };
-  const families = { getSummary: jest.fn() };
+  const families = { getListingSummary: jest.fn() };
   const scanner = new PublicationCatalogScannerService(
     source as unknown as PublicationSourceService,
     items as unknown as ItemsService,
@@ -198,7 +198,7 @@ function familyItem(id: string, title: string, familyId: string): MlItem {
   };
 }
 
-function familySummary(familyId: string): FamilySummary {
+function familySummary(familyId: string): FamilyListingSummary {
   return {
     key: `family:${familyId}`,
     model: 'VARIANT_PRICING',
@@ -206,6 +206,16 @@ function familySummary(familyId: string): FamilySummary {
     familyName: 'Familia',
     variantsCount: 2,
     itemsCount: 2,
-    variants: [],
+    itemId: 'MLA1',
+    userProductId: 'MLAU1',
+    title: 'Familia',
+    priceFrom: 100,
+    priceTo: 200,
+    currency: 'ARS',
+    stock: 5,
+    sold: 2,
+    status: 'active',
+    thumbnail: null,
+    permalink: null,
   };
 }

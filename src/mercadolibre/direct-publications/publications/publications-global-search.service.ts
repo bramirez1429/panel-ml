@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 
 import { FamiliesService } from '../families/families.service';
-import type { FamilySummary } from '../families/family.types';
+import type { FamilyListingSummary } from '../families/family.types';
 import type { MlItem } from '../items/items.types';
 import type { SharedProduct } from './publication.types';
 import { PublicationCatalogScannerService } from './publication-catalog-scanner.service';
@@ -125,13 +125,16 @@ export class PublicationsGlobalSearchService {
   private async resolvePage(
     userId: string,
     references: readonly GroupedReference[],
-  ): Promise<Array<SharedProduct | FamilySummary>> {
-    const products: Array<SharedProduct | FamilySummary> = [];
+  ): Promise<Array<SharedProduct | FamilyListingSummary>> {
+    const products: Array<SharedProduct | FamilyListingSummary> = [];
     for (const reference of references) {
       products.push(
         reference.model === 'SHARED'
           ? reference.product
-          : await this.familiesService.getSummary(userId, reference.familyId),
+          : await this.familiesService.getListingSummary(
+              userId,
+              reference.familyId,
+            ),
       );
     }
     return products;

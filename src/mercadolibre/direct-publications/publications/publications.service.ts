@@ -101,7 +101,9 @@ export class PublicationsService {
     const families = [];
 
     for (const familyId of familyIds) {
-      families.push(await this.familiesService.getSummary(userId, familyId));
+      families.push(
+        await this.familiesService.getListingSummary(userId, familyId),
+      );
     }
 
     return {

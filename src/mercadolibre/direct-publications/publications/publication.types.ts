@@ -1,4 +1,4 @@
-import { FamilySummary } from '../families/family.types';
+import { FamilyListingSummary } from '../families/family.types';
 
 export type PublicationModel = 'SHARED' | 'VARIANT_PRICING';
 
@@ -16,11 +16,12 @@ export type SharedProduct = {
   status: string | null;
 
   thumbnail: string | null;
-
-  variations: unknown[];
+  permalink: string | null;
+  currency: string | null;
+  variantsCount: number;
 };
 
-export type GroupedProduct = SharedProduct | FamilySummary;
+export type GroupedProduct = SharedProduct | FamilyListingSummary;
 
 export type GroupedPublicationsResponse = {
   done: boolean;

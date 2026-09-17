@@ -30,6 +30,13 @@ export class FamiliesService {
     return FamiliesMapper.toSummary(family, items);
   }
 
+  /** Devuelve sólo agregados para el listado de Publicaciones. */
+  async getListingSummary(userId: string, familyId: string) {
+    const { family, items } = await this.loadFamily(userId, familyId);
+
+    return FamiliesMapper.toListingSummary(family, items);
+  }
+
   /** Devuelve familia + todos sus MLA para otros servicios. */
   async getFamilyItems(userId: string, familyId: string) {
     return this.loadFamily(userId, familyId);
