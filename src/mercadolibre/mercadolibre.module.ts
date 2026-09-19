@@ -89,6 +89,9 @@ import { SimilarPublicationCreationService } from './direct-publications/similar
 import { MercadoLibrePictureUploadService } from './direct-publications/similar-publications/mercadolibre-picture-upload.service';
 import { SimilarPublicationMetadataService } from './direct-publications/similar-publications/similar-publication-metadata.service';
 import { SimilarPublicationBase64UploadService } from './direct-publications/similar-publications/similar-publication-base64-upload.service';
+import { ProductRankingController } from './direct-publications/product-ranking/product-ranking.controller';
+import { ProductRankingService } from './direct-publications/product-ranking/product-ranking.service';
+import { MercadolibreIntegrationStatusService } from './integration-status/mercadolibre-integration-status.service';
 
 @Module({
   imports: [AuthModule, SalesPersistenceModule],
@@ -112,6 +115,7 @@ import { SimilarPublicationBase64UploadService } from './direct-publications/sim
     PromotionManagerController,
     PromotionsCatalogController,
     SimilarPublicationController,
+    ProductRankingController,
   ],
   providers: [
     SupabaseService,
@@ -181,6 +185,8 @@ import { SimilarPublicationBase64UploadService } from './direct-publications/sim
     MercadoLibrePictureUploadService,
     SimilarPublicationMetadataService,
     SimilarPublicationBase64UploadService,
+    ProductRankingService,
+    MercadolibreIntegrationStatusService,
   ],
   exports: [
     MercadolibreProductsRepository,

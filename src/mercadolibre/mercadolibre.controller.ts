@@ -19,6 +19,7 @@ import { AccessTokenGuard } from '../auth/presentation/access-token.guard';
 import { CurrentUser } from '../auth/presentation/current-user.decorator';
 import { MercadolibreAuthService } from './auth/mercadolibre-auth.service';
 import { MercadolibreTokenService } from './auth/mercadolibre-token.service';
+import { MercadolibreIntegrationStatusService } from './integration-status/mercadolibre-integration-status.service';
 import { OAUTH_STATE_TTL_MS } from './shared/mercadolibre.config';
 
 @Controller('mercadolibre')
@@ -27,17 +28,20 @@ export class MercadolibreController {
   constructor(
     private readonly authService: MercadolibreAuthService,
     @Optional() private readonly tokenService?: MercadolibreTokenService,
+    @Optional()
+    private readonly integrationStatusService?:
+      MercadolibreIntegrationStatusService,
   ) {}
 
   @Get('connection')
   @Header('Cache-Control', 'no-store')
   @UseGuards(AccessTokenGuard)
   connection(@CurrentUser() user: SafeUser) {
-    if (!this.tokenService)
+    if (!this.integrationStatusService)
       throw new UnauthorizedException(
         'Conexión de Mercado Libre no disponible',
       );
-    return this.tokenService.getConnectionStatus(user.id);
+    return this.integrationStatusService.getStatus(user.id);
   }
 
   @Delete('connection')
