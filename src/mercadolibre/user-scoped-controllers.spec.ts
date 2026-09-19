@@ -21,6 +21,7 @@ import { StockController } from './direct-publications/stock/stock.controller';
 import { MercadolibreController } from './mercadolibre.controller';
 import { MercadolibreModule } from './mercadolibre.module';
 import { WebhookController } from './webhook/webhook.controller';
+import { ProductRankingController } from './direct-publications/product-ranking/product-ranking.controller';
 
 const USER_SCOPED_CONTROLLERS = [
   PublicationsController,
@@ -40,6 +41,7 @@ const USER_SCOPED_CONTROLLERS = [
   PromotionManagerController,
   PromotionsCatalogController,
   SimilarPublicationController,
+  ProductRankingController,
 ] as const;
 
 function guardsFor(controller: object): unknown[] {
