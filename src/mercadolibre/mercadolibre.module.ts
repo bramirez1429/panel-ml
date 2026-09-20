@@ -91,6 +91,7 @@ import { SimilarPublicationMetadataService } from './direct-publications/similar
 import { SimilarPublicationBase64UploadService } from './direct-publications/similar-publications/similar-publication-base64-upload.service';
 import { ProductRankingController } from './direct-publications/product-ranking/product-ranking.controller';
 import { ProductRankingService } from './direct-publications/product-ranking/product-ranking.service';
+import { ProductRankingVisitsService } from './direct-publications/product-ranking/product-ranking-visits.service';
 import { MercadolibreIntegrationStatusService } from './integration-status/mercadolibre-integration-status.service';
 
 @Module({
@@ -186,6 +187,7 @@ import { MercadolibreIntegrationStatusService } from './integration-status/merca
     SimilarPublicationMetadataService,
     SimilarPublicationBase64UploadService,
     ProductRankingService,
+    ProductRankingVisitsService,
     MercadolibreIntegrationStatusService,
   ],
   exports: [

@@ -7,6 +7,8 @@ import type { MlItem } from '../items/items.types';
 import { FamiliesService } from '../families/families.service';
 import { ItemsService } from '../items/items.service';
 import type { ProductRankingResult, ProductRankingRow, ProductRankingVariant } from './product-ranking.types';
+import { ProductRankingVisitsService } from './product-ranking-visits.service';
+import type { ProductRankingVisitPeriod } from './product-ranking-period';
 
 type LegacyVariation = {
   id?: string | number;
@@ -22,9 +24,10 @@ export class ProductRankingService {
     private readonly scanner: PublicationCatalogScannerService,
     private readonly familiesService: FamiliesService,
     private readonly itemsService: ItemsService,
+    private readonly visitsService: ProductRankingVisitsService,
   ) {}
 
-  async getRanking(): Promise<ProductRankingResult> {
+  async getRanking(days: ProductRankingVisitPeriod): Promise<ProductRankingResult> {
     const connection = await this.tokenService.getSharedStoredConnection();
     const accessToken = await this.tokenService.getSharedValidAccessToken(connection);
     const products = new Map<string, ProductRankingRow>();
@@ -34,19 +37,30 @@ export class ProductRankingService {
       return false;
     });
 
+    const visits = await this.visitsService.getVisits(
+      [...new Set([...products.values()].flatMap(({ itemIds }) => itemIds))],
+      accessToken,
+      days,
+    );
+    for (const product of products.values()) {
+      product.visits = sumVisits(product.itemIds, visits);
+    }
+
     const ranked = [...products.values()].sort(
       (a, b) => b.sold - a.sold || a.title.localeCompare(b.title),
     );
     return {
       totalProducts: ranked.length,
       productsWithSales: ranked.filter((product) => product.sold > 0).length,
+      visitPeriodDays: days,
+      totalVisits: sumAllVisits(visits),
       products: ranked,
     };
   }
 
-  async getVariants(userId: string, type: string, id: string): Promise<{ variants: ProductRankingVariant[] }> {
+  async getVariants(userId: string, type: string, id: string, days: ProductRankingVisitPeriod): Promise<{ variants: ProductRankingVariant[] }> {
     const variants = type === 'family'
-      ? await this.getFamilyVariants(userId, id)
+      ? await this.getFamilyVariants(userId, id, days)
       : type === 'item'
         ? await this.getLegacyVariants(id)
         : (() => { throw new BadRequestException('Tipo de producto inválido'); })();
@@ -71,6 +85,7 @@ export class ProductRankingService {
       products.set(key, {
         title: item.family_name || item.title || String(item.family_id),
         sold: item.sold_quantity ?? 0,
+        visits: null,
         type: 'USER_PRODUCT',
         itemIds: [item.id],
         familyId: String(item.family_id),
@@ -84,6 +99,7 @@ export class ProductRankingService {
     products.set(`item:${item.id}`, {
       title: item.title || item.id,
       sold: item.sold_quantity ?? 0,
+      visits: null,
       type: 'LEGACY',
       itemIds: [item.id],
       familyId: null,
@@ -93,14 +109,22 @@ export class ProductRankingService {
     });
   }
 
-  private async getFamilyVariants(userId: string, familyId: string): Promise<ProductRankingVariant[]> {
+  private async getFamilyVariants(userId: string, familyId: string, days: ProductRankingVisitPeriod): Promise<ProductRankingVariant[]> {
     const { items } = await this.familiesService.getFamilyItems(userId, familyId);
+    const connection = await this.tokenService.getSharedStoredConnection();
+    const accessToken = await this.tokenService.getSharedValidAccessToken(connection);
+    const visits = await this.visitsService.getVisits(
+      [...new Set(items.map(({ id }) => id))],
+      accessToken,
+      days,
+    );
     return items.map((item) => ({
       id: item.user_product_id || item.id,
       label: this.itemLabel(item),
       itemId: item.id,
       userProductId: item.user_product_id ?? null,
       sold: item.sold_quantity ?? 0,
+      visits: visits.get(item.id) ?? null,
       thumbnailUrl: item.thumbnail ?? null,
     }));
   }
@@ -116,6 +140,7 @@ export class ProductRankingService {
       itemId: item.id,
       userProductId: null,
       sold: variation.sold_quantity ?? 0,
+      visits: null,
       thumbnailUrl: this.variationThumbnail(item, variation),
     }));
   }
@@ -139,4 +164,30 @@ export class ProductRankingService {
     }
     return item.thumbnail ?? null;
   }
+}
+
+function sumVisits(
+  itemIds: readonly string[],
+  visits: ReadonlyMap<string, number | null>,
+): number | null {
+  const uniqueItemIds = [...new Set(itemIds)];
+  if (!uniqueItemIds.length) return null;
+  let total = 0;
+  for (const itemId of uniqueItemIds) {
+    const value = visits.get(itemId);
+    if (value === null || value === undefined) return null;
+    total += value;
+  }
+  return total;
+}
+
+function sumAllVisits(
+  visits: ReadonlyMap<string, number | null>,
+): number | null {
+  let total = 0;
+  for (const value of visits.values()) {
+    if (value === null) return null;
+    total += value;
+  }
+  return total;
 }
