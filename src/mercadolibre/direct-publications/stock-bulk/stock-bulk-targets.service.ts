@@ -3,10 +3,10 @@ import { Injectable } from '@nestjs/common';
 import type { MlAttribute, MlItem } from '../items/items.types';
 import { PublicationsMapper } from '../publications/publications.mapper';
 import { StockService } from '../stock/stock.service';
+import { matchesProductType } from './stock-bulk-product-classifier';
 import {
   normalizeStockBulkLabel,
   type StockBulkPreviewRequest,
-  type StockBulkProductType,
   type StockBulkTarget,
 } from './stock-bulk.types';
 
@@ -37,7 +37,9 @@ export class StockBulkTargetsService {
     );
     const targets: StockBulkTarget[] = [];
     for (const item of items) {
-      if (!matchesProductType(item, request.productType)) continue;
+      if (!matchesProductType(item, request.productType)) {
+        continue;
+      }
       if (PublicationsMapper.getModel(item) === 'VARIANT_PRICING') {
         const size = attributeValue(item.attributes, SIZE_IDS);
         const requested = quantities.get(normalizeStockBulkLabel(size));
@@ -192,33 +194,6 @@ export class StockBulkTargetsService {
       return notEditable(target, target.currentQuantity, 'STOCK_UNAVAILABLE');
     }
   }
-}
-
-function matchesProductType(
-  item: MlItem,
-  productType: StockBulkProductType,
-): boolean {
-  const text = normalizeStockBulkLabel(
-    [
-      item.domain_id,
-      item.title,
-      ...(item.attributes ?? []).flatMap((attribute) => [
-        attribute.id,
-        attribute.value_name,
-        attribute.values?.[0]?.name,
-      ]),
-    ]
-      .filter(Boolean)
-      .join(' '),
-  );
-  const isSweatshirt = /SWEATSHIRT|HOODIE|BUZO/u.test(text);
-  const isTshirt = /TSHIRT|REMERA/u.test(text);
-  const isGirls = /GIRL|NINA|NENAS?|INFANTIL/u.test(text);
-  const isWomen = /WOMEN|MUJER|FEMALE|DAMA/u.test(text);
-  if (productType === 'BUZO_MUJER') return isSweatshirt && isWomen;
-  if (productType === 'BUZO_NENA') return isSweatshirt && isGirls;
-  if (productType === 'REMERA_MUJER') return isTshirt && isWomen;
-  return isTshirt && isGirls;
 }
 
 function attributeValue(
