@@ -73,6 +73,15 @@ import { PromotionBulkJobRepository } from './direct-publications/promotions/pro
 import { PromotionBulkJobService } from './direct-publications/promotions/promotion-bulk-job.service';
 import { PromotionBulkJobQueue } from './direct-publications/promotions/promotion-bulk-job.queue';
 import { StockService } from './direct-publications/stock/stock.service';
+import { StockBulkController } from './direct-publications/stock-bulk/stock-bulk.controller';
+import { StockBulkDispatcher } from './direct-publications/stock-bulk/stock-bulk-dispatcher';
+import { StockBulkErrorPolicy } from './direct-publications/stock-bulk/stock-bulk-error-policy';
+import { StockBulkJobQueue } from './direct-publications/stock-bulk/stock-bulk-job.queue';
+import { StockBulkJobRepository } from './direct-publications/stock-bulk/stock-bulk-job.repository';
+import { StockBulkJobService } from './direct-publications/stock-bulk/stock-bulk-job.service';
+import { StockBulkLocalDispatcher } from './direct-publications/stock-bulk/stock-bulk-local.dispatcher';
+import { StockBulkPreviewService } from './direct-publications/stock-bulk/stock-bulk-preview.service';
+import { StockBulkTargetsService } from './direct-publications/stock-bulk/stock-bulk-targets.service';
 import { SkuService } from './direct-publications/sku/sku.service';
 import { PicturesService } from './direct-publications/pictures/pictures.service';
 import { DescriptionService } from './direct-publications/description/description.service';
@@ -117,6 +126,7 @@ import { MercadolibreIntegrationStatusService } from './integration-status/merca
     PromotionsCatalogController,
     SimilarPublicationController,
     ProductRankingController,
+    StockBulkController,
   ],
   providers: [
     SupabaseService,
@@ -155,6 +165,14 @@ import { MercadolibreIntegrationStatusService } from './integration-status/merca
     VariationDeletionService,
     FamilyUpdateService,
     StockService,
+    StockBulkTargetsService,
+    StockBulkPreviewService,
+    StockBulkJobRepository,
+    StockBulkErrorPolicy,
+    StockBulkJobService,
+    StockBulkJobQueue,
+    StockBulkLocalDispatcher,
+    StockBulkDispatcher,
     SkuService,
     PicturesService,
     DescriptionService,
