@@ -20,6 +20,16 @@
           "initialDelaySeconds": 0
         }
       ]
+    },
+    "api/queues/mercadolibre-stock-bulk.ts": {
+      "experimentalTriggers": [
+        {
+          "type": "queue/v2beta",
+          "topic": "mercadolibre-stock-bulk",
+          "retryAfterSeconds": 60,
+          "initialDelaySeconds": 0
+        }
+      ]
     }
   }
 }
