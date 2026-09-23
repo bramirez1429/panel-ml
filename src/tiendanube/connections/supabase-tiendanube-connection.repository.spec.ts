@@ -33,8 +33,10 @@ function setupRepository(error: unknown = null) {
 
 function setupReadRepository(data: unknown, error: unknown = null) {
   const maybeSingle = jest.fn().mockResolvedValue({ data, error });
+  const limit = jest.fn().mockReturnValue({ maybeSingle });
+  const order = jest.fn().mockReturnValue({ limit });
   const eq = jest.fn().mockReturnValue({ maybeSingle });
-  const select = jest.fn().mockReturnValue({ eq });
+  const select = jest.fn().mockReturnValue({ eq, order });
   const from = jest.fn().mockReturnValue({ select });
   const client = { from } as unknown as SupabaseClient<Database>;
   const supabase = {
@@ -46,6 +48,8 @@ function setupReadRepository(data: unknown, error: unknown = null) {
     from,
     select,
     eq,
+    order,
+    limit,
     maybeSingle,
   };
 }
@@ -223,6 +227,68 @@ describe('SupabaseTiendanubeConnectionRepository', () => {
     expect(eq).toHaveBeenCalledTimes(1);
     expect(eq).toHaveBeenCalledWith('user_id', USER_ID);
     expect(maybeSingle).toHaveBeenCalledTimes(1);
+  });
+
+  it('devuelve las credenciales propias conservando el owner técnico', async () => {
+    const { repository, select, eq } = setupReadRepository({
+      user_id: USER_ID,
+      store_id: '987654',
+      access_token: ACCESS_TOKEN,
+      scope: 'write_products',
+    });
+
+    await expect(
+      repository.findOwnedCredentialsByUserId(USER_ID),
+    ).resolves.toEqual({
+      userId: USER_ID,
+      storeId: '987654',
+      accessToken: ACCESS_TOKEN,
+      scope: 'write_products',
+    });
+    expect(select).toHaveBeenCalledWith('user_id,store_id,access_token,scope');
+    expect(eq).toHaveBeenCalledWith('user_id', USER_ID);
+  });
+
+  it('devuelve el owner real de la conexión compartida más reciente', async () => {
+    const requestedUserId = '22222222-2222-4222-8222-222222222222';
+    const ownerUserId = '11111111-1111-4111-8111-111111111111';
+    const ownMaybeSingle = jest
+      .fn()
+      .mockResolvedValue({ data: null, error: null });
+    const sharedMaybeSingle = jest.fn().mockResolvedValue({
+      data: {
+        user_id: ownerUserId,
+        store_id: '123456',
+        access_token: 'secret',
+        scope: 'write_products',
+      },
+      error: null,
+    });
+    const eq = jest.fn().mockReturnValue({ maybeSingle: ownMaybeSingle });
+    const limit = jest.fn().mockReturnValue({ maybeSingle: sharedMaybeSingle });
+    const order = jest.fn().mockReturnValue({ limit });
+    const select = jest
+      .fn()
+      .mockReturnValueOnce({ eq })
+      .mockReturnValueOnce({ order });
+    const from = jest.fn().mockReturnValue({ select });
+    const client = { from } as unknown as SupabaseClient<Database>;
+    const supabase = {
+      getClient: jest.fn().mockReturnValue(client),
+    } as unknown as SupabaseService;
+    const repository = new SupabaseTiendanubeConnectionRepository(supabase);
+
+    await expect(
+      repository.findOwnedCredentialsByUserId(requestedUserId),
+    ).resolves.toEqual({
+      userId: ownerUserId,
+      storeId: '123456',
+      accessToken: 'secret',
+      scope: 'write_products',
+    });
+    expect(eq).toHaveBeenCalledWith('user_id', requestedUserId);
+    expect(order).toHaveBeenCalledWith('updated_at', { ascending: false });
+    expect(limit).toHaveBeenCalledWith(1);
   });
 
   it('devuelve null cuando no existen credenciales para el usuario', async () => {

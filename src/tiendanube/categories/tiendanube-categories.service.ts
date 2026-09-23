@@ -18,7 +18,8 @@ export class TiendanubeCategoriesService {
   ) {}
 
   async listByUserId(userId: string): Promise<readonly TiendanubeCategory[]> {
-    const connection = await this.connections.findCredentialsByUserId(userId);
+    const connection =
+      await this.connections.findOwnedCredentialsByUserId(userId);
     if (!connection?.accessToken.trim())
       throw new UnauthorizedException(
         'Primero conectá Tiendanube desde /tiendanube/connect',

@@ -42,7 +42,7 @@ type AuthServiceMock = jest.Mocked<
   Pick<AuthService, 'authenticateAccessToken'>
 >;
 type ConnectionRepositoryMock = jest.Mocked<
-  Pick<TiendanubeConnectionRepository, 'findSummaryByUserId'>
+  Pick<TiendanubeConnectionRepository, 'findOwnedCredentialsByUserId'>
 >;
 type ProductLinkRepositoryMock = jest.Mocked<
   Pick<TiendanubeProductLinkRepository, 'findStatusesByMlProductIds'>
@@ -60,7 +60,7 @@ describe('GET /tiendanube/replication/status', () => {
 
   beforeAll(async () => {
     authService = { authenticateAccessToken: jest.fn() };
-    connectionRepository = { findSummaryByUserId: jest.fn() };
+    connectionRepository = { findOwnedCredentialsByUserId: jest.fn() };
     productLinkRepository = { findStatusesByMlProductIds: jest.fn() };
 
     const moduleFixture = await Test.createTestingModule({
@@ -107,22 +107,27 @@ describe('GET /tiendanube/replication/status', () => {
         new UnauthorizedException('Access token inválido o vencido'),
       );
     });
-    connectionRepository.findSummaryByUserId.mockImplementation((userId) => {
-      if (userId === USER_A.id) {
-        return Promise.resolve({
-          storeId: STORE_A,
-          scope: 'write_products',
-          accessToken: SECRET_MARKER,
-        } as unknown as { storeId: string; scope: string });
-      }
-      if (userId === USER_B.id) {
-        return Promise.resolve({
-          storeId: STORE_B,
-          scope: 'write_products',
-        });
-      }
-      return Promise.resolve(null);
-    });
+    connectionRepository.findOwnedCredentialsByUserId.mockImplementation(
+      (userId) => {
+        if (userId === USER_A.id) {
+          return Promise.resolve({
+            userId: USER_A.id,
+            storeId: STORE_A,
+            scope: 'write_products',
+            accessToken: SECRET_MARKER,
+          });
+        }
+        if (userId === USER_B.id) {
+          return Promise.resolve({
+            userId: USER_B.id,
+            storeId: STORE_B,
+            accessToken: SECRET_MARKER,
+            scope: 'write_products',
+          });
+        }
+        return Promise.resolve(null);
+      },
+    );
     productLinkRepository.findStatusesByMlProductIds.mockRejectedValue(
       new Error('Unexpected link status read'),
     );
@@ -138,7 +143,9 @@ describe('GET /tiendanube/replication/status', () => {
       .query({ productIds: PRODUCT_A })
       .expect(401);
 
-    expect(connectionRepository.findSummaryByUserId).not.toHaveBeenCalled();
+    expect(
+      connectionRepository.findOwnedCredentialsByUserId,
+    ).not.toHaveBeenCalled();
     expect(
       productLinkRepository.findStatusesByMlProductIds,
     ).not.toHaveBeenCalled();
@@ -186,9 +193,9 @@ describe('GET /tiendanube/replication/status', () => {
         ],
       });
 
-    expect(connectionRepository.findSummaryByUserId).toHaveBeenCalledWith(
-      USER_A.id,
-    );
+    expect(
+      connectionRepository.findOwnedCredentialsByUserId,
+    ).toHaveBeenCalledWith(USER_A.id);
     expect(
       productLinkRepository.findStatusesByMlProductIds,
     ).toHaveBeenCalledTimes(1);
@@ -245,7 +252,9 @@ describe('GET /tiendanube/replication/status', () => {
     if (productIds !== undefined) httpRequest.query({ productIds });
 
     await httpRequest.expect(400);
-    expect(connectionRepository.findSummaryByUserId).not.toHaveBeenCalled();
+    expect(
+      connectionRepository.findOwnedCredentialsByUserId,
+    ).not.toHaveBeenCalled();
     expect(
       productLinkRepository.findStatusesByMlProductIds,
     ).not.toHaveBeenCalled();
@@ -264,7 +273,9 @@ describe('GET /tiendanube/replication/status', () => {
       .query({ productIds: PRODUCT_A, userId: USER_B.id })
       .expect(400);
 
-    expect(connectionRepository.findSummaryByUserId).not.toHaveBeenCalled();
+    expect(
+      connectionRepository.findOwnedCredentialsByUserId,
+    ).not.toHaveBeenCalled();
     expect(
       productLinkRepository.findStatusesByMlProductIds,
     ).not.toHaveBeenCalled();

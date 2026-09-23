@@ -86,7 +86,7 @@ export class TiendanubeReplicationStatusService {
   ): Promise<TiendanubeReplicationStatusResponse> {
     const productIds = parseProductIds(rawProductIds);
     const connection =
-      await this.connectionRepository.findSummaryByUserId(userId);
+      await this.connectionRepository.findOwnedCredentialsByUserId(userId);
 
     if (!connection?.storeId.trim()) {
       throw new UnauthorizedException(
@@ -96,7 +96,7 @@ export class TiendanubeReplicationStatusService {
 
     const records = await this.productLinkRepository.findStatusesByMlProductIds(
       {
-        userId,
+        userId: connection.userId,
         storeId: connection.storeId,
         mlProductIds: productIds,
       },
