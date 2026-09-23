@@ -81,6 +81,7 @@ import { StockBulkJobRepository } from './direct-publications/stock-bulk/stock-b
 import { StockBulkJobService } from './direct-publications/stock-bulk/stock-bulk-job.service';
 import { StockBulkLocalDispatcher } from './direct-publications/stock-bulk/stock-bulk-local.dispatcher';
 import { StockBulkPreviewService } from './direct-publications/stock-bulk/stock-bulk-preview.service';
+import { StockBulkPreviewStockService } from './direct-publications/stock-bulk/stock-bulk-preview-stock.service';
 import { StockBulkTargetsService } from './direct-publications/stock-bulk/stock-bulk-targets.service';
 import { SkuService } from './direct-publications/sku/sku.service';
 import { PicturesService } from './direct-publications/pictures/pictures.service';
@@ -166,6 +167,7 @@ import { MercadolibreIntegrationStatusService } from './integration-status/merca
     FamilyUpdateService,
     StockService,
     StockBulkTargetsService,
+    StockBulkPreviewStockService,
     StockBulkPreviewService,
     StockBulkJobRepository,
     StockBulkErrorPolicy,

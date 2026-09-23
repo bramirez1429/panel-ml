@@ -1,6 +1,7 @@
 import type { MercadolibreTokenService } from '../../auth/mercadolibre-token.service';
+import type { MercadolibreApiService } from '../../shared/mercadolibre-api.service';
 import type { PublicationCatalogScannerService } from '../publications/publication-catalog-scanner.service';
-import type { StockService } from '../stock/stock.service';
+import { StockBulkPreviewStockService } from './stock-bulk-preview-stock.service';
 import { StockBulkPreviewService } from './stock-bulk-preview.service';
 import { StockBulkTargetsService } from './stock-bulk-targets.service';
 
@@ -10,12 +11,19 @@ describe('StockBulkPreviewService', () => {
       getStoredConnection: jest.fn().mockResolvedValue({ seller_id: 42 }),
       getValidAccessToken: jest.fn().mockResolvedValue('access-token'),
     };
-    const stock = {
+    const stockService = {
       getNewStock: jest.fn().mockResolvedValue({
         locations: [{ type: 'selling_address', quantity: 4 }],
       }),
       updateNew: jest.fn(),
       updateClassic: jest.fn(),
+    };
+    const api = {
+      getWithMeta: jest
+        .fn()
+        .mockResolvedValue(
+          stockResponse([{ type: 'selling_address', quantity: 4 }]),
+        ),
     };
     const scanner = {
       scan: jest.fn(
@@ -60,13 +68,14 @@ describe('StockBulkPreviewService', () => {
         },
       ),
     };
-    const targets = new StockBulkTargetsService(
-      stock as unknown as StockService,
-    );
+    const targets = new StockBulkTargetsService();
     const service = new StockBulkPreviewService(
       token as unknown as MercadolibreTokenService,
       scanner as unknown as PublicationCatalogScannerService,
       targets,
+      new StockBulkPreviewStockService(
+        api as unknown as MercadolibreApiService,
+      ),
     );
 
     const result = await service.preview('user-1', {
@@ -112,8 +121,13 @@ describe('StockBulkPreviewService', () => {
       legacy: 1,
     });
     expect(scanner.scan).toHaveBeenCalledTimes(1);
-    expect(stock.updateNew).not.toHaveBeenCalled();
-    expect(stock.updateClassic).not.toHaveBeenCalled();
+    expect(api.getWithMeta).toHaveBeenCalledWith(
+      '/user-products/MLAU1/stock',
+      'access-token',
+    );
+    expect(stockService.getNewStock).not.toHaveBeenCalled();
+    expect(stockService.updateNew).not.toHaveBeenCalled();
+    expect(stockService.updateClassic).not.toHaveBeenCalled();
   });
 
   it('separa por domain y audience un cat\u00e1logo mixto LEGACY/USER_PRODUCT', async () => {
@@ -165,15 +179,20 @@ describe('StockBulkPreviewService', () => {
         },
       ),
     };
-    const stock = {
-      getNewStock: jest.fn().mockResolvedValue({
-        locations: [{ type: 'selling_address', quantity: 1 }],
-      }),
+    const api = {
+      getWithMeta: jest
+        .fn()
+        .mockResolvedValue(
+          stockResponse([{ type: 'selling_address', quantity: 1 }]),
+        ),
     };
     const service = new StockBulkPreviewService(
       token as unknown as MercadolibreTokenService,
       scanner as unknown as PublicationCatalogScannerService,
-      new StockBulkTargetsService(stock as unknown as StockService),
+      new StockBulkTargetsService(),
+      new StockBulkPreviewStockService(
+        api as unknown as MercadolibreApiService,
+      ),
     );
 
     const remeras = await service.preview('user-1', {
@@ -222,5 +241,19 @@ function legacyItem(id: string, title: string, domainId: string) {
         attribute_combinations: [{ id: 'SIZE', value_name: '40' }],
       },
     ],
+  };
+}
+
+function stockResponse(
+  locations: Array<{
+    type: string;
+    quantity: number;
+    store_id?: string;
+    network_node_id?: string;
+  }>,
+) {
+  return {
+    data: { id: 'MLAU', user_id: 1, locations },
+    headers: new Headers({ 'x-version': '1' }),
   };
 }

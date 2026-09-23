@@ -2,8 +2,8 @@ import { Injectable } from '@nestjs/common';
 
 import type { MlAttribute, MlItem } from '../items/items.types';
 import { PublicationsMapper } from '../publications/publications.mapper';
-import { StockService } from '../stock/stock.service';
 import { matchesProductType } from './stock-bulk-product-classifier';
+import { normalizeStockBulkSize } from './stock-bulk-size-normalizer';
 import {
   normalizeStockBulkLabel,
   type StockBulkPreviewRequest,
@@ -23,15 +23,13 @@ const COLOR_IDS = /COLOR/u;
 
 @Injectable()
 export class StockBulkTargetsService {
-  constructor(private readonly stockService: StockService) {}
-
   collect(
     items: readonly MlItem[],
     request: StockBulkPreviewRequest,
   ): StockBulkTarget[] {
     const quantities = new Map(
       request.sizes.map(({ size, quantity }) => [
-        normalizeStockBulkLabel(size),
+        normalizeStockBulkSize(request.productType, size),
         { size, quantity },
       ]),
     );
@@ -42,14 +40,18 @@ export class StockBulkTargetsService {
       }
       if (PublicationsMapper.getModel(item) === 'VARIANT_PRICING') {
         const size = attributeValue(item.attributes, SIZE_IDS);
-        const requested = quantities.get(normalizeStockBulkLabel(size));
+        const requested = quantities.get(
+          normalizeStockBulkSize(request.productType, size ?? ''),
+        );
         if (requested) targets.push(this.userProduct(item, requested));
         continue;
       }
       const variations = legacyVariations(item.variations);
       if (variations.length === 0) {
         const size = attributeValue(item.attributes, SIZE_IDS);
-        const requested = quantities.get(normalizeStockBulkLabel(size));
+        const requested = quantities.get(
+          normalizeStockBulkSize(request.productType, size ?? ''),
+        );
         if (requested) targets.push(this.legacy(item, null, requested));
         continue;
       }
@@ -59,26 +61,13 @@ export class StockBulkTargetsService {
           ...(variation.attributes ?? []),
         ];
         const size = attributeValue(attributes, SIZE_IDS);
-        const requested = quantities.get(normalizeStockBulkLabel(size));
+        const requested = quantities.get(
+          normalizeStockBulkSize(request.productType, size ?? ''),
+        );
         if (requested) targets.push(this.legacy(item, variation, requested));
       }
     }
     return deduplicate(targets);
-  }
-
-  async resolveCurrentStock(
-    userId: string,
-    targets: readonly StockBulkTarget[],
-  ): Promise<StockBulkTarget[]> {
-    const resolved: StockBulkTarget[] = [];
-    for (const target of targets) {
-      if (target.model === 'LEGACY' || !target.editable) {
-        resolved.push(target);
-        continue;
-      }
-      resolved.push(await this.resolveUserProductStock(userId, target));
-    }
-    return resolved;
   }
 
   private userProduct(
@@ -147,53 +136,6 @@ export class StockBulkTargetsService {
       ...(reason ? { reason } : {}),
     };
   }
-
-  private async resolveUserProductStock(
-    userId: string,
-    target: StockBulkTarget,
-  ): Promise<StockBulkTarget> {
-    try {
-      const stock = await this.stockService.getNewStock(
-        userId,
-        target.familyId as string,
-        target.itemId,
-      );
-      const locations = stock.locations ?? [];
-      const currentQuantity = locations.length
-        ? locations.reduce(
-            (total, location) => total + quantity(location.quantity),
-            0,
-          )
-        : target.currentQuantity;
-      const warehouses = locations.filter(
-        (location) => location.type === 'seller_warehouse',
-      );
-      if (warehouses.length > 1) {
-        return notEditable(target, currentQuantity, 'MULTIPLE_STOCK_LOCATIONS');
-      }
-      const warehouse = warehouses[0];
-      if (warehouse && (!warehouse.store_id || !warehouse.network_node_id)) {
-        return notEditable(
-          target,
-          currentQuantity,
-          'STOCK_LOCATION_INCOMPLETE',
-        );
-      }
-      return {
-        ...target,
-        currentQuantity,
-        needsChange: currentQuantity !== target.requestedQuantity,
-        ...(warehouse
-          ? {
-              storeId: warehouse.store_id,
-              networkNodeId: warehouse.network_node_id,
-            }
-          : {}),
-      };
-    } catch {
-      return notEditable(target, target.currentQuantity, 'STOCK_UNAVAILABLE');
-    }
-  }
 }
 
 function attributeValue(
@@ -245,18 +187,4 @@ function deduplicate(targets: readonly StockBulkTarget[]): StockBulkTarget[] {
     if (!unique.has(target.identifier)) unique.set(target.identifier, target);
   }
   return [...unique.values()];
-}
-
-function notEditable(
-  target: StockBulkTarget,
-  currentQuantity: number,
-  reason: string,
-): StockBulkTarget {
-  return {
-    ...target,
-    currentQuantity,
-    needsChange: currentQuantity !== target.requestedQuantity,
-    editable: false,
-    reason,
-  };
 }

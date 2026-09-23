@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import { MercadolibreTokenService } from '../../auth/mercadolibre-token.service';
 import { PublicationCatalogScannerService } from '../publications/publication-catalog-scanner.service';
+import { StockBulkPreviewStockService } from './stock-bulk-preview-stock.service';
 import { StockBulkTargetsService } from './stock-bulk-targets.service';
 import type {
   StockBulkPreview,
@@ -15,6 +16,7 @@ export class StockBulkPreviewService {
     private readonly tokenService: MercadolibreTokenService,
     private readonly scanner: PublicationCatalogScannerService,
     private readonly targetsService: StockBulkTargetsService,
+    private readonly previewStockService: StockBulkPreviewStockService,
   ) {}
 
   async preview(
@@ -36,8 +38,8 @@ export class StockBulkPreviewService {
         return false;
       },
     );
-    const results = await this.targetsService.resolveCurrentStock(
-      userId,
+    const results = await this.previewStockService.resolve(
+      accessToken,
       deduplicate(matches),
     );
     return {
