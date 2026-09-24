@@ -38,7 +38,7 @@ export class TiendanubeSourceReplicationService {
     const mlConnection =
       await this.mercadoLibreTokenService.getStoredConnection(userId);
     const tnConnection =
-      await this.connectionRepository.findCredentialsByUserId(userId);
+      await this.connectionRepository.findOwnedCredentialsByUserId(userId);
     if (!tnConnection?.accessToken.trim())
       throw new UnauthorizedException('Primero conectá Tiendanube');
     if (options) {
@@ -76,7 +76,11 @@ export class TiendanubeSourceReplicationService {
         }
       : source.product;
     const links = this.linkRepository as unknown as SourceReservationRepository;
-    const context = { userId, storeId: tnConnection.storeId, sourceKey };
+    const context = {
+      userId: tnConnection.userId,
+      storeId: tnConnection.storeId,
+      sourceKey,
+    };
     const reservation = await links.reserveBySource(context);
     if (reservation.outcome === 'PENDING')
       throw new ConflictException('La replicación está pendiente');

@@ -4,11 +4,14 @@ import {
   SupabaseService,
 } from '../../database/supabase.service';
 import { MercadolibreApiService } from '../shared/mercadolibre-api.service';
+import { WorkspaceRepository } from '../../workspaces/workspace.repository';
 import { MercadolibreAuthService } from './mercadolibre-auth.service';
 import { MercadolibreTokenService } from './mercadolibre-token.service';
 
 const USER_ID = '11111111-1111-4111-8111-111111111111';
 const OTHER_USER_ID = '22222222-2222-4222-8222-222222222222';
+const WORKSPACE_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const OTHER_WORKSPACE_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
 const connection: MercadoLibreConnection = {
   user_id: USER_ID,
@@ -24,10 +27,18 @@ describe('MercadolibreTokenService', () => {
   let service: MercadolibreTokenService;
   let apiService: jest.Mocked<Pick<MercadolibreApiService, 'postForm'>>;
   let supabaseService: jest.Mocked<
-    Pick<SupabaseService, 'getConnection' | 'getSharedMercadoLibreConnection'>
+    Pick<
+      SupabaseService,
+      | 'getConnection'
+      | 'getSharedMercadoLibreConnection'
+      | 'getMercadoLibreConnectionByWorkspaceId'
+    >
   >;
   let authService: jest.Mocked<
     Pick<MercadolibreAuthService, 'saveRefreshedTokens'>
+  >;
+  let workspaceRepository: jest.Mocked<
+    Pick<WorkspaceRepository, 'findWorkspaceByUserId'>
   >;
 
   beforeEach(() => {
@@ -44,13 +55,22 @@ describe('MercadolibreTokenService', () => {
     supabaseService = {
       getConnection: jest.fn(),
       getSharedMercadoLibreConnection: jest.fn(),
+      getMercadoLibreConnectionByWorkspaceId: jest.fn(),
     };
     authService = { saveRefreshedTokens: jest.fn() };
+    workspaceRepository = {
+      findWorkspaceByUserId: jest.fn().mockResolvedValue({
+        id: WORKSPACE_ID,
+        slug: 'sael',
+        name: 'SAEL',
+      }),
+    };
     service = new MercadolibreTokenService(
       configService,
       apiService as unknown as MercadolibreApiService,
       supabaseService as unknown as SupabaseService,
       authService as unknown as MercadolibreAuthService,
+      workspaceRepository as unknown as WorkspaceRepository,
     );
   });
 
@@ -58,19 +78,51 @@ describe('MercadolibreTokenService', () => {
     jest.restoreAllMocks();
   });
 
-  it('lee la conexión o informa que primero hay que conectar la cuenta', async () => {
-    supabaseService.getConnection
-      .mockResolvedValueOnce(connection)
-      .mockResolvedValueOnce(null);
+  it('usuarios del mismo workspace resuelven la misma conexión', async () => {
+    supabaseService.getMercadoLibreConnectionByWorkspaceId.mockResolvedValue(
+      connection,
+    );
 
     await expect(service.getStoredConnection(USER_ID)).resolves.toEqual(
       connection,
     );
-    await expect(service.getStoredConnection(USER_ID)).rejects.toMatchObject({
+    await expect(service.getStoredConnection(OTHER_USER_ID)).resolves.toEqual(
+      connection,
+    );
+    expect(workspaceRepository.findWorkspaceByUserId).toHaveBeenCalledWith(
+      USER_ID,
+    );
+    expect(workspaceRepository.findWorkspaceByUserId).toHaveBeenCalledWith(
+      OTHER_USER_ID,
+    );
+    expect(
+      supabaseService.getMercadoLibreConnectionByWorkspaceId,
+    ).toHaveBeenNthCalledWith(1, WORKSPACE_ID);
+    expect(
+      supabaseService.getMercadoLibreConnectionByWorkspaceId,
+    ).toHaveBeenNthCalledWith(2, WORKSPACE_ID);
+  });
+
+  it('no entrega la conexión SAEL a otro workspace', async () => {
+    workspaceRepository.findWorkspaceByUserId.mockResolvedValue({
+      id: OTHER_WORKSPACE_ID,
+      slug: 'other',
+      name: 'Other',
+    });
+    supabaseService.getMercadoLibreConnectionByWorkspaceId.mockImplementation(
+      (workspaceId) =>
+        Promise.resolve(workspaceId === WORKSPACE_ID ? connection : null),
+    );
+
+    await expect(service.getStoredConnection(OTHER_USER_ID)).rejects.toMatchObject({
       status: 401,
     });
-    expect(supabaseService.getConnection).toHaveBeenNthCalledWith(1, USER_ID);
-    expect(supabaseService.getConnection).toHaveBeenNthCalledWith(2, USER_ID);
+    expect(
+      supabaseService.getMercadoLibreConnectionByWorkspaceId,
+    ).toHaveBeenCalledWith(OTHER_WORKSPACE_ID);
+    expect(
+      supabaseService.getSharedMercadoLibreConnection,
+    ).not.toHaveBeenCalled();
   });
 
   it('usa la conexión compartida aunque pertenezca técnicamente a otro usuario', async () => {
@@ -129,7 +181,7 @@ describe('MercadolibreTokenService', () => {
       ...connection,
       expires_at: new Date(now + 5 * 60 * 1000).toISOString(),
     };
-    supabaseService.getConnection
+    supabaseService.getMercadoLibreConnectionByWorkspaceId
       .mockResolvedValueOnce(validConnection)
       .mockResolvedValueOnce(expiringConnection);
     const refresh = jest
@@ -146,12 +198,12 @@ describe('MercadolibreTokenService', () => {
     expect(refresh).toHaveBeenCalledWith(USER_ID, expiringConnection);
   });
 
-  it('rechaza una conexión perteneciente a otro usuario antes de usarla o renovarla', async () => {
+  it('usa una conexión del workspace y protege el refresh por owner técnico', async () => {
     const foreignConnection = { ...connection, user_id: OTHER_USER_ID };
 
     await expect(
       service.getValidAccessToken(USER_ID, foreignConnection),
-    ).rejects.toMatchObject({ status: 401 });
+    ).resolves.toBe(foreignConnection.access_token);
     await expect(
       service.refreshAccessToken(USER_ID, foreignConnection),
     ).rejects.toMatchObject({ status: 401 });

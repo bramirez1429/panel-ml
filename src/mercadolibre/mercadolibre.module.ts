@@ -103,9 +103,10 @@ import { ProductRankingController } from './direct-publications/product-ranking/
 import { ProductRankingService } from './direct-publications/product-ranking/product-ranking.service';
 import { ProductRankingVisitsService } from './direct-publications/product-ranking/product-ranking-visits.service';
 import { MercadolibreIntegrationStatusService } from './integration-status/mercadolibre-integration-status.service';
+import { WorkspaceModule } from '../workspaces/workspace.module';
 
 @Module({
-  imports: [AuthModule, SalesPersistenceModule],
+  imports: [AuthModule, SalesPersistenceModule, WorkspaceModule],
   controllers: [
     MercadolibreController,
     PublicationsController,

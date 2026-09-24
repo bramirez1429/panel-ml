@@ -28,6 +28,9 @@ export abstract class TiendanubeConnectionRepository {
   abstract findCredentialsByUserId(
     userId: string,
   ): Promise<TiendanubeConnectionCredentials | null>;
+  abstract findOwnedCredentialsByUserId(
+    userId: string,
+  ): Promise<OwnedTiendanubeConnectionCredentials | null>;
   abstract findCredentialsByStoreId(
     storeId: string,
   ): Promise<OwnedTiendanubeConnectionCredentials | null>;

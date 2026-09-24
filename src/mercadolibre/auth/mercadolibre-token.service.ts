@@ -10,6 +10,7 @@ import {
 } from '../shared/mercadolibre.config';
 import { MercadolibreApiService } from '../shared/mercadolibre-api.service';
 import { parseMercadoLibreTokens } from '../shared/mercadolibre.types';
+import { WorkspaceRepository } from '../../workspaces/workspace.repository';
 import { MercadolibreAuthService } from './mercadolibre-auth.service';
 
 type InFlightRefresh = {
@@ -28,14 +29,24 @@ export class MercadolibreTokenService {
     private readonly apiService: MercadolibreApiService,
     private readonly supabaseService: SupabaseService,
     private readonly authService: MercadolibreAuthService,
+    private readonly workspaceRepository: WorkspaceRepository,
   ) {}
 
   /**
-   * Devuelve la conexión comercial compartida de SAEL.
-   * El userId identifica al usuario del panel, no al dueño comercial de ML.
+   * Devuelve la conexión comercial del workspace del usuario.
+   * El owner técnico de la fila se conserva para el refresh concurrente.
    */
-  async getStoredConnection(_userId: string): Promise<MercadoLibreConnection> {
-    return this.getSharedStoredConnection();
+  async getStoredConnection(userId: string): Promise<MercadoLibreConnection> {
+    const workspace =
+      await this.workspaceRepository.findWorkspaceByUserId(userId);
+    const connection =
+      await this.supabaseService.getMercadoLibreConnectionByWorkspaceId(
+        workspace.id,
+      );
+    if (!connection) {
+      throw new UnauthorizedException('Primero conectá Mercado Libre');
+    }
+    return connection;
   }
 
   /** Lee la conexión comercial compartida sin cambiar su owner técnico. */
@@ -58,10 +69,14 @@ export class MercadolibreTokenService {
   }
 
   async getConnectionStatus(
-    _userId: string,
+    userId: string,
   ): Promise<{ connected: false } | { connected: true; sellerId: number }> {
+    const workspace =
+      await this.workspaceRepository.findWorkspaceByUserId(userId);
     const connection =
-      await this.supabaseService.getSharedMercadoLibreConnection();
+      await this.supabaseService.getMercadoLibreConnectionByWorkspaceId(
+        workspace.id,
+      );
 
     if (!connection) return { connected: false };
 

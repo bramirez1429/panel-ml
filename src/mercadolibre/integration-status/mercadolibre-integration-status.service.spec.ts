@@ -24,8 +24,8 @@ function setup(connected = true) {
           ? { connected: true, sellerId: connection.seller_id }
           : { connected: false },
       ),
-    getSharedStoredConnection: jest.fn().mockResolvedValue(connection),
-    getSharedValidAccessToken: jest.fn().mockResolvedValue('valid-token'),
+    getStoredConnection: jest.fn().mockResolvedValue(connection),
+    getValidAccessToken: jest.fn().mockResolvedValue('valid-token'),
   };
   return {
     service: new MercadolibreIntegrationStatusService(tokenService as never),
@@ -41,12 +41,15 @@ describe('MercadolibreIntegrationStatusService', () => {
       reconnectRequired: false,
       sellerId: 639189394,
     });
-    expect(tokenService.getSharedValidAccessToken).toHaveBeenCalledWith(connection);
+    expect(tokenService.getValidAccessToken).toHaveBeenCalledWith(
+      connection.user_id,
+      connection,
+    );
   });
 
   it('devuelve reconnectRequired ante un rechazo OAuth conocido', async () => {
     const { service, tokenService } = setup();
-    tokenService.getSharedValidAccessToken.mockRejectedValue(
+    tokenService.getValidAccessToken.mockRejectedValue(
       new BadRequestException({
         message: 'Mercado Libre rechazó el intercambio OAuth',
         mercadoLibreError: 'invalid_grant',
@@ -66,8 +69,8 @@ describe('MercadolibreIntegrationStatusService', () => {
       connected: false,
       reconnectRequired: false,
     });
-    expect(tokenService.getSharedStoredConnection).not.toHaveBeenCalled();
-    expect(tokenService.getSharedValidAccessToken).not.toHaveBeenCalled();
+    expect(tokenService.getStoredConnection).not.toHaveBeenCalled();
+    expect(tokenService.getValidAccessToken).not.toHaveBeenCalled();
   });
 
   it('propaga errores inesperados para que el consumidor informe unknown', async () => {
@@ -75,7 +78,7 @@ describe('MercadolibreIntegrationStatusService', () => {
     const unexpected = new ServiceUnavailableException(
       'Mercado Libre no está disponible',
     );
-    tokenService.getSharedValidAccessToken.mockRejectedValue(unexpected);
+    tokenService.getValidAccessToken.mockRejectedValue(unexpected);
     await expect(service.getStatus('panel-user')).rejects.toBe(unexpected);
   });
 });
