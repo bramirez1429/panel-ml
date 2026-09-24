@@ -5,13 +5,14 @@ import { TiendanubeProductLinkRepository } from './tiendanube-product-link.repos
 import { TiendanubeReplicationStatusService } from './tiendanube-replication-status.service';
 
 const USER_A = '11111111-1111-4111-8111-111111111111';
+const AUTHENTICATED_USER_ID = 'b.ramireeez';
 const STORE_A = '987654';
 const PRODUCT_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const PRODUCT_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const PRODUCT_C = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 
 type ConnectionRepositoryMock = jest.Mocked<
-  Pick<TiendanubeConnectionRepository, 'findSummaryByUserId'>
+  Pick<TiendanubeConnectionRepository, 'findOwnedCredentialsByUserId'>
 >;
 type ProductLinkRepositoryMock = jest.Mocked<
   Pick<TiendanubeProductLinkRepository, 'findStatusesByMlProductIds'>
@@ -28,8 +29,10 @@ describe('TiendanubeReplicationStatusService', () => {
 
   beforeEach(() => {
     connectionRepository = {
-      findSummaryByUserId: jest.fn().mockResolvedValue({
+      findOwnedCredentialsByUserId: jest.fn().mockResolvedValue({
+        userId: USER_A,
         storeId: STORE_A,
+        accessToken: 'tn-token',
         scope: 'write_products',
       }),
     };
@@ -112,10 +115,12 @@ describe('TiendanubeReplicationStatusService', () => {
         { mlProductId: PRODUCT_B, status: 'FAILED' },
       ],
     });
-    expect(connectionRepository.findSummaryByUserId).toHaveBeenCalledTimes(1);
-    expect(connectionRepository.findSummaryByUserId).toHaveBeenCalledWith(
-      USER_A,
-    );
+    expect(
+      connectionRepository.findOwnedCredentialsByUserId,
+    ).toHaveBeenCalledTimes(1);
+    expect(
+      connectionRepository.findOwnedCredentialsByUserId,
+    ).toHaveBeenCalledWith(USER_A);
     expect(
       productLinkRepository.findStatusesByMlProductIds,
     ).toHaveBeenCalledTimes(1);
@@ -125,6 +130,28 @@ describe('TiendanubeReplicationStatusService', () => {
       userId: USER_A,
       storeId: STORE_A,
       mlProductIds: [PRODUCT_C, PRODUCT_A, PRODUCT_B],
+    });
+  });
+
+  it('consulta estados con el owner de la conexión compartida', async () => {
+    connectionRepository.findOwnedCredentialsByUserId.mockResolvedValue({
+      userId: 'prueba',
+      storeId: '123456',
+      accessToken: 'tn-token',
+      scope: 'write_products',
+    });
+
+    await service.getStatus(AUTHENTICATED_USER_ID, PRODUCT_A);
+
+    expect(
+      connectionRepository.findOwnedCredentialsByUserId,
+    ).toHaveBeenCalledWith(AUTHENTICATED_USER_ID);
+    expect(
+      productLinkRepository.findStatusesByMlProductIds,
+    ).toHaveBeenCalledWith({
+      userId: 'prueba',
+      storeId: '123456',
+      mlProductIds: [PRODUCT_A],
     });
   });
 
@@ -139,7 +166,9 @@ describe('TiendanubeReplicationStatusService', () => {
       await expect(service.getStatus(USER_A, raw)).rejects.toMatchObject({
         status: 400,
       });
-      expect(connectionRepository.findSummaryByUserId).not.toHaveBeenCalled();
+      expect(
+        connectionRepository.findOwnedCredentialsByUserId,
+      ).not.toHaveBeenCalled();
       expect(
         productLinkRepository.findStatusesByMlProductIds,
       ).not.toHaveBeenCalled();
@@ -147,7 +176,7 @@ describe('TiendanubeReplicationStatusService', () => {
   );
 
   it('sin conexión Tiendanube responde 401 y no consulta vínculos', async () => {
-    connectionRepository.findSummaryByUserId.mockResolvedValue(null);
+    connectionRepository.findOwnedCredentialsByUserId.mockResolvedValue(null);
 
     await expect(service.getStatus(USER_A, PRODUCT_A)).rejects.toMatchObject({
       status: 401,

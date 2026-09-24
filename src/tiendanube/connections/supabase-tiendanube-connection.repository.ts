@@ -85,6 +85,30 @@ export class SupabaseTiendanubeConnectionRepository extends TiendanubeConnection
     };
   }
 
+  async findOwnedCredentialsByUserId(
+    userId: string,
+  ): Promise<OwnedTiendanubeConnectionCredentials | null> {
+    let { data, error } = await this.readOwnedCredentialsRow(userId);
+
+    if (error) this.readError();
+
+    if (!data) {
+      const shared = await this.readSharedOwnedCredentialsRow();
+      data = shared.data;
+      error = shared.error;
+    }
+
+    if (error) this.readError();
+    if (!data) return null;
+
+    return {
+      userId: data.user_id,
+      storeId: data.store_id,
+      accessToken: data.access_token,
+      scope: data.scope,
+    };
+  }
+
   async findCredentialsByStoreId(
     storeId: string,
   ): Promise<OwnedTiendanubeConnectionCredentials | null> {
@@ -168,6 +192,19 @@ export class SupabaseTiendanubeConnectionRepository extends TiendanubeConnection
     }
   }
 
+  private async readOwnedCredentialsRow(userId: string) {
+    try {
+      return await this.supabaseService
+        .getClient()
+        .from('tiendanube_connections')
+        .select('user_id,store_id,access_token,scope')
+        .eq('user_id', userId)
+        .maybeSingle();
+    } catch {
+      this.readError();
+    }
+  }
+
   private async readSharedSummaryRow() {
     try {
       return await this.supabaseService
@@ -188,6 +225,20 @@ export class SupabaseTiendanubeConnectionRepository extends TiendanubeConnection
         .getClient()
         .from('tiendanube_connections')
         .select('store_id,access_token,scope')
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+    } catch {
+      this.readError();
+    }
+  }
+
+  private async readSharedOwnedCredentialsRow() {
+    try {
+      return await this.supabaseService
+        .getClient()
+        .from('tiendanube_connections')
+        .select('user_id,store_id,access_token,scope')
         .order('updated_at', { ascending: false })
         .limit(1)
         .maybeSingle();
