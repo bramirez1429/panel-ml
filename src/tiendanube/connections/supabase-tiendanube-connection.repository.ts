@@ -1,6 +1,7 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 
 import { SupabaseService } from '../../database/supabase.service';
+import { WorkspaceRepository } from '../../workspaces/workspace.repository';
 import {
   SaveTiendanubeConnectionInput,
   OwnedTiendanubeConnectionCredentials,
@@ -11,7 +12,10 @@ import {
 
 @Injectable()
 export class SupabaseTiendanubeConnectionRepository extends TiendanubeConnectionRepository {
-  constructor(private readonly supabaseService: SupabaseService) {
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly workspaceRepository: WorkspaceRepository,
+  ) {
     super();
   }
 
@@ -43,15 +47,9 @@ export class SupabaseTiendanubeConnectionRepository extends TiendanubeConnection
   async findSummaryByUserId(
     userId: string,
   ): Promise<TiendanubeConnectionSummary | null> {
-    let { data, error } = await this.readSummaryRow(userId);
-
-    if (error) this.readError();
-
-    if (!data) {
-      const shared = await this.readSharedSummaryRow();
-      data = shared.data;
-      error = shared.error;
-    }
+    const workspace =
+      await this.workspaceRepository.findWorkspaceByUserId(userId);
+    const { data, error } = await this.readSummaryRow(workspace.id);
 
     if (error) this.readError();
     if (!data) return null;
@@ -65,15 +63,9 @@ export class SupabaseTiendanubeConnectionRepository extends TiendanubeConnection
   async findCredentialsByUserId(
     userId: string,
   ): Promise<TiendanubeConnectionCredentials | null> {
-    let { data, error } = await this.readCredentialsRow(userId);
-
-    if (error) this.readError();
-
-    if (!data) {
-      const shared = await this.readSharedCredentialsRow();
-      data = shared.data;
-      error = shared.error;
-    }
+    const workspace =
+      await this.workspaceRepository.findWorkspaceByUserId(userId);
+    const { data, error } = await this.readCredentialsRow(workspace.id);
 
     if (error) this.readError();
     if (!data) return null;
@@ -88,15 +80,9 @@ export class SupabaseTiendanubeConnectionRepository extends TiendanubeConnection
   async findOwnedCredentialsByUserId(
     userId: string,
   ): Promise<OwnedTiendanubeConnectionCredentials | null> {
-    let { data, error } = await this.readOwnedCredentialsRow(userId);
-
-    if (error) this.readError();
-
-    if (!data) {
-      const shared = await this.readSharedOwnedCredentialsRow();
-      data = shared.data;
-      error = shared.error;
-    }
+    const workspace =
+      await this.workspaceRepository.findWorkspaceByUserId(userId);
+    const { data, error } = await this.readOwnedCredentialsRow(workspace.id);
 
     if (error) this.readError();
     if (!data) return null;
@@ -166,51 +152,13 @@ export class SupabaseTiendanubeConnectionRepository extends TiendanubeConnection
     );
   }
 
-  private async readSummaryRow(userId: string) {
+  private async readSummaryRow(workspaceId: string) {
     try {
       return await this.supabaseService
         .getClient()
         .from('tiendanube_connections')
         .select('store_id,scope')
-        .eq('user_id', userId)
-        .maybeSingle();
-    } catch {
-      this.readError();
-    }
-  }
-
-  private async readCredentialsRow(userId: string) {
-    try {
-      return await this.supabaseService
-        .getClient()
-        .from('tiendanube_connections')
-        .select('store_id,access_token,scope')
-        .eq('user_id', userId)
-        .maybeSingle();
-    } catch {
-      this.readError();
-    }
-  }
-
-  private async readOwnedCredentialsRow(userId: string) {
-    try {
-      return await this.supabaseService
-        .getClient()
-        .from('tiendanube_connections')
-        .select('user_id,store_id,access_token,scope')
-        .eq('user_id', userId)
-        .maybeSingle();
-    } catch {
-      this.readError();
-    }
-  }
-
-  private async readSharedSummaryRow() {
-    try {
-      return await this.supabaseService
-        .getClient()
-        .from('tiendanube_connections')
-        .select('store_id,scope')
+        .eq('workspace_id', workspaceId)
         .order('updated_at', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -219,12 +167,13 @@ export class SupabaseTiendanubeConnectionRepository extends TiendanubeConnection
     }
   }
 
-  private async readSharedCredentialsRow() {
+  private async readCredentialsRow(workspaceId: string) {
     try {
       return await this.supabaseService
         .getClient()
         .from('tiendanube_connections')
         .select('store_id,access_token,scope')
+        .eq('workspace_id', workspaceId)
         .order('updated_at', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -233,12 +182,13 @@ export class SupabaseTiendanubeConnectionRepository extends TiendanubeConnection
     }
   }
 
-  private async readSharedOwnedCredentialsRow() {
+  private async readOwnedCredentialsRow(workspaceId: string) {
     try {
       return await this.supabaseService
         .getClient()
         .from('tiendanube_connections')
         .select('user_id,store_id,access_token,scope')
+        .eq('workspace_id', workspaceId)
         .order('updated_at', { ascending: false })
         .limit(1)
         .maybeSingle();

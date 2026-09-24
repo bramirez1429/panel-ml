@@ -30,6 +30,7 @@ import { TiendanubePrivacyWebhookController } from './webhooks/tiendanube-privac
 import { TiendanubePrivacyWebhookService } from './webhooks/tiendanube-privacy-webhook.service';
 import { TiendanubeCategoriesController } from './categories/tiendanube-categories.controller';
 import { TiendanubeCategoriesService } from './categories/tiendanube-categories.service';
+import { WorkspaceModule } from '../workspaces/workspace.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { TiendanubeCategoriesService } from './categories/tiendanube-categories.
     AuthModule,
     MercadolibreModule,
     SalesPersistenceModule,
+    WorkspaceModule,
   ],
   controllers: [
     TiendanubeController,

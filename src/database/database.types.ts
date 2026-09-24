@@ -15,12 +15,49 @@ type Table<Row, Insert, Relationships extends readonly unknown[] = []> = {
 
 type TokenRow = {
   user_id: string;
+  workspace_id: string | null;
   seller_id: number;
   nickname: string;
   access_token: string;
   refresh_token: string;
   expires_at: string;
   updated_at: string;
+};
+
+type TokenInsert = Omit<TokenRow, 'workspace_id'> & {
+  workspace_id?: string | null;
+};
+
+type WorkspaceRole = 'OWNER' | 'MEMBER';
+
+type WorkspaceRow = {
+  id: string;
+  slug: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+};
+
+type WorkspaceInsert = {
+  id?: string;
+  slug: string;
+  name: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
+type WorkspaceMemberRow = {
+  workspace_id: string;
+  user_id: string;
+  role: WorkspaceRole;
+  created_at: string;
+};
+
+type WorkspaceMemberInsert = {
+  workspace_id: string;
+  user_id: string;
+  role: WorkspaceRole;
+  created_at?: string;
 };
 
 type MercadoLibreOAuthTransactionRow = {
@@ -42,6 +79,7 @@ type MercadoLibreOAuthTransactionInsert = Omit<
 type TiendanubeConnectionRow = {
   id: string;
   user_id: string;
+  workspace_id: string | null;
   store_id: string;
   access_token: string;
   token_type: string;
@@ -53,6 +91,7 @@ type TiendanubeConnectionRow = {
 type TiendanubeConnectionInsert = {
   id?: string;
   user_id: string;
+  workspace_id?: string | null;
   store_id: string;
   access_token: string;
   token_type: string;
@@ -66,6 +105,7 @@ type TiendanubeProductLinkStatus = 'PENDING' | 'FAILED' | 'COMPLETED';
 type TiendanubeProductLinkRow = {
   id: string;
   user_id: string;
+  workspace_id: string | null;
   store_id: string;
   ml_product_id: string | null;
   ml_source_key: string;
@@ -78,6 +118,7 @@ type TiendanubeProductLinkRow = {
 type TiendanubeProductLinkInsert = {
   id?: string;
   user_id: string;
+  workspace_id?: string | null;
   store_id: string;
   ml_product_id?: string | null;
   ml_source_key: string;
@@ -414,6 +455,27 @@ export type Database = {
   public: {
     Tables: {
       users: Table<UserRow, UserInsert>;
+      workspaces: Table<WorkspaceRow, WorkspaceInsert>;
+      workspace_members: Table<
+        WorkspaceMemberRow,
+        WorkspaceMemberInsert,
+        [
+          {
+            foreignKeyName: 'workspace_members_workspace_id_fkey';
+            columns: ['workspace_id'];
+            isOneToOne: false;
+            referencedRelation: 'workspaces';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'workspace_members_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: true;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+        ]
+      >;
       user_refresh_sessions: Table<
         UserRefreshSessionRow,
         UserRefreshSessionInsert,
@@ -429,13 +491,20 @@ export type Database = {
       >;
       mercadolibre_tokens: Table<
         TokenRow,
-        TokenRow,
+        TokenInsert,
         [
           {
             foreignKeyName: 'mercadolibre_tokens_user_id_fkey';
             columns: ['user_id'];
             isOneToOne: true;
             referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'mercadolibre_tokens_workspace_id_fkey';
+            columns: ['workspace_id'];
+            isOneToOne: false;
+            referencedRelation: 'workspaces';
             referencedColumns: ['id'];
           },
         ]
@@ -471,6 +540,13 @@ export type Database = {
             referencedRelation: 'users';
             referencedColumns: ['id'];
           },
+          {
+            foreignKeyName: 'tiendanube_connections_workspace_id_fkey';
+            columns: ['workspace_id'];
+            isOneToOne: false;
+            referencedRelation: 'workspaces';
+            referencedColumns: ['id'];
+          },
         ]
       >;
       tiendanube_product_links: Table<
@@ -482,6 +558,13 @@ export type Database = {
             columns: ['user_id'];
             isOneToOne: false;
             referencedRelation: 'users';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'tiendanube_product_links_workspace_id_fkey';
+            columns: ['workspace_id'];
+            isOneToOne: false;
+            referencedRelation: 'workspaces';
             referencedColumns: ['id'];
           },
           {

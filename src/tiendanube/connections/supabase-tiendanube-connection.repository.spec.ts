@@ -2,10 +2,12 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import type { Database } from '../../database/database.types';
 import type { SupabaseService } from '../../database/supabase.service';
+import type { WorkspaceRepository } from '../../workspaces/workspace.repository';
 import { SupabaseTiendanubeConnectionRepository } from './supabase-tiendanube-connection.repository';
 import type { SaveTiendanubeConnectionInput } from './tiendanube-connection.repository';
 
 const USER_ID = '11111111-1111-4111-8111-111111111111';
+const WORKSPACE_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const ACCESS_TOKEN = 'private-access-token';
 const NOW = '2026-08-24T15:00:00.000Z';
 const INPUT: SaveTiendanubeConnectionInput = {
@@ -16,6 +18,16 @@ const INPUT: SaveTiendanubeConnectionInput = {
   scope: 'read_products',
 };
 
+function setupWorkspaceRepository(workspaceId = WORKSPACE_ID) {
+  return {
+    findWorkspaceByUserId: jest.fn().mockResolvedValue({
+      id: workspaceId,
+      slug: workspaceId === WORKSPACE_ID ? 'sael' : 'other',
+      name: workspaceId === WORKSPACE_ID ? 'SAEL' : 'Other',
+    }),
+  } as unknown as WorkspaceRepository;
+}
+
 function setupRepository(error: unknown = null) {
   const upsert = jest.fn().mockResolvedValue({ data: null, error });
   const from = jest.fn().mockReturnValue({ upsert });
@@ -25,17 +37,24 @@ function setupRepository(error: unknown = null) {
   } as unknown as SupabaseService;
 
   return {
-    repository: new SupabaseTiendanubeConnectionRepository(supabase),
+    repository: new SupabaseTiendanubeConnectionRepository(
+      supabase,
+      setupWorkspaceRepository(),
+    ),
     from,
     upsert,
   };
 }
 
-function setupReadRepository(data: unknown, error: unknown = null) {
+function setupReadRepository(
+  data: unknown,
+  error: unknown = null,
+  workspaceId = WORKSPACE_ID,
+) {
   const maybeSingle = jest.fn().mockResolvedValue({ data, error });
   const limit = jest.fn().mockReturnValue({ maybeSingle });
   const order = jest.fn().mockReturnValue({ limit });
-  const eq = jest.fn().mockReturnValue({ maybeSingle });
+  const eq = jest.fn().mockReturnValue({ maybeSingle, order });
   const select = jest.fn().mockReturnValue({ eq, order });
   const from = jest.fn().mockReturnValue({ select });
   const client = { from } as unknown as SupabaseClient<Database>;
@@ -44,7 +63,10 @@ function setupReadRepository(data: unknown, error: unknown = null) {
   } as unknown as SupabaseService;
 
   return {
-    repository: new SupabaseTiendanubeConnectionRepository(supabase),
+    repository: new SupabaseTiendanubeConnectionRepository(
+      supabase,
+      setupWorkspaceRepository(workspaceId),
+    ),
     from,
     select,
     eq,
@@ -64,7 +86,10 @@ function setupDeleteRepository(error: unknown = null) {
   } as unknown as SupabaseService;
 
   return {
-    repository: new SupabaseTiendanubeConnectionRepository(supabase),
+    repository: new SupabaseTiendanubeConnectionRepository(
+      supabase,
+      setupWorkspaceRepository(),
+    ),
     from,
     remove,
     eq,
@@ -119,7 +144,10 @@ describe('SupabaseTiendanubeConnectionRepository', () => {
     const supabase = {
       getClient: jest.fn().mockReturnValue(client),
     } as unknown as SupabaseService;
-    const repository = new SupabaseTiendanubeConnectionRepository(supabase);
+    const repository = new SupabaseTiendanubeConnectionRepository(
+      supabase,
+      setupWorkspaceRepository(),
+    );
 
     await repository.saveConnection(INPUT);
     jest.setSystemTime(new Date('2026-08-24T16:00:00.000Z'));
@@ -180,7 +208,7 @@ describe('SupabaseTiendanubeConnectionRepository', () => {
     expect(select).toHaveBeenCalledTimes(1);
     expect(select).toHaveBeenCalledWith('store_id,scope');
     expect(eq).toHaveBeenCalledTimes(1);
-    expect(eq).toHaveBeenCalledWith('user_id', USER_ID);
+    expect(eq).toHaveBeenCalledWith('workspace_id', WORKSPACE_ID);
     expect(maybeSingle).toHaveBeenCalledTimes(1);
   });
 
@@ -225,7 +253,7 @@ describe('SupabaseTiendanubeConnectionRepository', () => {
     expect(select).toHaveBeenCalledTimes(1);
     expect(select).toHaveBeenCalledWith('store_id,access_token,scope');
     expect(eq).toHaveBeenCalledTimes(1);
-    expect(eq).toHaveBeenCalledWith('user_id', USER_ID);
+    expect(eq).toHaveBeenCalledWith('workspace_id', WORKSPACE_ID);
     expect(maybeSingle).toHaveBeenCalledTimes(1);
   });
 
@@ -246,48 +274,47 @@ describe('SupabaseTiendanubeConnectionRepository', () => {
       scope: 'write_products',
     });
     expect(select).toHaveBeenCalledWith('user_id,store_id,access_token,scope');
-    expect(eq).toHaveBeenCalledWith('user_id', USER_ID);
+    expect(eq).toHaveBeenCalledWith('workspace_id', WORKSPACE_ID);
   });
 
-  it('devuelve el owner real de la conexión compartida cuando no hay una propia', async () => {
-    const authenticatedUserId = 'b.ramireeez';
-    const ownMaybeSingle = jest
-      .fn()
-      .mockResolvedValue({ data: null, error: null });
-    const sharedMaybeSingle = jest.fn().mockResolvedValue({
-      data: {
-        user_id: 'prueba',
-        store_id: '123456',
-        access_token: 'tn-token',
-        scope: 'write_products',
-      },
-      error: null,
+  it('usuarios del workspace SAEL resuelven la misma conexión', async () => {
+    const { repository, eq, order, limit } = setupReadRepository({
+      user_id: 'prueba',
+      store_id: '123456',
+      access_token: 'tn-token',
+      scope: 'write_products',
     });
-    const eq = jest.fn().mockReturnValue({ maybeSingle: ownMaybeSingle });
-    const limit = jest.fn().mockReturnValue({ maybeSingle: sharedMaybeSingle });
-    const order = jest.fn().mockReturnValue({ limit });
-    const select = jest
-      .fn()
-      .mockReturnValueOnce({ eq })
-      .mockReturnValueOnce({ order });
-    const from = jest.fn().mockReturnValue({ select });
-    const client = { from } as unknown as SupabaseClient<Database>;
-    const supabase = {
-      getClient: jest.fn().mockReturnValue(client),
-    } as unknown as SupabaseService;
-    const repository = new SupabaseTiendanubeConnectionRepository(supabase);
 
-    await expect(
-      repository.findOwnedCredentialsByUserId(authenticatedUserId),
-    ).resolves.toEqual({
+    const expected = {
       userId: 'prueba',
       storeId: '123456',
       accessToken: 'tn-token',
       scope: 'write_products',
-    });
-    expect(eq).toHaveBeenCalledWith('user_id', authenticatedUserId);
+    };
+    await expect(
+      repository.findOwnedCredentialsByUserId('prueba'),
+    ).resolves.toEqual(expected);
+    await expect(
+      repository.findOwnedCredentialsByUserId('b.ramireeez'),
+    ).resolves.toEqual(expected);
+    expect(eq).toHaveBeenNthCalledWith(1, 'workspace_id', WORKSPACE_ID);
+    expect(eq).toHaveBeenNthCalledWith(2, 'workspace_id', WORKSPACE_ID);
     expect(order).toHaveBeenCalledWith('updated_at', { ascending: false });
     expect(limit).toHaveBeenCalledWith(1);
+  });
+
+  it('no devuelve conexiones de SAEL para otro workspace', async () => {
+    const otherWorkspaceId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const { repository, eq } = setupReadRepository(
+      null,
+      null,
+      otherWorkspaceId,
+    );
+
+    await expect(
+      repository.findCredentialsByUserId('other-user'),
+    ).resolves.toBeNull();
+    expect(eq).toHaveBeenCalledWith('workspace_id', otherWorkspaceId);
   });
 
   it('devuelve null cuando no existen credenciales para el usuario', async () => {
@@ -369,7 +396,10 @@ describe('SupabaseTiendanubeConnectionRepository', () => {
     const supabase = {
       getClient: jest.fn().mockReturnValue(client),
     } as unknown as SupabaseService;
-    const repository = new SupabaseTiendanubeConnectionRepository(supabase);
+    const repository = new SupabaseTiendanubeConnectionRepository(
+      supabase,
+      setupWorkspaceRepository(),
+    );
 
     await repository.deleteByStoreId('111111');
 

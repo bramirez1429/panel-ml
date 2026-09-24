@@ -22,9 +22,12 @@ export class MercadolibreIntegrationStatusService {
       return { connected: false, reconnectRequired: false };
     }
 
-    const connection = await this.tokenService.getSharedStoredConnection();
+    const connection = await this.tokenService.getStoredConnection(userId);
     try {
-      await this.tokenService.getSharedValidAccessToken(connection);
+      await this.tokenService.getValidAccessToken(
+        connection.user_id,
+        connection,
+      );
       return {
         connected: true,
         reconnectRequired: false,
