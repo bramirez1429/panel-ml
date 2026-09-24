@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { SupabaseService } from '../database/supabase.service';
+import { WorkspaceModule } from '../workspaces/workspace.module';
 import { UsersService } from './application/users.service';
 import { UserAdminRepository } from './application/ports/user-admin.repository';
 import { SupabaseUserAdminRepository } from './infrastructure/supabase-user-admin.repository';
@@ -8,7 +9,7 @@ import { AdminGuard } from './presentation/admin.guard';
 import { UsersController } from './presentation/users.controller';
 
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, WorkspaceModule],
   controllers: [UsersController],
   providers: [
     SupabaseService,
@@ -21,4 +22,3 @@ import { UsersController } from './presentation/users.controller';
   ],
 })
 export class UsersModule {}
-

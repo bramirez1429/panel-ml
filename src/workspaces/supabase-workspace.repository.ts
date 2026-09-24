@@ -25,6 +25,33 @@ export class SupabaseWorkspaceRepository extends WorkspaceRepository {
     return workspace;
   }
 
+  async addMember(
+    workspaceId: string,
+    userId: string,
+    role: 'MEMBER',
+  ): Promise<void> {
+    try {
+      const { error } = await this.supabaseService
+        .getClient()
+        .from('workspace_members')
+        .upsert(
+          {
+            workspace_id: workspaceId,
+            user_id: userId,
+            role,
+          },
+          {
+            onConflict: 'workspace_id,user_id',
+            ignoreDuplicates: true,
+          },
+        );
+
+      if (error) this.writeError();
+    } catch {
+      this.writeError();
+    }
+  }
+
   private async readMembership(userId: string) {
     try {
       const { data, error } = await this.supabaseService
@@ -58,5 +85,11 @@ export class SupabaseWorkspaceRepository extends WorkspaceRepository {
 
   private readError(): never {
     throw new ServiceUnavailableException('No se pudo resolver el workspace');
+  }
+
+  private writeError(): never {
+    throw new ServiceUnavailableException(
+      'No se pudo agregar el usuario al workspace',
+    );
   }
 }
