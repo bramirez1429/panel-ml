@@ -6,4 +6,9 @@ export type Workspace = Readonly<{
 
 export abstract class WorkspaceRepository {
   abstract findWorkspaceByUserId(userId: string): Promise<Workspace>;
+  abstract addMember(
+    workspaceId: string,
+    userId: string,
+    role: 'MEMBER',
+  ): Promise<void>;
 }

@@ -65,4 +65,30 @@ describe('SupabaseWorkspaceRepository', () => {
       repository.findWorkspaceByUserId('unassigned-user'),
     ).rejects.toMatchObject({ status: 403 });
   });
+
+  it('agrega un miembro de forma idempotente', async () => {
+    const upsert = jest.fn().mockResolvedValue({ error: null });
+    const from = jest.fn().mockReturnValue({ upsert });
+    const supabase = {
+      getClient: jest.fn().mockReturnValue({ from }),
+    } as unknown as SupabaseService;
+    const repository = new SupabaseWorkspaceRepository(supabase);
+
+    await repository.addMember(SAEL_WORKSPACE.id, 'new-user', 'MEMBER');
+    await repository.addMember(SAEL_WORKSPACE.id, 'new-user', 'MEMBER');
+
+    expect(from).toHaveBeenCalledWith('workspace_members');
+    expect(upsert).toHaveBeenCalledTimes(2);
+    expect(upsert).toHaveBeenLastCalledWith(
+      {
+        workspace_id: SAEL_WORKSPACE.id,
+        user_id: 'new-user',
+        role: 'MEMBER',
+      },
+      {
+        onConflict: 'workspace_id,user_id',
+        ignoreDuplicates: true,
+      },
+    );
+  });
 });

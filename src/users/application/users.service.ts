@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { AuthService } from '../../auth/application/auth.service';
+import { WorkspaceRepository } from '../../workspaces/workspace.repository';
 import {
   canAssignRole,
   canManageUser,
@@ -26,6 +27,7 @@ export class UsersService {
   constructor(
     private readonly auth: AuthService,
     private readonly users: UserAdminRepository,
+    private readonly workspaces: WorkspaceRepository,
   ) {}
 
   list(): Promise<ManagedUser[]> {
@@ -37,6 +39,8 @@ export class UsersService {
     input: CreateInput,
   ): Promise<ManagedUser> {
     const actor = await this.requireUser(actorId);
+    const actorWorkspace =
+      await this.workspaces.findWorkspaceByUserId(actorId);
     const role = input.role ?? 'USER';
 
     if (!canAssignRole(actor.role, role)) {
@@ -50,6 +54,12 @@ export class UsersService {
       password: input.password,
       name: input.name,
     });
+
+    await this.workspaces.addMember(
+      actorWorkspace.id,
+      created.id,
+      'MEMBER',
+    );
 
     if (role === 'ADMIN') {
       const promoted = await this.users.updateRole(
@@ -182,4 +192,3 @@ export class UsersService {
     return user;
   }
 }
-
