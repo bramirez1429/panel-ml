@@ -1,6 +1,7 @@
 import {
   BadGatewayException,
   ForbiddenException,
+  HttpException,
   Injectable,
 } from '@nestjs/common';
 import { MercadolibreTokenService } from '../../auth/mercadolibre-token.service';
@@ -22,6 +23,7 @@ import { PublicationSourceService } from './publication-source.service';
 import { PublicationSyncPreparerService } from './publication-sync-preparer.service';
 import {
   PublicationBatchResult,
+  PublicationSyncError,
   SavedPublications,
   SyncAccess,
 } from './publication-sync.types';
@@ -50,6 +52,7 @@ export class PublicationSyncService {
       itemIds,
       access.accessToken,
     );
+    throwIfSystemicSourceError(source.errors);
     const owned = filterPublicationsBySeller(
       source.publications,
       access.sellerId,
@@ -80,6 +83,7 @@ export class PublicationSyncService {
         ...source.errors.map(sourceErrorToSyncError),
         ...owned.errors,
         ...prepared.errors,
+        ...sharedSaved.errors,
         ...variantResult.errors,
       ],
     };
@@ -153,21 +157,41 @@ export class PublicationSyncService {
   private async saveBundles(
     bundles: NormalizedPublicationBundle[],
     fullSyncId?: string,
-  ): Promise<SavedPublications> {
-    await mapWithConcurrency(
+  ): Promise<SavedPublications & { errors: PublicationSyncError[] }> {
+    const attempts = await mapWithConcurrency(
       bundles,
       PUBLICATION_REQUEST_CONCURRENCY,
-      (bundle) => this.writer.save(bundle, fullSyncId),
+      async (bundle) => {
+        try {
+          await this.writer.save(bundle, fullSyncId);
+          return { bundle, saved: true as const };
+        } catch {
+          return { bundle, saved: false as const };
+        }
+      },
     );
+    const saved = attempts.filter(({ saved }) => saved);
     return {
-      processedItems: bundles.reduce(
-        (total, bundle) => total + (bundle.children.length || 1),
+      processedItems: saved.reduce(
+        (total, { bundle }) => total + (bundle.children.length || 1),
         0,
       ),
-      productsSaved: bundles.length,
-      childrenSaved: bundles.reduce(
-        (total, bundle) => total + bundle.children.length,
+      productsSaved: saved.length,
+      childrenSaved: saved.reduce(
+        (total, { bundle }) => total + bundle.children.length,
         0,
+      ),
+      errors: attempts.flatMap(({ bundle, saved }) =>
+        saved
+          ? []
+          : [
+              {
+                itemId: bundle.parent.parent_item_id ?? 'unknown-item',
+                familyId: bundle.parent.family_id,
+                type: 'MIRROR_WRITE_FAILED' as const,
+                message: 'No se pudo actualizar la copia local',
+              },
+            ],
       ),
     };
   }
@@ -176,4 +200,19 @@ export class PublicationSyncService {
   private createContext(sellerId: number): NormalizationContext {
     return { sellerId, syncedAt: new Date().toISOString() };
   }
+}
+
+function throwIfSystemicSourceError(
+  errors: readonly { status: number; body: unknown }[],
+): void {
+  const systemic = errors.find(({ status }) =>
+    [401, 403, 429].includes(status),
+  );
+  if (!systemic) return;
+  const response =
+    typeof systemic.body === 'string' ||
+    (typeof systemic.body === 'object' && systemic.body !== null)
+      ? (systemic.body as string | Record<string, unknown>)
+      : 'Error de Mercado Libre';
+  throw new HttpException(response, systemic.status);
 }

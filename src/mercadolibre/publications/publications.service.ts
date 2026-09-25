@@ -5,8 +5,10 @@ import {
 } from '@nestjs/common';
 import { MercadolibreChildrenRepository } from '../../database/repositories/mercadolibre-children.repository';
 import { MercadolibreProductsRepository } from '../../database/repositories/mercadolibre-products.repository';
+import { MercadolibreSyncErrorsRepository } from '../../database/repositories/mercadolibre-sync-errors.repository';
 import { MercadolibreTokenService } from '../auth/mercadolibre-token.service';
 import { MercadolibreApiService } from '../shared/mercadolibre-api.service';
+import { PublicationSyncQueueService } from './sync/publication-sync-queue.service';
 
 @Injectable()
 export class PublicationsService {
@@ -16,6 +18,8 @@ export class PublicationsService {
     private readonly productsRepository: MercadolibreProductsRepository,
     private readonly childrenRepository: MercadolibreChildrenRepository,
     private readonly apiService: MercadolibreApiService,
+    private readonly syncErrors: MercadolibreSyncErrorsRepository,
+    private readonly syncQueue: PublicationSyncQueueService,
   ) {}
 
   /** Lista resúmenes paginados desde Supabase. */
@@ -114,13 +118,16 @@ export class PublicationsService {
         accessToken,
       );
 
-      await this.productsRepository.updatePrice(product.id, price); // 2 Supabase
-
-      return {
-        ok: true,
-        itemId: product.parent_item_id,
-        price,
-      };
+      return this.finishProviderWrite(
+        connection.seller_id,
+        product.parent_item_id,
+        () => this.productsRepository.updatePrice(product.id, price),
+        {
+          ok: true,
+          itemId: product.parent_item_id,
+          price,
+        },
+      );
     }
 
     if (!itemId) {
@@ -145,13 +152,12 @@ export class PublicationsService {
       accessToken,
     );
     // Mercado Libre respondió OK → actualizar Supabase
-    await this.childrenRepository.updatePrice(child.item_id, price);
-
-    return {
-      ok: true,
-      itemId: child.item_id,
-      price,
-    };
+    return this.finishProviderWrite(
+      connection.seller_id,
+      child.item_id,
+      () => this.childrenRepository.updatePrice(child.item_id, price),
+      { ok: true, itemId: child.item_id, price },
+    );
   }
 
   /** Modifica el stock real en Mercado Libre. */
@@ -211,13 +217,12 @@ export class PublicationsService {
         accessToken,
       );
 
-      await this.childrenRepository.updateStock(child.item_id, stock);
-
-      return {
-        ok: true,
-        itemId: child.item_id,
-        stock,
-      };
+      return this.finishProviderWrite(
+        connection.seller_id,
+        child.item_id,
+        () => this.childrenRepository.updateStock(child.item_id, stock),
+        { ok: true, itemId: child.item_id, stock },
+      );
     }
 
     // Publicación vieja SHARED.
@@ -233,13 +238,12 @@ export class PublicationsService {
         accessToken,
       );
 
-      await this.productsRepository.updateStock(product.id, stock);
-
-      return {
-        ok: true,
-        itemId: product.parent_item_id,
-        stock,
-      };
+      return this.finishProviderWrite(
+        connection.seller_id,
+        product.parent_item_id,
+        () => this.productsRepository.updateStock(product.id, stock),
+        { ok: true, itemId: product.parent_item_id, stock },
+      );
     }
 
     // SHARED con variaciones: traerlas para conservar todos los IDs.
@@ -274,18 +278,52 @@ export class PublicationsService {
       accessToken,
     );
 
-    await this.productsRepository.updateVariationStock(
-      product.id,
-      variationId,
-      stock,
+    return this.finishProviderWrite(
+      connection.seller_id,
+      product.parent_item_id,
+      () =>
+        this.productsRepository.updateVariationStock(
+          product.id,
+          variationId,
+          stock,
+        ),
+      { ok: true, itemId: product.parent_item_id, variationId, stock },
     );
+  }
 
-    return {
-      ok: true,
-      itemId: product.parent_item_id,
-      variationId,
-      stock,
-    };
+  private async finishProviderWrite<T extends Record<string, unknown>>(
+    sellerId: number,
+    itemId: string,
+    updateMirror: () => Promise<void>,
+    response: T,
+  ): Promise<
+    T & { providerUpdated: true; mirrorUpdated: boolean; warning?: string }
+  > {
+    try {
+      await updateMirror();
+      return { ...response, providerUpdated: true, mirrorUpdated: true };
+    } catch {
+      await Promise.allSettled([
+        this.syncErrors.createMany([
+          {
+            sync_job_id: null,
+            seller_id: sellerId,
+            item_id: itemId,
+            error_type: 'MIRROR_WRITE_FAILED',
+            error_message:
+              'Mercado Libre fue actualizado pero falló la copia local',
+          },
+        ]),
+        this.syncQueue.enqueueRepair(sellerId, itemId),
+      ]);
+      return {
+        ...response,
+        providerUpdated: true,
+        mirrorUpdated: false,
+        warning:
+          'Mercado Libre fue actualizado, pero la copia local quedó pendiente de sincronización.',
+      };
+    }
   }
 
   /** Obtiene las promociones de todos los MLA de una publicación. */

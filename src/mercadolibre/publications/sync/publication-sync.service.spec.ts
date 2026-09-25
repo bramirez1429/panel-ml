@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, HttpException } from '@nestjs/common';
 import { MercadolibreTokenService } from '../../auth/mercadolibre-token.service';
 import { UserProductFamilyService } from '../../user-products/user-product-family.service';
 import { PublicationModelDetectorService } from '../normalization/publication-model-detector.service';
@@ -134,12 +134,24 @@ describe('PublicationSyncService', () => {
     });
     preparer.prepare.mockResolvedValue({
       bundles: [sharedBundle()],
-      errors: [{ itemId: 'MLA4', message: 'No se pudo normalizar' }],
+      errors: [
+        {
+          itemId: 'MLA4',
+          type: 'VALIDATION_ERROR',
+          message: 'No se pudo normalizar',
+        },
+      ],
     });
     familySync.syncBatch.mockResolvedValue({
       productsSaved: 0,
       childrenSaved: 0,
-      errors: [{ itemId: 'MLA2', message: 'Familia incompleta' }],
+      errors: [
+        {
+          itemId: 'MLA2',
+          type: 'PUBLICATION_ERROR',
+          message: 'Familia incompleta',
+        },
+      ],
     });
 
     const result = await service.syncBatch(
@@ -150,6 +162,48 @@ describe('PublicationSyncService', () => {
 
     expect(result.productsSaved).toBe(1);
     expect(result.errors).toHaveLength(4);
+  });
+
+  it('un fallo de mirror SHARED no cancela los demás bundles', async () => {
+    const { preparer, service, writer } = setup();
+    const second = sharedBundle();
+    second.parent.parent_item_id = 'MLA5';
+    second.parent.external_key = 'item:MLA5';
+    preparer.prepare.mockResolvedValue({
+      bundles: [sharedBundle(), second],
+      errors: [],
+    });
+    writer.save
+      .mockRejectedValueOnce(new Error('Supabase caído'))
+      .mockResolvedValueOnce(undefined);
+
+    const result = await service.syncBatch(
+      ['MLA1', 'MLA5'],
+      ACCESS,
+      FULL_SYNC_ID,
+    );
+
+    expect(writer.save).toHaveBeenCalledTimes(2);
+    expect(result.productsSaved).toBe(2);
+    expect(result.errors).toContainEqual(
+      expect.objectContaining({
+        itemId: 'MLA1',
+        type: 'MIRROR_WRITE_FAILED',
+      }),
+    );
+  });
+
+  it('propaga auth y rate limit del multiget como error sistémico', async () => {
+    const { service, source, writer } = setup();
+    source.getPublicationDetails.mockResolvedValue({
+      publications: [],
+      errors: [{ itemId: 'MLA1', status: 401, body: 'Unauthorized' }],
+    });
+
+    await expect(
+      service.syncBatch(['MLA1'], ACCESS, FULL_SYNC_ID),
+    ).rejects.toBeInstanceOf(HttpException);
+    expect(writer.save).not.toHaveBeenCalled();
   });
 
   it('sincroniza un webhook SHARED sin marca de full sync', async () => {

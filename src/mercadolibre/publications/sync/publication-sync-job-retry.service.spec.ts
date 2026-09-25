@@ -20,7 +20,10 @@ function job(retryCount: number, status: MercadolibreSyncJob['status']) {
     scan_started: true,
     scroll_id: 'scroll-1',
     buffer_item_ids: ['MLA1'],
+    total_items: 1,
     processed_items: 0,
+    successful_items: 0,
+    failed_items: 0,
     products_saved: 0,
     children_saved: 0,
     errors_count: 0,
@@ -65,6 +68,8 @@ function setup(retryCount: number, failure: number | Error) {
     token as unknown as MercadolibreTokenService,
     source as unknown as PublicationSourceService,
     sync as unknown as PublicationSyncService,
+    { createMany: jest.fn() } as never,
+    { recordPossibleChange: jest.fn() } as never,
   );
   return { jobs, service };
 }

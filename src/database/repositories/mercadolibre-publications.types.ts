@@ -27,6 +27,7 @@ export type MercadolibreProductListRow = Pick<
   | 'price_from'
   | 'price_to'
   | 'stock_total'
+  | 'sold_total'
   | 'children_count'
   | 'permalink'
   | 'source_updated_at'
@@ -41,5 +42,13 @@ export type MercadolibreProductDetail = Omit<
 
 export type ProductsPage = {
   products: MercadolibreProductListRow[];
+  total: number;
+};
+
+export type GroupedProductListRow = MercadolibreProductListRow &
+  Pick<MercadolibreProductRow, 'shared_variations'>;
+
+export type GroupedProductsPage = {
+  products: GroupedProductListRow[];
   total: number;
 };

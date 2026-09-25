@@ -28,7 +28,10 @@ function job(
     scan_started: false,
     scroll_id: null,
     buffer_item_ids: [],
+    total_items: 100,
     processed_items: 0,
+    successful_items: 0,
+    failed_items: 0,
     products_saved: 0,
     children_saved: 0,
     errors_count: 0,
@@ -52,6 +55,7 @@ function setup() {
   const jobs = {
     create: jest.fn().mockResolvedValue(job()),
     findById: jest.fn().mockResolvedValue(job()),
+    findActiveBySellerId: jest.fn().mockResolvedValue(null),
     claim: jest
       .fn()
       .mockResolvedValue(job({ status: 'RUNNING', started_at: STARTED_AT })),
@@ -66,32 +70,72 @@ function setup() {
   };
   const source = {
     fetchNextScanPage: jest.fn(),
+    getTotalItemCount: jest.fn().mockResolvedValue(100),
   };
   const sync = {
     syncBatch: jest.fn(),
     finalizeFullSync: jest.fn().mockResolvedValue(undefined),
+  };
+  const syncErrors = { createMany: jest.fn().mockResolvedValue(undefined) };
+  const integrationEvents = {
+    recordPossibleChange: jest.fn().mockResolvedValue(undefined),
   };
   const service = new PublicationSyncJobService(
     jobs as unknown as MercadolibreSyncJobsRepository,
     token as unknown as MercadolibreTokenService,
     source as unknown as PublicationSourceService,
     sync as unknown as PublicationSyncService,
+    syncErrors as never,
+    integrationEvents as never,
   );
-  return { connection, jobs, service, source, sync, token };
+  return {
+    connection,
+    integrationEvents,
+    jobs,
+    service,
+    source,
+    sync,
+    syncErrors,
+    token,
+  };
 }
 describe('PublicationSyncJobService', () => {
-  it('crea el job sin consultar Mercado Libre ni pedir un token válido', async () => {
-    const { jobs, service, source, sync, token } = setup();
+  it('crea el job con el total real informado por Mercado Libre', async () => {
+    const { connection, jobs, service, source, sync, token } = setup();
     await expect(service.start(APP_USER_ID)).resolves.toEqual({
       ok: true,
       syncId: JOB_ID,
       status: 'PENDING',
+      created: true,
     });
     expect(token.getStoredConnection).toHaveBeenCalledWith(APP_USER_ID);
     expect(jobs.create).toHaveBeenCalledTimes(1);
-    expect(token.getValidAccessToken).not.toHaveBeenCalled();
+    expect(token.getValidAccessToken).toHaveBeenCalledWith(
+      APP_USER_ID,
+      connection,
+    );
+    expect(source.getTotalItemCount).toHaveBeenCalledWith(
+      SELLER_ID,
+      'private-token',
+    );
     expect(source.fetchNextScanPage).not.toHaveBeenCalled();
     expect(sync.syncBatch).not.toHaveBeenCalled();
+  });
+
+  it('reutiliza el full sync activo del seller y no crea otro', async () => {
+    const { jobs, service, source } = setup();
+    jobs.findActiveBySellerId.mockResolvedValue(
+      job({ status: 'RUNNING', started_at: STARTED_AT }),
+    );
+
+    await expect(service.start(APP_USER_ID)).resolves.toEqual({
+      ok: true,
+      syncId: JOB_ID,
+      status: 'RUNNING',
+      created: false,
+    });
+    expect(jobs.create).not.toHaveBeenCalled();
+    expect(source.getTotalItemCount).not.toHaveBeenCalled();
   });
 
   it('trae una página, procesa diez y luego consume el buffer', async () => {
@@ -103,6 +147,7 @@ describe('PublicationSyncJobService', () => {
       scroll_id: 'scroll-1',
       buffer_item_ids: ids.slice(10),
       processed_items: 10,
+      successful_items: 10,
       products_saved: 6,
       children_saved: 4,
       started_at: STARTED_AT,
@@ -111,6 +156,7 @@ describe('PublicationSyncJobService', () => {
       ...afterFirst,
       buffer_item_ids: ids.slice(20),
       processed_items: 20,
+      successful_items: 20,
       products_saved: 11,
       children_saved: 9,
     });
@@ -175,7 +221,7 @@ describe('PublicationSyncJobService', () => {
       FULL_SYNC_ID,
       STARTED_AT,
     );
-    expect(jobs.complete).toHaveBeenCalledWith(JOB_ID);
+    expect(jobs.complete).toHaveBeenCalledWith(JOB_ID, 'COMPLETED');
     expect(jobs.updateProgress).not.toHaveBeenCalled();
   });
 
@@ -217,25 +263,70 @@ describe('PublicationSyncJobService', () => {
     expect(jobs.fail).not.toHaveBeenCalled();
   });
 
+  it('finaliza al 100% con errores sin ejecutar cleanup destructivo', async () => {
+    const { jobs, service, source, sync } = setup();
+    const withErrors = job({
+      status: 'RUNNING',
+      scan_started: true,
+      scroll_id: null,
+      processed_items: 100,
+      successful_items: 96,
+      failed_items: 4,
+      errors_count: 4,
+      started_at: STARTED_AT,
+    });
+    jobs.findById.mockResolvedValue({ ...withErrors, status: 'PENDING' });
+    jobs.claim.mockResolvedValue(withErrors);
+    jobs.complete.mockResolvedValue({
+      ...withErrors,
+      status: 'COMPLETED_WITH_ERRORS',
+      finished_at: STARTED_AT,
+    });
+
+    await expect(service.processNext(APP_USER_ID, JOB_ID)).resolves.toEqual({
+      ok: true,
+      syncId: JOB_ID,
+      status: 'COMPLETED_WITH_ERRORS',
+      hasMore: false,
+    });
+    expect(source.fetchNextScanPage).not.toHaveBeenCalled();
+    expect(sync.finalizeFullSync).not.toHaveBeenCalled();
+    expect(jobs.complete).toHaveBeenCalledWith(JOB_ID, 'COMPLETED_WITH_ERRORS');
+  });
+
   it('acumula errores individuales y mantiene el job pendiente', async () => {
-    const { jobs, service, sync } = setup();
+    const { jobs, service, sync, syncErrors } = setup();
     const ids = itemIds(10);
     const current = job({
       buffer_item_ids: ids,
       errors_count: 2,
       processed_items: 20,
+      successful_items: 18,
+      failed_items: 2,
     });
     jobs.findById.mockResolvedValue(current);
     jobs.claim.mockResolvedValue(
       job({ ...current, status: 'RUNNING', started_at: STARTED_AT }),
     );
     jobs.updateProgress.mockResolvedValue(
-      job({ processed_items: 30, errors_count: 3, started_at: STARTED_AT }),
+      job({
+        processed_items: 30,
+        successful_items: 27,
+        failed_items: 3,
+        errors_count: 3,
+        started_at: STARTED_AT,
+      }),
     );
     sync.syncBatch.mockResolvedValue({
       productsSaved: 4,
       childrenSaved: 5,
-      errors: [{ itemId: 'MLA3', message: 'No encontrado' }],
+      errors: [
+        {
+          itemId: 'MLA3',
+          type: 'PUBLICATION_ERROR',
+          message: 'No encontrado',
+        },
+      ],
     });
     await expect(
       service.processNext(APP_USER_ID, JOB_ID),
@@ -246,9 +337,21 @@ describe('PublicationSyncJobService', () => {
     });
     expect(jobs.updateProgress).toHaveBeenCalledWith(
       JOB_ID,
-      expect.objectContaining({ processedItems: 30, errorsCount: 3 }),
+      expect.objectContaining({
+        processedItems: 30,
+        successfulItems: 27,
+        failedItems: 3,
+        errorsCount: 3,
+      }),
     );
     expect(jobs.fail).not.toHaveBeenCalled();
+    expect(syncErrors.createMany).toHaveBeenCalledWith([
+      expect.objectContaining({
+        sync_job_id: JOB_ID,
+        item_id: 'MLA3',
+        error_type: 'PUBLICATION_ERROR',
+      }),
+    ]);
   });
 
   it('rechaza jobs de otro vendedor antes de reclamarlos', async () => {
@@ -274,5 +377,31 @@ describe('PublicationSyncJobService', () => {
 
     expect(token.getStoredConnection).toHaveBeenCalledWith(OTHER_APP_USER_ID);
     expect(jobs.claim).not.toHaveBeenCalled();
+  });
+
+  it('informa 100% al procesar 250 items aunque existan errores', async () => {
+    const { jobs, service } = setup();
+    jobs.findById.mockResolvedValue(
+      job({
+        status: 'COMPLETED_WITH_ERRORS',
+        total_items: 250,
+        processed_items: 250,
+        successful_items: 243,
+        failed_items: 7,
+        errors_count: 7,
+      }),
+    );
+
+    await expect(service.getStatus(APP_USER_ID, JOB_ID)).resolves.toMatchObject(
+      {
+        status: 'COMPLETED_WITH_ERRORS',
+        totalItems: 250,
+        processedItems: 250,
+        successfulItems: 243,
+        failedItems: 7,
+        percent: 100,
+        hasMore: false,
+      },
+    );
   });
 });

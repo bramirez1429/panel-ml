@@ -106,7 +106,7 @@ describe('PublicationFamilySyncService', () => {
       FULL_SYNC_ID,
     );
 
-    expect(result.errors).toEqual([
+    expect(result.errors).toMatchObject([
       { itemId: 'MLA1', message: 'User Product inválido' },
     ]);
     expect(result.productsSaved).toBe(1);

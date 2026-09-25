@@ -22,9 +22,13 @@ import { MercadolibreController } from './mercadolibre.controller';
 import { MercadolibreModule } from './mercadolibre.module';
 import { WebhookController } from './webhook/webhook.controller';
 import { ProductRankingController } from './direct-publications/product-ranking/product-ranking.controller';
+import { StockBulkController } from './direct-publications/stock-bulk/stock-bulk.controller';
+import { PublicationsController as SnapshotPublicationsController } from './publications/publications.controller';
+import { PublicationSyncInternalController } from './publications/sync/publication-sync-internal.controller';
 
 const USER_SCOPED_CONTROLLERS = [
   PublicationsController,
+  SnapshotPublicationsController,
   FamiliesController,
   FamilyController,
   StockController,
@@ -42,6 +46,7 @@ const USER_SCOPED_CONTROLLERS = [
   PromotionsCatalogController,
   SimilarPublicationController,
   ProductRankingController,
+  StockBulkController,
 ] as const;
 
 function guardsFor(controller: object): unknown[] {
@@ -66,7 +71,8 @@ describe('guards de controllers de Mercado Libre', () => {
     const directControllers = registered.filter(
       (controller) =>
         controller !== MercadolibreController &&
-        controller !== WebhookController,
+        controller !== WebhookController &&
+        controller !== PublicationSyncInternalController,
     );
 
     expect(directControllers).toEqual([...USER_SCOPED_CONTROLLERS]);

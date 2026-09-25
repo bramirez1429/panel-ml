@@ -1,10 +1,13 @@
-import { HttpException } from '@nestjs/common';
 import {
   MercadoLibrePublication,
   PublicationSourceError,
   ResolvedVariantPublication,
 } from '../publication.types';
 import { PublicationSyncError } from './publication-sync.types';
+import {
+  classifyProviderResponse,
+  classifySyncError,
+} from './publication-sync-error-classifier';
 
 /** Ejecuta tareas con una concurrencia máxima. */
 export async function mapWithConcurrency<T, R>(
@@ -79,6 +82,7 @@ export function filterPublicationsBySeller(
     }
     errors.push({
       itemId,
+      type: 'VALIDATION_ERROR',
       message: 'La publicaci\u00f3n no pertenece al vendedor conectado',
     });
   }
@@ -89,9 +93,12 @@ export function filterPublicationsBySeller(
 export function sourceErrorToSyncError(
   error: PublicationSourceError,
 ): PublicationSyncError {
+  const classified = classifyProviderResponse(error.status, error.body);
   return {
     itemId: error.itemId,
-    message: `Mercado Libre respondió ${error.status}: ${externalMessage(error.body)}`,
+    type: classified.type,
+    code: classified.code,
+    message: classified.message,
   };
 }
 
@@ -100,23 +107,11 @@ export function exceptionToSyncError(
   itemId: string,
   error: unknown,
 ): PublicationSyncError {
-  if (error instanceof HttpException) {
-    return { itemId, message: externalMessage(error.getResponse()) };
-  }
-  if (error instanceof Error && error.message.trim()) {
-    return { itemId, message: error.message.slice(0, 300) };
-  }
-  return { itemId, message: 'No se pudo procesar la publicación' };
-}
-
-/** Extrae un mensaje externo breve y seguro. */
-function externalMessage(value: unknown): string {
-  if (typeof value === 'string' && value.trim()) return value.slice(0, 300);
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return 'Error externo sin detalle';
-  }
-  const message = (value as Record<string, unknown>).message;
-  return typeof message === 'string' && message.trim()
-    ? message.slice(0, 300)
-    : 'Error externo sin detalle';
+  const classified = classifySyncError(error);
+  return {
+    itemId,
+    type: classified.type,
+    code: classified.code,
+    message: classified.message,
+  };
 }

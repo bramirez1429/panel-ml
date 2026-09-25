@@ -3,11 +3,9 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { MercadolibreTokenService } from '../../auth/mercadolibre-token.service';
 
 import { ItemsService } from '../items/items.service';
-import { FamiliesService } from '../families/families.service';
 import { PublicationsSearchService } from './publications-search.service';
 import { PublicationsMapper } from './publications.mapper';
-import { PublicationsGlobalSearchService } from './publications-global-search.service';
-import { hasTitleSearch } from './publication-title-search.helpers';
+import { PublicationsReadSource } from './publications-read-source';
 
 @Injectable()
 export class PublicationsService {
@@ -15,18 +13,18 @@ export class PublicationsService {
     private readonly tokenService: MercadolibreTokenService,
     private readonly searchService: PublicationsSearchService,
     private readonly itemsService: ItemsService,
-    private readonly familiesService: FamiliesService,
-    private readonly globalSearchService: PublicationsGlobalSearchService,
+    private readonly readSource: PublicationsReadSource,
   ) {}
 
   /** Listado directo sin agrupar. */
   async getPage(userId: string, limit = 20, offset = 0) {
     this.validatePage(limit, offset);
 
-    const connection =
-      await this.tokenService.getSharedStoredConnection();
-    const accessToken =
-      await this.tokenService.getSharedValidAccessToken(connection);
+    const connection = await this.tokenService.getStoredConnection(userId);
+    const accessToken = await this.tokenService.getValidAccessToken(
+      userId,
+      connection,
+    );
 
     const search = await this.searchService.searchPage(
       connection.seller_id,
@@ -54,65 +52,7 @@ export class PublicationsService {
     search?: string,
   ) {
     this.validateLimit(limit);
-
-    const connection =
-      await this.tokenService.getSharedStoredConnection();
-    const accessToken =
-      await this.tokenService.getSharedValidAccessToken(connection);
-
-    if (hasTitleSearch(search)) {
-      return this.globalSearchService.search(
-        userId,
-        connection.seller_id,
-        accessToken,
-        search,
-        limit,
-        cursor,
-      );
-    }
-
-    const scan = await this.searchService.scanPage(
-      connection.seller_id,
-      accessToken,
-      limit,
-      cursor,
-    );
-
-    const ids = scan.results ?? [];
-
-    if (!ids.length) {
-      return {
-        done: true,
-        nextCursor: null,
-        rawItemsCount: 0,
-        productsCount: 0,
-        products: [],
-      };
-    }
-
-    const items = await this.itemsService.getMany(ids, accessToken);
-
-    const shared = items
-      .filter((item) => PublicationsMapper.getModel(item) === 'SHARED')
-      .map((item) => PublicationsMapper.toSharedProduct(item));
-
-    const familyIds = PublicationsMapper.getFamilyIds(items);
-
-    const families = [];
-
-    for (const familyId of familyIds) {
-      families.push(
-        await this.familiesService.getListingSummary(userId, familyId),
-      );
-    }
-
-    return {
-      done: false,
-      nextCursor: scan.scroll_id ?? cursor ?? null,
-      rawItemsCount: items.length,
-      productsCount: shared.length + families.length,
-      products: [...shared, ...families],
-    };
+    return this.readSource.getGrouped(userId, limit, cursor, search);
   }
 
   private validateLimit(limit: number) {

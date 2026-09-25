@@ -65,6 +65,12 @@ export class PublicationNormalizerService {
               0,
             )
           : quantityOrZero(publication.available_quantity),
+        sold_total: variations.length
+          ? variations.reduce(
+              (total, variation) => total + variation.soldQuantity,
+              0,
+            )
+          : quantityOrZero(publication.sold_quantity),
         children_count: 0,
         permalink: textOrNull(publication.permalink),
         shared_variations: variations,
@@ -114,6 +120,10 @@ export class PublicationNormalizerService {
         price_to: range.maximum,
         stock_total: children.reduce(
           (total, child) => total + (child.available_quantity ?? 0),
+          0,
+        ),
+        sold_total: children.reduce(
+          (total, child) => total + (child.sold_quantity ?? 0),
           0,
         ),
         children_count: children.length,

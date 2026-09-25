@@ -2,6 +2,7 @@ import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { SupabaseService } from '../supabase.service';
 import {
   MercadolibreProductDetail,
+  GroupedProductsPage,
   MercadolibreProductRow,
   MercadolibreProductUpsert,
   ProductsPage,
@@ -11,9 +12,11 @@ const WRITE_CHUNK_SIZE = 200;
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const LIST_COLUMNS =
-  'id,seller_id,external_key,model,family_id,parent_item_id,family_name,title,thumbnail,status,category_id,currency_id,price_from,price_to,stock_total,children_count,permalink,source_updated_at,last_synced_at,updated_at';
+  'id,seller_id,external_key,model,family_id,parent_item_id,family_name,title,thumbnail,status,category_id,currency_id,price_from,price_to,stock_total,sold_total,children_count,permalink,source_updated_at,last_synced_at,updated_at';
 const DETAIL_COLUMNS =
-  'id,seller_id,external_key,model,family_id,parent_item_id,family_name,title,thumbnail,status,category_id,currency_id,price_from,price_to,stock_total,children_count,permalink,source_updated_at,last_synced_at,updated_at,shared_variations,created_at';
+  'id,seller_id,external_key,model,family_id,parent_item_id,family_name,title,thumbnail,status,category_id,currency_id,price_from,price_to,stock_total,sold_total,children_count,permalink,source_updated_at,last_synced_at,updated_at,shared_variations,created_at';
+const GROUPED_COLUMNS =
+  'id,seller_id,external_key,model,family_id,parent_item_id,family_name,title,thumbnail,status,category_id,currency_id,price_from,price_to,stock_total,sold_total,children_count,permalink,source_updated_at,last_synced_at,updated_at,shared_variations';
 
 @Injectable()
 export class MercadolibreProductsRepository {
@@ -42,6 +45,32 @@ export class MercadolibreProductsRepository {
       products: data,
       total: count,
     };
+  }
+
+  /** Lee una página agrupada sin cargar children relacionales. */
+  async findGroupedPage(
+    sellerId: number,
+    offset: number,
+    limit: number,
+    searchTokens: readonly string[],
+  ): Promise<GroupedProductsPage> {
+    let query = this.supabaseService
+      .getClient()
+      .from('mercadolibre_products')
+      .select(GROUPED_COLUMNS, { count: 'exact' })
+      .eq('seller_id', sellerId);
+
+    for (const token of searchTokens) {
+      query = query.ilike('title', `%${token}%`);
+    }
+
+    const { data, error, count } = await query
+      .order('updated_at', { ascending: false })
+      .order('id', { ascending: true })
+      .range(offset, offset + limit - 1);
+
+    if (error || !data || count === null) this.readError();
+    return { products: data, total: count };
   }
 
   /** Busca un producto por UUID dentro del vendedor. */

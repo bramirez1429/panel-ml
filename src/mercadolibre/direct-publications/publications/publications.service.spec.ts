@@ -4,6 +4,8 @@ import { FamiliesService } from '../families/families.service';
 import { ItemsService } from '../items/items.service';
 import { PublicationsSearchService } from './publications-search.service';
 import { PublicationsGlobalSearchService } from './publications-global-search.service';
+import { MercadoLibrePublicationsReadSource } from './mercadolibre-publications-read-source';
+import { PublicationsReadSource } from './publications-read-source';
 import { PublicationsService } from './publications.service';
 
 const USER_A = '11111111-1111-4111-8111-111111111111';
@@ -51,8 +53,7 @@ describe('Direct PublicationsService', () => {
       tokenService as unknown as MercadolibreTokenService,
       searchService as unknown as PublicationsSearchService,
       itemsService as unknown as ItemsService,
-      {} as FamiliesService,
-      {} as PublicationsGlobalSearchService,
+      {} as PublicationsReadSource,
     );
 
     await service.getPage(USER_A);
@@ -99,12 +100,18 @@ describe('Direct PublicationsService', () => {
     };
     const itemsService = { getMany: jest.fn() };
     const globalSearch = { search: jest.fn() };
-    const service = new PublicationsService(
+    const readSource = new MercadoLibrePublicationsReadSource(
       tokenService as unknown as MercadolibreTokenService,
       searchService as unknown as PublicationsSearchService,
       itemsService as unknown as ItemsService,
       {} as FamiliesService,
       globalSearch as unknown as PublicationsGlobalSearchService,
+    );
+    const service = new PublicationsService(
+      tokenService as unknown as MercadolibreTokenService,
+      searchService as unknown as PublicationsSearchService,
+      itemsService as unknown as ItemsService,
+      readSource,
     );
 
     await expect(
@@ -141,12 +148,18 @@ describe('Direct PublicationsService', () => {
       products: [{ key: 'item:MLA1' }],
     };
     const globalSearch = { search: jest.fn().mockResolvedValue(expected) };
-    const service = new PublicationsService(
+    const readSource = new MercadoLibrePublicationsReadSource(
       tokenService as unknown as MercadolibreTokenService,
       searchService as unknown as PublicationsSearchService,
       {} as ItemsService,
       {} as FamiliesService,
       globalSearch as unknown as PublicationsGlobalSearchService,
+    );
+    const service = new PublicationsService(
+      tokenService as unknown as MercadolibreTokenService,
+      searchService as unknown as PublicationsSearchService,
+      {} as ItemsService,
+      readSource,
     );
 
     await expect(

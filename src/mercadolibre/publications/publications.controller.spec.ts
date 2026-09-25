@@ -2,7 +2,9 @@ import type { SafeUser } from '../../auth/domain/auth.models';
 import { PublicationsController } from './publications.controller';
 import { PublicationsService } from './publications.service';
 import { PublicationSyncJobService } from './sync/publication-sync-job.service';
-import { PublicationSyncQueueService } from './sync/publication-sync-queue.service';
+import { PublicationSyncDispatcherService } from './sync/publication-sync-dispatcher.service';
+import { PublicationSyncRetryService } from './sync/publication-sync-retry.service';
+import { PublicationSyncOverviewService } from './sync/publication-sync-overview.service';
 
 const SYNC_ID = '11111111-1111-4111-8111-111111111111';
 const APP_USER_ID = '22222222-2222-4222-8222-222222222222';
@@ -23,7 +25,9 @@ describe('PublicationsController', () => {
     controller = new PublicationsController(
       { list, findOne } as unknown as PublicationsService,
       { start, processNext, getStatus } as unknown as PublicationSyncJobService,
-      { enqueue } as unknown as PublicationSyncQueueService,
+      { dispatch: enqueue } as unknown as PublicationSyncDispatcherService,
+      {} as PublicationSyncRetryService,
+      {} as PublicationSyncOverviewService,
     );
   });
 
@@ -47,7 +51,12 @@ describe('PublicationsController', () => {
   });
 
   it('inicia, encola y mantiene batch manual y estado', async () => {
-    const started = { ok: true, syncId: SYNC_ID, status: 'PENDING' };
+    const started = {
+      ok: true,
+      syncId: SYNC_ID,
+      status: 'PENDING',
+      created: true,
+    };
     const pending = { ...started, hasMore: true };
     start.mockResolvedValue(started);
     processNext.mockResolvedValue(pending);

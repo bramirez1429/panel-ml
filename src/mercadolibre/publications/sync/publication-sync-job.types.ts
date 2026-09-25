@@ -3,7 +3,8 @@ import { MercadolibreSyncJob } from '../../../database/repositories/mercadolibre
 export type SyncJobStartResponse = {
   ok: true;
   syncId: string;
-  status: 'PENDING';
+  status: 'PENDING' | 'RUNNING';
+  created: boolean;
 };
 
 export type SyncJobPendingResponse = {
@@ -12,6 +13,10 @@ export type SyncJobPendingResponse = {
   status: 'PENDING';
   processedThisBatch: number;
   processedItems: number;
+  totalItems: number;
+  successfulItems: number;
+  failedItems: number;
+  percent: number;
   productsSaved: number;
   childrenSaved: number;
   errorsCount: number;
@@ -21,7 +26,7 @@ export type SyncJobPendingResponse = {
 export type SyncJobCompletedResponse = {
   ok: true;
   syncId: string;
-  status: 'COMPLETED';
+  status: 'COMPLETED' | 'COMPLETED_WITH_ERRORS';
   hasMore: false;
 };
 
@@ -32,7 +37,11 @@ export type SyncJobStatusResponse = {
   ok: true;
   syncId: string;
   status: MercadolibreSyncJob['status'];
+  totalItems: number;
   processedItems: number;
+  successfulItems: number;
+  failedItems: number;
+  percent: number;
   productsSaved: number;
   childrenSaved: number;
   errorsCount: number;

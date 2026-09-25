@@ -1,9 +1,11 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { MercadolibreChildrenRepository } from '../../database/repositories/mercadolibre-children.repository';
 import { MercadolibreProductsRepository } from '../../database/repositories/mercadolibre-products.repository';
+import { MercadolibreSyncErrorsRepository } from '../../database/repositories/mercadolibre-sync-errors.repository';
 import { MercadolibreTokenService } from '../auth/mercadolibre-token.service';
 import { MercadolibreApiService } from '../shared/mercadolibre-api.service';
 import { PublicationsService } from './publications.service';
+import { PublicationSyncQueueService } from './sync/publication-sync-queue.service';
 
 const PRODUCT_ID = '123e4567-e89b-42d3-a456-426614174000';
 const APP_USER_ID = '11111111-1111-4111-8111-111111111111';
@@ -27,6 +29,8 @@ describe('PublicationsService', () => {
   const updateChildPrice = jest.fn();
 
   const apiPut = jest.fn();
+  const createSyncErrors = jest.fn();
+  const enqueueRepair = jest.fn();
 
   let service: PublicationsService;
 
@@ -36,6 +40,8 @@ describe('PublicationsService', () => {
     getStoredConnection.mockResolvedValue(connection);
     getValidAccessToken.mockResolvedValue(connection.access_token);
     apiPut.mockResolvedValue({});
+    createSyncErrors.mockResolvedValue(undefined);
+    enqueueRepair.mockResolvedValue(undefined);
 
     service = new PublicationsService(
       {
@@ -57,6 +63,12 @@ describe('PublicationsService', () => {
       {
         put: apiPut,
       } as unknown as MercadolibreApiService,
+      {
+        createMany: createSyncErrors,
+      } as unknown as MercadolibreSyncErrorsRepository,
+      {
+        enqueueRepair,
+      } as unknown as PublicationSyncQueueService,
     );
   });
 
@@ -234,5 +246,32 @@ describe('PublicationsService', () => {
 
     expect(updateProductPrice).not.toHaveBeenCalled();
     expect(updateChildPrice).not.toHaveBeenCalled();
+  });
+
+  it('distingue ML actualizado de mirror pendiente y agenda reparación', async () => {
+    findById.mockResolvedValue({
+      id: PRODUCT_ID,
+      model: 'SHARED',
+      parent_item_id: 'MLA111111111',
+    });
+    updateProductPrice.mockRejectedValue(new Error('Supabase caído'));
+
+    await expect(
+      service.updatePrice(APP_USER_ID, PRODUCT_ID, 45000),
+    ).resolves.toMatchObject({
+      providerUpdated: true,
+      mirrorUpdated: false,
+      itemId: 'MLA111111111',
+      warning:
+        'Mercado Libre fue actualizado, pero la copia local quedó pendiente de sincronización.',
+    });
+    expect(apiPut).toHaveBeenCalledTimes(1);
+    expect(createSyncErrors).toHaveBeenCalledWith([
+      expect.objectContaining({
+        error_type: 'MIRROR_WRITE_FAILED',
+        item_id: 'MLA111111111',
+      }),
+    ]);
+    expect(enqueueRepair).toHaveBeenCalledWith(123, 'MLA111111111');
   });
 });

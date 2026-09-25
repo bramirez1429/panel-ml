@@ -37,6 +37,19 @@ export class PublicationSourceService {
   /** Prepara el acceso compartido a Mercado Libre. */
   constructor(private readonly apiService: MercadolibreApiService) {}
 
+  /** Obtiene el total oficial informado por la búsqueda del seller. */
+  async getTotalItemCount(
+    sellerId: number,
+    accessToken: string,
+  ): Promise<number> {
+    const query = new URLSearchParams({ limit: '1', offset: '0' });
+    const data = await this.apiService.get<unknown>(
+      `/users/${sellerId}/items/search?${query.toString()}`,
+      accessToken,
+    );
+    return parseSearchTotal(data);
+  }
+
   /** Obtiene una sola página del scan de Mercado Libre. */
   async fetchNextScanPage(
     sellerId: number,

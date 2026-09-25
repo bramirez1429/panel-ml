@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { send } from '@vercel/queue';
 import { PublicationSyncJobService } from './publication-sync-job.service';
+import { PublicationSyncService } from './publication-sync.service';
 import {
   PUBLICATION_SYNC_QUEUE_TOPIC,
   PublicationSyncQueueService,
@@ -19,14 +20,31 @@ const sendMock = jest.mocked(send);
 
 describe('PublicationSyncQueueService', () => {
   const processNext = jest.fn();
+  const syncItem = jest.fn();
   let service: PublicationSyncQueueService;
 
   beforeEach(() => {
     jest.resetAllMocks();
     sendMock.mockResolvedValue({ messageId: 'message-id' });
-    service = new PublicationSyncQueueService({
-      processNext,
-    } as unknown as PublicationSyncJobService);
+    service = new PublicationSyncQueueService(
+      {
+        processNext,
+      } as unknown as PublicationSyncJobService,
+      {
+        syncItem,
+      } as unknown as PublicationSyncService,
+    );
+  });
+
+  it('repara el mirror leyendo el item sin repetir una escritura', async () => {
+    await service.consume({
+      kind: 'REPAIR_ITEM',
+      sellerId: 123,
+      itemId: 'MLA123',
+    });
+
+    expect(syncItem).toHaveBeenCalledWith('MLA123', 123);
+    expect(processNext).not.toHaveBeenCalled();
   });
 
   afterEach(() => jest.restoreAllMocks());

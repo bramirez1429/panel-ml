@@ -2,9 +2,13 @@ import {
   MercadoLibrePublication,
   NormalizedPublicationBundle,
 } from '../publication.types';
+import type { SyncErrorType } from '../../../database/database.types';
 
 export type PublicationSyncError = {
   itemId: string;
+  familyId?: string | null;
+  type: SyncErrorType;
+  code?: string | null;
   message: string;
 };
 

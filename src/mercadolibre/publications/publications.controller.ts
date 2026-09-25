@@ -14,7 +14,9 @@ import { AccessTokenGuard } from '../../auth/presentation/access-token.guard';
 import { CurrentUser } from '../../auth/presentation/current-user.decorator';
 import { PublicationsService } from './publications.service';
 import { PublicationSyncJobService } from './sync/publication-sync-job.service';
-import { PublicationSyncQueueService } from './sync/publication-sync-queue.service';
+import { PublicationSyncDispatcherService } from './sync/publication-sync-dispatcher.service';
+import { PublicationSyncRetryService } from './sync/publication-sync-retry.service';
+import { PublicationSyncOverviewService } from './sync/publication-sync-overview.service';
 
 @Controller('mercadolibre/publicaciones')
 @UseGuards(AccessTokenGuard)
@@ -23,7 +25,9 @@ export class PublicationsController {
   constructor(
     private readonly publicationsService: PublicationsService,
     private readonly syncJobService: PublicationSyncJobService,
-    private readonly syncQueue: PublicationSyncQueueService,
+    private readonly syncDispatcher: PublicationSyncDispatcherService,
+    private readonly syncRetry: PublicationSyncRetryService,
+    private readonly syncOverview: PublicationSyncOverviewService,
   ) {}
 
   /** Crea una sincronización y agenda su primer bloque. */
@@ -31,8 +35,49 @@ export class PublicationsController {
   async startSync(@CurrentUser() user: SafeUser) {
     const result = await this.syncJobService.start(user.id);
 
-    await this.syncQueue.enqueue(user.id, result.syncId);
+    if (result.created) {
+      await this.syncDispatcher.dispatch(user.id, result.syncId);
+    }
     return result;
+  }
+
+  @Get('sync/overview')
+  overview(@CurrentUser() user: SafeUser) {
+    return this.syncOverview.getOverview(user.id);
+  }
+
+  @Get('sync/:syncId/errors')
+  listErrors(
+    @CurrentUser() user: SafeUser,
+    @Param('syncId', ParseUUIDPipe) syncId: string,
+  ) {
+    return this.syncRetry.listOpen(user.id, syncId);
+  }
+
+  @Post('sync/:syncId/errors/retry-selected')
+  retrySelected(
+    @CurrentUser() user: SafeUser,
+    @Param('syncId', ParseUUIDPipe) syncId: string,
+    @Body() body: { errorIds?: string[] },
+  ) {
+    return this.syncRetry.retrySelected(user.id, syncId, body.errorIds ?? []);
+  }
+
+  @Post('sync/:syncId/errors/retry-all')
+  retryAll(
+    @CurrentUser() user: SafeUser,
+    @Param('syncId', ParseUUIDPipe) syncId: string,
+  ) {
+    return this.syncRetry.retryAll(user.id, syncId);
+  }
+
+  @Post('sync/:syncId/errors/:errorId/retry')
+  retryOne(
+    @CurrentUser() user: SafeUser,
+    @Param('syncId', ParseUUIDPipe) syncId: string,
+    @Param('errorId', ParseUUIDPipe) errorId: string,
+  ) {
+    return this.syncRetry.retryOne(user.id, syncId, errorId);
   }
 
   /** Procesa manualmente un único bloque para debugging. */

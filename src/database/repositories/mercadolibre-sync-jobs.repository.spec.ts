@@ -19,7 +19,10 @@ function jobRow(status: SyncJobRow['status'] = 'PENDING'): SyncJobRow {
     scan_started: false,
     scroll_id: null,
     buffer_item_ids: [],
+    total_items: 100,
     processed_items: 0,
+    successful_items: 0,
+    failed_items: 0,
     products_saved: 0,
     children_saved: 0,
     errors_count: 0,
@@ -76,6 +79,7 @@ describe('MercadolibreSyncJobsRepository', () => {
       id: JOB_ID,
       sellerId: 123,
       fullSyncId: FULL_SYNC_ID,
+      totalItems: 100,
     });
     const found = await repository.findById(JOB_ID);
 
@@ -86,6 +90,7 @@ describe('MercadolibreSyncJobsRepository', () => {
       id: JOB_ID,
       seller_id: 123,
       full_sync_id: FULL_SYNC_ID,
+      total_items: 100,
     });
     expect(eq).toHaveBeenCalledWith('id', JOB_ID);
   });
@@ -124,6 +129,8 @@ describe('MercadolibreSyncJobsRepository', () => {
       scroll_id: 'scroll-2',
       buffer_item_ids: ['MLA11'],
       processed_items: 10,
+      successful_items: 9,
+      failed_items: 1,
       products_saved: 4,
       children_saved: 6,
       errors_count: 1,
@@ -135,6 +142,8 @@ describe('MercadolibreSyncJobsRepository', () => {
       scrollId: 'scroll-2',
       bufferItemIds: ['MLA11'],
       processedItems: 10,
+      successfulItems: 9,
+      failedItems: 1,
       productsSaved: 4,
       childrenSaved: 6,
       errorsCount: 1,
@@ -147,6 +156,8 @@ describe('MercadolibreSyncJobsRepository', () => {
         scroll_id: 'scroll-2',
         buffer_item_ids: ['MLA11'],
         processed_items: 10,
+        successful_items: 9,
+        failed_items: 1,
         products_saved: 4,
         children_saved: 6,
         errors_count: 1,

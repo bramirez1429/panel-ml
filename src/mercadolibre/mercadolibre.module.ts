@@ -1,10 +1,13 @@
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module';
 import { MercadolibreSaleIngestionService } from '../sales/mercadolibre-sale-ingestion.service';
 import { SalesPersistenceModule } from '../sales/sales-persistence.module';
 import { MercadolibreChildrenRepository } from '../database/repositories/mercadolibre-children.repository';
 import { MercadolibreProductsRepository } from '../database/repositories/mercadolibre-products.repository';
 import { MercadolibreSyncJobsRepository } from '../database/repositories/mercadolibre-sync-jobs.repository';
+import { MercadolibreSyncErrorsRepository } from '../database/repositories/mercadolibre-sync-errors.repository';
+import { MercadolibreIntegrationEventsRepository } from '../database/repositories/mercadolibre-integration-events.repository';
 import { SupabaseService } from '../database/supabase.service';
 import { MercadolibreAuthService } from './auth/mercadolibre-auth.service';
 import { MercadolibreTokenService } from './auth/mercadolibre-token.service';
@@ -12,8 +15,13 @@ import { MercadolibreController } from './mercadolibre.controller';
 import { PublicationModelDetectorService } from './publications/normalization/publication-model-detector.service';
 import { PublicationNormalizerService } from './publications/normalization/publication-normalizer.service';
 import { PublicationsController } from './direct-publications/publications/publications.controller';
-// import { PublicationsService } from './publications/publications.service'; es de la parte vieja con supabase
+import { PublicationsController as SnapshotPublicationsController } from './publications/publications.controller';
+import { PublicationsService as SnapshotPublicationsService } from './publications/publications.service';
 import { PublicationsService } from './direct-publications/publications/publications.service';
+import { MercadoLibrePublicationsReadSource } from './direct-publications/publications/mercadolibre-publications-read-source';
+import { PublicationsReadSource } from './direct-publications/publications/publications-read-source';
+import { SupabasePublicationsReadSource } from './direct-publications/publications/supabase-publications-read-source';
+import { selectPublicationsReadSource } from './direct-publications/publications/publications-read-source.selector';
 import { PublicationSourceService } from './publications/sync/publication-source.service';
 import { PublicationFamilySyncService } from './publications/sync/publication-family-sync.service';
 import { PublicationSyncPreparerService } from './publications/sync/publication-sync-preparer.service';
@@ -21,6 +29,13 @@ import { PublicationSyncJobService } from './publications/sync/publication-sync-
 import { PublicationSyncQueueService } from './publications/sync/publication-sync-queue.service';
 import { PublicationSyncWriterService } from './publications/sync/publication-sync-writer.service';
 import { PublicationSyncService } from './publications/sync/publication-sync.service';
+import { PublicationSyncRetryService } from './publications/sync/publication-sync-retry.service';
+import { PublicationSyncOverviewService } from './publications/sync/publication-sync-overview.service';
+import { PublicationIntegrationEventService } from './publications/sync/publication-integration-event.service';
+import { PublicationAutomaticSyncService } from './publications/sync/publication-automatic-sync.service';
+import { PublicationSyncDispatcherService } from './publications/sync/publication-sync-dispatcher.service';
+import { PublicationSyncLocalDispatcher } from './publications/sync/publication-sync-local.dispatcher';
+import { PublicationSyncInternalController } from './publications/sync/publication-sync-internal.controller';
 import { MercadolibreApiService } from './shared/mercadolibre-api.service';
 import { UserProductFamilyService } from './user-products/user-product-family.service';
 import { UserProductsService } from './user-products/user-products.service';
@@ -110,6 +125,8 @@ import { WorkspaceModule } from '../workspaces/workspace.module';
   controllers: [
     MercadolibreController,
     PublicationsController,
+    SnapshotPublicationsController,
+    PublicationSyncInternalController,
     WebhookController,
     FamiliesController,
     FamilyController,
@@ -135,6 +152,8 @@ import { WorkspaceModule } from '../workspaces/workspace.module';
     MercadolibreProductsRepository,
     MercadolibreChildrenRepository,
     MercadolibreSyncJobsRepository,
+    MercadolibreSyncErrorsRepository,
+    MercadolibreIntegrationEventsRepository,
     MercadolibreApiService,
     MercadolibreAuthService,
     MercadolibreTokenService,
@@ -149,7 +168,35 @@ import { WorkspaceModule } from '../workspaces/workspace.module';
     PublicationSyncService,
     PublicationSyncJobService,
     PublicationSyncQueueService,
+    PublicationSyncLocalDispatcher,
+    PublicationSyncDispatcherService,
+    PublicationSyncRetryService,
+    PublicationSyncOverviewService,
+    PublicationIntegrationEventService,
+    PublicationAutomaticSyncService,
+    MercadoLibrePublicationsReadSource,
+    SupabasePublicationsReadSource,
+    {
+      provide: PublicationsReadSource,
+      inject: [
+        ConfigService,
+        MercadoLibrePublicationsReadSource,
+        SupabasePublicationsReadSource,
+      ],
+      useFactory: (
+        config: ConfigService,
+        mercadoLibre: MercadoLibrePublicationsReadSource,
+        supabase: SupabasePublicationsReadSource,
+      ): PublicationsReadSource => {
+        return selectPublicationsReadSource(
+          config.get<string>('PUBLICATIONS_READ_SOURCE'),
+          mercadoLibre,
+          supabase,
+        );
+      },
+    },
     PublicationsService,
+    SnapshotPublicationsService,
     WebhookService,
     MercadolibreSaleIngestionService,
     FamiliesService,

@@ -34,10 +34,14 @@ export class MercadolibreSyncJobsRepository {
         id: input.id,
         seller_id: input.sellerId,
         full_sync_id: input.fullSyncId,
+        total_items: input.totalItems,
       })
       .select('*')
       .single();
 
+    if (isUniqueViolation(error)) {
+      throw new ConflictException('Ya existe una sincronización activa');
+    }
     if (error) this.writeError(error);
     if (!data) this.writeError('Supabase no devolvió el job creado');
     return this.mapJob(data);
@@ -52,6 +56,40 @@ export class MercadolibreSyncJobsRepository {
       .eq('id', id)
       .maybeSingle();
 
+    if (error) this.readError(error);
+    return data ? this.mapJob(data) : null;
+  }
+
+  async findActiveBySellerId(
+    sellerId: number,
+  ): Promise<MercadolibreSyncJob | null> {
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('mercadolibre_sync_jobs')
+      .select('*')
+      .eq('seller_id', sellerId)
+      .in('status', ['PENDING', 'RUNNING'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) this.readError(error);
+    return data ? this.mapJob(data) : null;
+  }
+
+  async findLatestBySellerId(
+    sellerId: number,
+    statuses?: readonly MercadolibreSyncJob['status'][],
+  ): Promise<MercadolibreSyncJob | null> {
+    let query = this.supabaseService
+      .getClient()
+      .from('mercadolibre_sync_jobs')
+      .select('*')
+      .eq('seller_id', sellerId);
+    if (statuses?.length) query = query.in('status', [...statuses]);
+    const { data, error } = await query
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
     if (error) this.readError(error);
     return data ? this.mapJob(data) : null;
   }
@@ -92,6 +130,8 @@ export class MercadolibreSyncJobsRepository {
         scroll_id: input.scrollId,
         buffer_item_ids: input.bufferItemIds,
         processed_items: input.processedItems,
+        successful_items: input.successfulItems,
+        failed_items: input.failedItems,
         products_saved: input.productsSaved,
         children_saved: input.childrenSaved,
         errors_count: input.errorsCount,
@@ -131,13 +171,16 @@ export class MercadolibreSyncJobsRepository {
   }
 
   /** Marca el trabajo como completado. */
-  async complete(id: string): Promise<MercadolibreSyncJob> {
+  async complete(
+    id: string,
+    status: 'COMPLETED' | 'COMPLETED_WITH_ERRORS' = 'COMPLETED',
+  ): Promise<MercadolibreSyncJob> {
     const timestamp = new Date().toISOString();
     const { data, error } = await this.supabaseService
       .getClient()
       .from('mercadolibre_sync_jobs')
       .update({
-        status: 'COMPLETED',
+        status,
         retry_count: 0,
         finished_at: timestamp,
         last_error: null,
@@ -148,6 +191,48 @@ export class MercadolibreSyncJobsRepository {
       .select('*')
       .maybeSingle();
 
+    return this.requireTransition(data, error);
+  }
+
+  async resolveRetriedItem(
+    id: string,
+    resolvedErrors = 1,
+  ): Promise<MercadolibreSyncJob> {
+    const job = await this.findById(id);
+    if (!job || job.failed_items < 1) {
+      throw new ConflictException('El job no tiene errores para resolver');
+    }
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('mercadolibre_sync_jobs')
+      .update({
+        successful_items: job.successful_items + 1,
+        failed_items: job.failed_items - 1,
+        errors_count: Math.max(job.errors_count - resolvedErrors, 0),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .select('*')
+      .maybeSingle();
+    if (error || !data) this.writeError(error);
+    return this.mapJob(data);
+  }
+
+  async completeAfterRetries(id: string): Promise<MercadolibreSyncJob> {
+    const timestamp = new Date().toISOString();
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('mercadolibre_sync_jobs')
+      .update({
+        status: 'COMPLETED',
+        finished_at: timestamp,
+        last_error: null,
+        updated_at: timestamp,
+      })
+      .eq('id', id)
+      .eq('status', 'COMPLETED_WITH_ERRORS')
+      .select('*')
+      .maybeSingle();
     return this.requireTransition(data, error);
   }
 
@@ -222,4 +307,13 @@ export class MercadolibreSyncJobsRepository {
       'No se pudo actualizar la sincronización de Mercado Libre',
     );
   }
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === '23505'
+  );
 }

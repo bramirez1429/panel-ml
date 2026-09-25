@@ -199,6 +199,7 @@ type ProductRow = {
   price_from: number | null;
   price_to: number | null;
   stock_total: number;
+  sold_total: number;
   children_count: number;
   permalink: string | null;
   shared_variations: Json;
@@ -225,6 +226,7 @@ type ProductInsert = {
   price_from?: number | null;
   price_to?: number | null;
   stock_total?: number;
+  sold_total?: number;
   children_count?: number;
   permalink?: string | null;
   shared_variations?: Json;
@@ -279,7 +281,8 @@ type ChildInsert = {
   updated_at?: string;
 };
 
-type SyncJobStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
+type SyncJobStatus =
+  'PENDING' | 'RUNNING' | 'COMPLETED' | 'COMPLETED_WITH_ERRORS' | 'FAILED';
 
 type SyncJobRow = {
   id: string;
@@ -289,7 +292,10 @@ type SyncJobRow = {
   scan_started: boolean;
   scroll_id: string | null;
   buffer_item_ids: Json;
+  total_items: number;
   processed_items: number;
+  successful_items: number;
+  failed_items: number;
   products_saved: number;
   children_saved: number;
   errors_count: number;
@@ -309,7 +315,10 @@ type SyncJobInsert = {
   scan_started?: boolean;
   scroll_id?: string | null;
   buffer_item_ids?: Json;
+  total_items?: number;
   processed_items?: number;
+  successful_items?: number;
+  failed_items?: number;
   products_saved?: number;
   children_saved?: number;
   errors_count?: number;
@@ -319,6 +328,93 @@ type SyncJobInsert = {
   finished_at?: string | null;
   created_at?: string;
   updated_at?: string;
+};
+
+export type SyncErrorType =
+  | 'PUBLICATION_ERROR'
+  | 'VALIDATION_ERROR'
+  | 'AUTH_ERROR'
+  | 'RATE_LIMIT'
+  | 'PROVIDER_TEMPORARY_ERROR'
+  | 'POSSIBLE_API_CHANGE'
+  | 'MIRROR_WRITE_FAILED';
+
+export type SyncErrorStatus = 'OPEN' | 'RETRYING' | 'RESOLVED';
+
+export type SyncErrorRow = {
+  id: string;
+  sync_job_id: string | null;
+  seller_id: number;
+  item_id: string;
+  family_id: string | null;
+  error_type: SyncErrorType;
+  error_code: string | null;
+  error_message: string;
+  attempts: number;
+  status: SyncErrorStatus;
+  created_at: string;
+  updated_at: string;
+  resolved_at: string | null;
+};
+
+export type SyncErrorInsert = {
+  id?: string;
+  sync_job_id?: string | null;
+  seller_id: number;
+  item_id: string;
+  family_id?: string | null;
+  error_type: SyncErrorType;
+  error_code?: string | null;
+  error_message: string;
+  attempts?: number;
+  status?: SyncErrorStatus;
+  created_at?: string;
+  updated_at?: string;
+  resolved_at?: string | null;
+};
+
+export type IntegrationEventType =
+  | 'POSSIBLE_API_CHANGE'
+  | 'SCHEMA_MISMATCH'
+  | 'UNKNOWN_PROVIDER_ERROR'
+  | 'PROVIDER_BEHAVIOR_CHANGE';
+
+export type IntegrationEventStatus = 'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED';
+
+export type IntegrationEventRow = {
+  id: string;
+  seller_id: number | null;
+  event_type: IntegrationEventType;
+  endpoint: string;
+  http_method: string | null;
+  http_status: number | null;
+  provider_code: string | null;
+  message: string;
+  fingerprint: string;
+  occurrences: number;
+  status: IntegrationEventStatus;
+  first_seen_at: string;
+  last_seen_at: string;
+  resolved_at: string | null;
+  metadata: Json | null;
+};
+
+export type IntegrationEventInsert = {
+  id?: string;
+  seller_id?: number | null;
+  event_type: IntegrationEventType;
+  endpoint: string;
+  http_method?: string | null;
+  http_status?: number | null;
+  provider_code?: string | null;
+  message: string;
+  fingerprint: string;
+  occurrences?: number;
+  status?: IntegrationEventStatus;
+  first_seen_at?: string;
+  last_seen_at?: string;
+  resolved_at?: string | null;
+  metadata?: Json | null;
 };
 
 type PromotionBulkJobStatus =
@@ -591,6 +687,23 @@ export type Database = {
         ]
       >;
       mercadolibre_sync_jobs: Table<SyncJobRow, SyncJobInsert>;
+      mercadolibre_sync_errors: Table<
+        SyncErrorRow,
+        SyncErrorInsert,
+        [
+          {
+            foreignKeyName: 'mercadolibre_sync_errors_sync_job_id_fkey';
+            columns: ['sync_job_id'];
+            isOneToOne: false;
+            referencedRelation: 'mercadolibre_sync_jobs';
+            referencedColumns: ['id'];
+          },
+        ]
+      >;
+      mercadolibre_integration_events: Table<
+        IntegrationEventRow,
+        IntegrationEventInsert
+      >;
       mercadolibre_promotion_bulk_jobs: Table<
         PromotionBulkJobRow,
         PromotionBulkJobInsert
@@ -607,6 +720,20 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      record_mercadolibre_integration_event: {
+        Args: {
+          p_seller_id: number | null;
+          p_event_type: IntegrationEventType;
+          p_endpoint: string;
+          p_http_method: string | null;
+          p_http_status: number | null;
+          p_provider_code: string | null;
+          p_message: string;
+          p_fingerprint: string;
+          p_metadata: Json | null;
+        };
+        Returns: string;
+      };
       create_user_refresh_session: {
         Args: {
           p_user_id: string;

@@ -181,6 +181,22 @@ export class SupabaseService {
     return data;
   }
 
+  /** Lista conexiones técnicas para deduplicar sincronizaciones automáticas. */
+  async getAllMercadoLibreConnections(): Promise<MercadoLibreConnection[]> {
+    const { data, error } = await this.getClient()
+      .from('mercadolibre_tokens')
+      .select(
+        'user_id,seller_id,nickname,access_token,refresh_token,expires_at,updated_at',
+      )
+      .order('updated_at', { ascending: false });
+    if (error || !data) {
+      throw new ServiceUnavailableException(
+        'No se pudieron leer las conexiones de Mercado Libre',
+      );
+    }
+    return data;
+  }
+
   async deleteConnection(userId: string): Promise<void> {
     const { error } = await this.getClient()
       .from('mercadolibre_tokens')
