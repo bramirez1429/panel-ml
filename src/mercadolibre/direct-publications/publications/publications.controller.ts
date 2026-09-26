@@ -27,7 +27,7 @@ export class PublicationsController {
     return this.service.getGrouped(user.id, Number(limit), cursor, search);
   }
 
-  /** Busca publicaciones por familia, MLA exacto o título. */
+  /** Busca publicaciones por familia, MLA, MLAU o título. */
   @Get('search')
   search(
     @CurrentUser() user: SafeUser,

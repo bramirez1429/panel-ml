@@ -1,11 +1,12 @@
 import { NotFoundException } from '@nestjs/common';
 
 import type { MercadolibreTokenService } from '../../auth/mercadolibre-token.service';
-import type { FamiliesService } from '../families/families.service';
 import type { ItemsService } from '../items/items.service';
 import type { MlItem } from '../items/items.types';
 import { PublicationSearchService } from './publication-search.service';
 import type { PublicationTitleItemsSearchService } from './publication-title-items-search.service';
+import type { UserProductFamilyService } from '../../user-products/user-product-family.service';
+import type { PublicationsSearchService } from './publications-search.service';
 
 const USER_ID = '11111111-1111-4111-8111-111111111111';
 const CONNECTION = {
@@ -19,12 +20,20 @@ const CONNECTION = {
 describe('PublicationSearchService', () => {
   it('familyId devuelve todos los MLA actuales y fuerza el familyId buscado', async () => {
     const context = createService();
-    context.families.getFamilyItems.mockResolvedValue({
-      family: { user_id: 42 },
-      itemIds: ['MLA1', 'MLA2'],
-      accessToken: 'token',
-      items: [item('MLA1'), item('MLA2')],
+    context.userProductFamily.getFamily.mockResolvedValue({
+      familyId: '123456',
+      siteId: 'MLA',
+      userId: 42,
+      userProductIds: ['MLAU1', 'MLAU2'],
     });
+    context.publicationsSearch.searchByUserProductIds.mockResolvedValue([
+      'MLA1',
+      'MLA2',
+    ]);
+    context.items.getMany.mockResolvedValue([
+      { ...item('MLA1'), seller_id: 42, user_product_id: 'MLAU1' },
+      { ...item('MLA2'), seller_id: 42, user_product_id: 'MLAU2' },
+    ]);
 
     const result = await context.service.search(USER_ID, '123456');
 
@@ -32,9 +41,94 @@ describe('PublicationSearchService', () => {
     expect(result.items.every(({ familyId }) => familyId === '123456')).toBe(
       true,
     );
-    expect(context.families.getFamilyItems).toHaveBeenCalledTimes(1);
+    expect(result.items.map(({ userProductId }) => userProductId)).toEqual([
+      'MLAU1',
+      'MLAU2',
+    ]);
+    expect(
+      context.publicationsSearch.searchByUserProductIds,
+    ).toHaveBeenCalledWith(42, ['MLAU1', 'MLAU2'], 'valid-token');
+    expect(context.token.getSharedStoredConnection).toHaveBeenCalledTimes(1);
+    expect(context.token.getSharedValidAccessToken).toHaveBeenCalledTimes(1);
     expect(context.token.getStoredConnection).not.toHaveBeenCalled();
     expect(context.items.getOne).not.toHaveBeenCalled();
+  });
+
+  it('familyId excluye publicaciones que no pertenecen al seller compartido', async () => {
+    const context = createService();
+    context.userProductFamily.getFamily.mockResolvedValue({
+      familyId: '123456',
+      siteId: 'MLA',
+      userId: 42,
+      userProductIds: ['MLAU1'],
+    });
+    context.publicationsSearch.searchByUserProductIds.mockResolvedValue([
+      'MLA1',
+      'MLA-FOREIGN',
+    ]);
+    context.items.getMany.mockResolvedValue([
+      { ...item('MLA1'), seller_id: 42 },
+      { ...item('MLA-FOREIGN'), seller_id: 99 },
+    ]);
+
+    const result = await context.service.search(USER_ID, '123456');
+
+    expect(result.items.map(({ itemId }) => itemId)).toEqual(['MLA1']);
+  });
+
+  it('MLAU busca sus MLA y conserva familyId y userProductId', async () => {
+    const context = createService();
+    context.userProductFamily.resolveFamily.mockResolvedValue({
+      userProductId: 'MLAU123',
+      userProductName: 'Remera',
+      familyId: '900',
+      userId: 42,
+      userProductIds: ['MLAU123'],
+    });
+    context.publicationsSearch.searchByUserProductIds.mockResolvedValue([
+      'MLA10',
+      'MLA11',
+    ]);
+    context.items.getMany.mockResolvedValue([
+      { ...item('MLA10'), seller_id: 42 },
+      { ...item('MLA11'), seller_id: 42 },
+    ]);
+
+    const result = await context.service.search(USER_ID, 'mlau123');
+
+    expect(
+      context.publicationsSearch.searchByUserProductIds,
+    ).toHaveBeenCalledWith(42, ['MLAU123'], 'valid-token');
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        itemId: 'MLA10',
+        familyId: '900',
+        userProductId: 'MLAU123',
+      }),
+      expect.objectContaining({
+        itemId: 'MLA11',
+        familyId: '900',
+        userProductId: 'MLAU123',
+      }),
+    ]);
+  });
+
+  it('MLAU de otro seller no devuelve publicaciones', async () => {
+    const context = createService();
+    context.userProductFamily.resolveFamily.mockResolvedValue({
+      userProductId: 'MLAU123',
+      userProductName: null,
+      familyId: '900',
+      userId: 99,
+      userProductIds: ['MLAU123'],
+    });
+
+    const result = await context.service.search(USER_ID, 'MLAU123');
+
+    expect(result.items).toEqual([]);
+    expect(
+      context.publicationsSearch.searchByUserProductIds,
+    ).not.toHaveBeenCalled();
   });
 
   it('MLA devuelve solamente la publicación exacta', async () => {
@@ -52,7 +146,7 @@ describe('PublicationSearchService', () => {
       'MLA1947917494',
       'valid-token',
     );
-    expect(context.families.getFamilyItems).not.toHaveBeenCalled();
+    expect(context.userProductFamily.getFamily).not.toHaveBeenCalled();
   });
 
   it('normaliza MLA en minúsculas antes de consultar el item', async () => {
@@ -112,9 +206,28 @@ describe('PublicationSearchService', () => {
     });
   });
 
+  it('TITLE limita la consulta a cuatro resultados', async () => {
+    const context = createService();
+    context.title.search.mockResolvedValue({
+      done: true,
+      nextCursor: null,
+      items: [],
+    });
+
+    await context.service.search(USER_ID, 'remera mujer', 20);
+
+    expect(context.title.search).toHaveBeenCalledWith(
+      42,
+      'valid-token',
+      'remera mujer',
+      4,
+      undefined,
+    );
+  });
+
   it('propaga el comportamiento de dominio para una familia inexistente', async () => {
     const context = createService();
-    context.families.getFamilyItems.mockRejectedValue(
+    context.userProductFamily.getFamily.mockRejectedValue(
       new NotFoundException('Familia inexistente'),
     );
 
@@ -141,7 +254,7 @@ describe('PublicationSearchService', () => {
       'q es obligatorio',
     );
     expect(context.token.getStoredConnection).not.toHaveBeenCalled();
-    expect(context.families.getFamilyItems).not.toHaveBeenCalled();
+    expect(context.userProductFamily.getFamily).not.toHaveBeenCalled();
     expect(context.items.getOne).not.toHaveBeenCalled();
     expect(context.title.search).not.toHaveBeenCalled();
   });
@@ -155,8 +268,8 @@ describe('PublicationSearchService', () => {
 
     await context.service.search(USER_ID, 'MLA123');
 
-    expect(context.token.getStoredConnection).toHaveBeenCalledTimes(1);
-    expect(context.token.getValidAccessToken).toHaveBeenCalledTimes(1);
+    expect(context.token.getSharedStoredConnection).toHaveBeenCalledTimes(1);
+    expect(context.token.getSharedValidAccessToken).toHaveBeenCalledTimes(1);
     expect(context.items.getOne).toHaveBeenCalledTimes(1);
     expect(context.title.search).not.toHaveBeenCalled();
   });
@@ -186,20 +299,33 @@ function createService() {
   const token = {
     getStoredConnection: jest.fn().mockResolvedValue(CONNECTION),
     getValidAccessToken: jest.fn().mockResolvedValue('valid-token'),
+    getSharedStoredConnection: jest.fn().mockResolvedValue(CONNECTION),
+    getSharedValidAccessToken: jest.fn().mockResolvedValue('valid-token'),
   };
-  const families = { getFamilyItems: jest.fn() };
-  const items = { getOne: jest.fn() };
+  const items = { getOne: jest.fn(), getMany: jest.fn() };
   const title = { search: jest.fn() };
+  const userProductFamily = {
+    createCache: jest.fn().mockReturnValue({
+      userProducts: new Map(),
+      families: new Map(),
+      familyByUserProduct: new Map(),
+    }),
+    getFamily: jest.fn(),
+    resolveFamily: jest.fn(),
+  };
+  const publicationsSearch = { searchByUserProductIds: jest.fn() };
   return {
     token,
-    families,
     items,
     title,
+    userProductFamily,
+    publicationsSearch,
     service: new PublicationSearchService(
       token as unknown as MercadolibreTokenService,
-      families as unknown as FamiliesService,
       items as unknown as ItemsService,
       title as unknown as PublicationTitleItemsSearchService,
+      userProductFamily as unknown as UserProductFamilyService,
+      publicationsSearch as unknown as PublicationsSearchService,
     ),
   };
 }

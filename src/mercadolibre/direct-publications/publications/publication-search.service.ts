@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 
 import { MercadolibreTokenService } from '../../auth/mercadolibre-token.service';
-import { FamiliesService } from '../families/families.service';
+import { UserProductFamilyService } from '../../user-products/user-product-family.service';
 import { ItemsService } from '../items/items.service';
 import type { MlItem } from '../items/items.types';
 import { parsePublicationSearchCriteria } from './publication-search-criteria';
@@ -12,14 +12,16 @@ import type {
   PublicationSearchResult,
 } from './publication-search.types';
 import { PublicationTitleItemsSearchService } from './publication-title-items-search.service';
+import { PublicationsSearchService } from './publications-search.service';
 
 @Injectable()
 export class PublicationSearchService {
   constructor(
     private readonly tokenService: MercadolibreTokenService,
-    private readonly familiesService: FamiliesService,
     private readonly itemsService: ItemsService,
     private readonly titleSearchService: PublicationTitleItemsSearchService,
+    private readonly userProductFamilyService: UserProductFamilyService,
+    private readonly publicationsSearchService: PublicationsSearchService,
   ) {}
 
   async search(
@@ -45,23 +47,17 @@ export class PublicationSearchService {
   }
 
   async searchItems(
-    userId: string,
+    _userId: string,
     query: unknown,
     limit = 20,
     cursor?: string,
   ): Promise<PublicationItemsSearchResult> {
     const criteria = parsePublicationSearchCriteria(query);
-
-    if (criteria.type === 'FAMILY') {
-      return this.searchFamily(userId, criteria);
-    }
     if (criteria.type === 'TITLE') this.validateLimit(limit);
 
-    const connection = await this.tokenService.getStoredConnection(userId);
-    const accessToken = await this.tokenService.getValidAccessToken(
-      userId,
-      connection,
-    );
+    const connection = await this.tokenService.getSharedStoredConnection();
+    const accessToken =
+      await this.tokenService.getSharedValidAccessToken(connection);
 
     if (criteria.type === 'MLA') {
       const item = await this.itemsService.getOne(criteria.value, accessToken);
@@ -71,11 +67,23 @@ export class PublicationSearchService {
       return this.complete(criteria, connection.seller_id, accessToken, items);
     }
 
+    if (criteria.type === 'MLAU') {
+      return this.searchUserProduct(
+        criteria,
+        connection.seller_id,
+        accessToken,
+      );
+    }
+
+    if (criteria.type === 'FAMILY') {
+      return this.searchFamily(criteria, connection.seller_id, accessToken);
+    }
+
     const result = await this.titleSearchService.search(
       connection.seller_id,
       accessToken,
       criteria.value,
-      limit,
+      Math.min(limit, 4),
       cursor,
     );
     return {
@@ -88,23 +96,61 @@ export class PublicationSearchService {
     };
   }
 
-  private async searchFamily(
-    userId: string,
-    criteria: Extract<PublicationSearchCriteria, { type: 'FAMILY' }>,
+  private async searchUserProduct(
+    criteria: Extract<PublicationSearchCriteria, { type: 'MLAU' }>,
+    sellerId: number,
+    accessToken: string,
   ): Promise<PublicationItemsSearchResult> {
-    const result = await this.familiesService.getFamilyItems(
-      userId,
+    const resolved = await this.userProductFamilyService.resolveFamily(
       criteria.value,
+      accessToken,
+      this.userProductFamilyService.createCache(),
     );
-    return this.complete(
-      criteria,
-      Number(result.family.user_id),
-      result.accessToken,
-      result.items.map((item) => ({
+    if (String(resolved.userId) !== String(sellerId)) {
+      return this.complete(criteria, sellerId, accessToken, []);
+    }
+
+    const itemIds = await this.publicationsSearchService.searchByUserProductIds(
+      sellerId,
+      [criteria.value],
+      accessToken,
+    );
+    const items = (await this.itemsService.getMany(itemIds, accessToken))
+      .filter((item) => this.belongsToSeller(item, sellerId))
+      .map((item) => ({
+        ...item,
+        family_id: resolved.familyId,
+        user_product_id: criteria.value,
+      }));
+    return this.complete(criteria, sellerId, accessToken, items);
+  }
+
+  private async searchFamily(
+    criteria: Extract<PublicationSearchCriteria, { type: 'FAMILY' }>,
+    sellerId: number,
+    accessToken: string,
+  ): Promise<PublicationItemsSearchResult> {
+    const family = await this.userProductFamilyService.getFamily(
+      criteria.value,
+      accessToken,
+      this.userProductFamilyService.createCache(),
+    );
+    if (String(family.userId) !== String(sellerId)) {
+      return this.complete(criteria, sellerId, accessToken, []);
+    }
+
+    const itemIds = await this.publicationsSearchService.searchByUserProductIds(
+      sellerId,
+      family.userProductIds,
+      accessToken,
+    );
+    const items = (await this.itemsService.getMany(itemIds, accessToken))
+      .filter((item) => this.belongsToSeller(item, sellerId))
+      .map((item) => ({
         ...item,
         family_id: criteria.value,
-      })),
-    );
+      }));
+    return this.complete(criteria, sellerId, accessToken, items);
   }
 
   private complete(
@@ -124,10 +170,7 @@ export class PublicationSearchService {
   }
 
   private belongsToSeller(item: MlItem, sellerId: number): boolean {
-    return (
-      item.seller_id === undefined ||
-      String(item.seller_id) === String(sellerId)
-    );
+    return String(item.seller_id) === String(sellerId);
   }
 
   private validateLimit(limit: number): void {

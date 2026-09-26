@@ -14,6 +14,7 @@ export class PublicationSearchMapper {
         (item.family_id === null || item.family_id === undefined
           ? null
           : String(item.family_id)),
+      userProductId: item.user_product_id ?? null,
       title: item.title ?? null,
       thumbnail: item.thumbnail ?? null,
       price: item.price ?? null,
