@@ -57,6 +57,28 @@ $ npm run test:e2e
 $ npm run test:cov
 ```
 
+## Sincronización de publicaciones
+
+Mercado Libre es la fuente oficial. Supabase mantiene un snapshot normalizado
+para acelerar lecturas y nunca se escribe antes de confirmar una operación en
+Mercado Libre.
+
+`PUBLICATIONS_READ_SOURCE` selecciona la implementación interna de
+`GET /mercadolibre/direct/publicaciones/agrupadas` sin cambiar su contrato:
+
+- `mercadolibre` (default): lectura directa actual.
+- `supabase`: lectura del snapshot sincronizado.
+
+`POST /mercadolibre/publicaciones/sync` inicia el full sync manual. Los errores
+individuales quedan disponibles en los endpoints del job y pueden reintentarse
+individualmente, por selección o en conjunto. Los posibles cambios de contrato
+del proveedor se deduplican como eventos de integración.
+
+Vercel consulta diariamente el endpoint interno protegido por `CRON_SECRET`.
+Cada seller inicia un full sync automático solamente cuando pasaron al menos 96
+horas desde su última sincronización completa exitosa. Los webhooks continúan
+siendo el mecanismo principal de actualización puntual.
+
 ## Deployment
 
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.

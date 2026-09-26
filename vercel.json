@@ -31,5 +31,11 @@
         }
       ]
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/internal/mercadolibre/publicaciones/sync/automatic",
+      "schedule": "0 6 * * *"
+    }
+  ]
 }
