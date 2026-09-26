@@ -1,6 +1,7 @@
 import {
   BadGatewayException,
   BadRequestException,
+  ConflictException,
   ForbiddenException,
 } from '@nestjs/common';
 import { MercadolibreSyncJobsRepository } from '../../../database/repositories/mercadolibre-sync-jobs.repository';
@@ -62,6 +63,7 @@ function setup() {
     updateProgress: jest.fn().mockResolvedValue(job()),
     releaseAfterError: jest.fn().mockResolvedValue(job()),
     complete: jest.fn().mockResolvedValue(job({ status: 'COMPLETED' })),
+    cancel: jest.fn().mockResolvedValue(job({ status: 'CANCELLED' })),
     fail: jest.fn().mockResolvedValue(job({ status: 'FAILED' })),
   };
   const token = {
@@ -138,6 +140,139 @@ describe('PublicationSyncJobService', () => {
     expect(source.getTotalItemCount).not.toHaveBeenCalled();
   });
 
+  it('permite iniciar una nueva sync cuando la anterior fue cancelada', async () => {
+    const { jobs, service } = setup();
+    jobs.findActiveBySellerId.mockResolvedValue(null);
+
+    await expect(service.start(APP_USER_ID)).resolves.toMatchObject({
+      syncId: JOB_ID,
+      status: 'PENDING',
+      created: true,
+    });
+
+    expect(jobs.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancela un job activo del seller autenticado', async () => {
+    const { jobs, service } = setup();
+    jobs.findById.mockResolvedValue(job({ status: 'RUNNING' }));
+
+    await expect(service.cancel(APP_USER_ID, JOB_ID)).resolves.toEqual({
+      ok: true,
+      syncId: JOB_ID,
+      status: 'CANCELLED',
+      hasMore: false,
+    });
+
+    expect(jobs.cancel).toHaveBeenCalledWith(JOB_ID);
+  });
+
+  it('rechaza cancelar un job que ya terminó', async () => {
+    const { jobs, service } = setup();
+    jobs.findById.mockResolvedValue(job({ status: 'COMPLETED' }));
+
+    await expect(service.cancel(APP_USER_ID, JOB_ID)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(jobs.cancel).not.toHaveBeenCalled();
+  });
+
+  it('detiene processNext antes del batch cuando el job está cancelado', async () => {
+    const { jobs, service, source, sync, token } = setup();
+    jobs.findById.mockResolvedValue(job({ status: 'CANCELLED' }));
+
+    await expect(service.processNext(APP_USER_ID, JOB_ID)).resolves.toEqual({
+      ok: true,
+      syncId: JOB_ID,
+      status: 'CANCELLED',
+      hasMore: false,
+    });
+
+    expect(jobs.claim).not.toHaveBeenCalled();
+    expect(token.getValidAccessToken).not.toHaveBeenCalled();
+    expect(source.fetchNextScanPage).not.toHaveBeenCalled();
+    expect(sync.syncBatch).not.toHaveBeenCalled();
+    expect(sync.finalizeFullSync).not.toHaveBeenCalled();
+  });
+
+  it('no inicia el batch si se cancela después del claim', async () => {
+    const { jobs, service, sync } = setup();
+    const ids = itemIds(10);
+    jobs.findById
+      .mockResolvedValueOnce(job({ buffer_item_ids: ids }))
+      .mockResolvedValueOnce(job({ status: 'CANCELLED' }));
+    jobs.claim.mockResolvedValue(
+      job({
+        status: 'RUNNING',
+        buffer_item_ids: ids,
+        started_at: STARTED_AT,
+      }),
+    );
+    await expect(service.processNext(APP_USER_ID, JOB_ID)).resolves.toEqual({
+      ok: true,
+      syncId: JOB_ID,
+      status: 'CANCELLED',
+      hasMore: false,
+    });
+
+    expect(sync.syncBatch).not.toHaveBeenCalled();
+    expect(sync.finalizeFullSync).not.toHaveBeenCalled();
+    expect(jobs.fail).not.toHaveBeenCalled();
+    expect(jobs.releaseAfterError).not.toHaveBeenCalled();
+  });
+
+  it('preserva el batch confirmado si la cancelación gana al guardado de progreso', async () => {
+    const { jobs, service, sync } = setup();
+    const ids = itemIds(10);
+    jobs.findById
+      .mockResolvedValueOnce(job({ buffer_item_ids: ids }))
+      .mockResolvedValueOnce(job({ status: 'RUNNING' }))
+      .mockResolvedValueOnce(job({ status: 'CANCELLED' }));
+    jobs.claim.mockResolvedValue(
+      job({
+        status: 'RUNNING',
+        buffer_item_ids: ids,
+        started_at: STARTED_AT,
+      }),
+    );
+    sync.syncBatch.mockResolvedValue({
+      productsSaved: 10,
+      childrenSaved: 0,
+      errors: [],
+    });
+    jobs.updateProgress.mockRejectedValue(new ConflictException());
+
+    await expect(service.processNext(APP_USER_ID, JOB_ID)).resolves.toEqual({
+      ok: true,
+      syncId: JOB_ID,
+      status: 'CANCELLED',
+      hasMore: false,
+    });
+
+    expect(sync.syncBatch).toHaveBeenCalledTimes(1);
+    expect(sync.finalizeFullSync).not.toHaveBeenCalled();
+    expect(jobs.fail).not.toHaveBeenCalled();
+    expect(jobs.releaseAfterError).not.toHaveBeenCalled();
+  });
+
+  it('no ejecuta cleanup si se cancela antes de finalizar', async () => {
+    const { jobs, service, source, sync } = setup();
+    jobs.findById
+      .mockResolvedValueOnce(job())
+      .mockResolvedValueOnce(job({ status: 'CANCELLED' }));
+    source.fetchNextScanPage.mockResolvedValue({ itemIds: [], scrollId: null });
+
+    await expect(service.processNext(APP_USER_ID, JOB_ID)).resolves.toEqual({
+      ok: true,
+      syncId: JOB_ID,
+      status: 'CANCELLED',
+      hasMore: false,
+    });
+
+    expect(sync.finalizeFullSync).not.toHaveBeenCalled();
+    expect(jobs.complete).not.toHaveBeenCalled();
+  });
+
   it('trae una página, procesa diez y luego consume el buffer', async () => {
     const { connection, jobs, service, source, sync, token } = setup();
     const ids = itemIds(100);
@@ -162,7 +297,9 @@ describe('PublicationSyncJobService', () => {
     });
     jobs.findById
       .mockResolvedValueOnce(job())
-      .mockResolvedValueOnce(afterFirst);
+      .mockResolvedValueOnce(running)
+      .mockResolvedValueOnce(afterFirst)
+      .mockResolvedValueOnce(job({ ...afterFirst, status: 'RUNNING' }));
     jobs.claim
       .mockResolvedValueOnce(running)
       .mockResolvedValueOnce(job({ ...afterFirst, status: 'RUNNING' }));

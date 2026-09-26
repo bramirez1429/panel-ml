@@ -26,7 +26,7 @@ export type SyncJobPendingResponse = {
 export type SyncJobCompletedResponse = {
   ok: true;
   syncId: string;
-  status: 'COMPLETED' | 'COMPLETED_WITH_ERRORS';
+  status: 'COMPLETED' | 'COMPLETED_WITH_ERRORS' | 'CANCELLED';
   hasMore: false;
 };
 

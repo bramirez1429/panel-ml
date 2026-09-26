@@ -89,6 +89,15 @@ export class PublicationsController {
     return this.syncJobService.processNext(user.id, syncId);
   }
 
+  /** Cancela una sincronización pendiente o en curso. */
+  @Post('sync/:syncId/cancel')
+  cancelSync(
+    @CurrentUser() user: SafeUser,
+    @Param('syncId', ParseUUIDPipe) syncId: string,
+  ) {
+    return this.syncJobService.cancel(user.id, syncId);
+  }
+
   /** Consulta el estado acumulado de una sincronización. */
   @Get('sync/:syncId')
   getSyncStatus(

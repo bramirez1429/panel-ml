@@ -79,6 +79,15 @@ describe('PublicationSyncQueueService', () => {
     expect(sendMock).not.toHaveBeenCalled();
   });
 
+  it('termina sin publicar otro batch cuando el job está cancelado', async () => {
+    processNext.mockResolvedValue({ status: 'CANCELLED', hasMore: false });
+
+    await service.consume({ userId: APP_USER_ID, syncId: SYNC_ID });
+
+    expect(processNext).toHaveBeenCalledWith(APP_USER_ID, SYNC_ID);
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
   it('confirma una entrega duplicada que perdió el claim', async () => {
     processNext.mockRejectedValue(new ConflictException());
 

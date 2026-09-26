@@ -39,6 +39,22 @@ describe('PublicationSyncLocalDispatcher', () => {
     finish?.();
     await waitForCalls(processNext, 1);
   });
+
+  it('detiene el worker local cuando processNext informa CANCELLED', async () => {
+    const processNext = jest
+      .fn()
+      .mockResolvedValueOnce({ status: 'PENDING', hasMore: true })
+      .mockResolvedValueOnce({ status: 'CANCELLED', hasMore: false });
+    const dispatcher = new PublicationSyncLocalDispatcher({
+      processNext,
+    } as unknown as PublicationSyncJobService);
+
+    expect(dispatcher.start(MESSAGE)).toBe(true);
+    await waitForCalls(processNext, 2);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(processNext).toHaveBeenCalledTimes(2);
+  });
 });
 
 async function waitForCalls(mock: jest.Mock, expected: number): Promise<void> {

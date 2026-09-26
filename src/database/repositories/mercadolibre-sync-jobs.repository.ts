@@ -194,6 +194,25 @@ export class MercadolibreSyncJobsRepository {
     return this.requireTransition(data, error);
   }
 
+  /** Cancela un trabajo activo sin modificar los datos ya sincronizados. */
+  async cancel(id: string): Promise<MercadolibreSyncJob> {
+    const timestamp = new Date().toISOString();
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('mercadolibre_sync_jobs')
+      .update({
+        status: 'CANCELLED',
+        finished_at: timestamp,
+        updated_at: timestamp,
+      })
+      .eq('id', id)
+      .in('status', ['PENDING', 'RUNNING'])
+      .select('*')
+      .maybeSingle();
+
+    return this.requireTransition(data, error);
+  }
+
   async resolveRetriedItem(
     id: string,
     resolvedErrors = 1,

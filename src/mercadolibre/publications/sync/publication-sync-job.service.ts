@@ -106,7 +106,8 @@ export class PublicationSyncJobService {
     const existing = await this.findOwnedJob(syncId, connection.seller_id);
     if (
       existing.status === 'COMPLETED' ||
-      existing.status === 'COMPLETED_WITH_ERRORS'
+      existing.status === 'COMPLETED_WITH_ERRORS' ||
+      existing.status === 'CANCELLED'
     ) {
       return this.completedResponse(existing.id, existing.status);
     }
@@ -128,8 +129,26 @@ export class PublicationSyncJobService {
       };
       return await this.processClaimedJob(job, access);
     } catch (error) {
+      const current = await this.jobsRepository.findById(job.id);
+      if (current?.status === 'CANCELLED') {
+        return this.completedResponse(current.id, 'CANCELLED');
+      }
       return this.handleClaimedError(job, error);
     }
+  }
+
+  /** Cancela un job activo del seller autenticado. */
+  async cancel(
+    userId: string,
+    syncId: string,
+  ): Promise<SyncJobCompletedResponse> {
+    const connection = await this.tokenService.getStoredConnection(userId);
+    const job = await this.findOwnedJob(syncId, connection.seller_id);
+    if (job.status !== 'PENDING' && job.status !== 'RUNNING') {
+      throw new ConflictException('La sincronización ya finalizó');
+    }
+    const cancelled = await this.jobsRepository.cancel(job.id);
+    return this.completedResponse(cancelled.id, 'CANCELLED');
   }
 
   /** Devuelve el estado acumulado sin exponer datos internos. */
@@ -162,6 +181,8 @@ export class PublicationSyncJobService {
     access: SyncAccess,
   ): Promise<SyncJobNextResponse> {
     const scan = await this.ensureBuffer(job, access);
+    const cancelled = await this.cancelledResponse(job.id);
+    if (cancelled) return cancelled;
     if (scan.bufferItemIds.length === 0) {
       return this.finishJob(job, access.sellerId);
     }
@@ -319,9 +340,19 @@ export class PublicationSyncJobService {
   /** Construye la respuesta de un trabajo completado. */
   private completedResponse(
     syncId: string,
-    status: 'COMPLETED' | 'COMPLETED_WITH_ERRORS',
+    status: 'COMPLETED' | 'COMPLETED_WITH_ERRORS' | 'CANCELLED',
   ): SyncJobCompletedResponse {
     return { ok: true, syncId, status, hasMore: false };
+  }
+
+  /** Relee el estado justo antes de escribir un batch o ejecutar cleanup. */
+  private async cancelledResponse(
+    syncId: string,
+  ): Promise<SyncJobCompletedResponse | null> {
+    const current = await this.jobsRepository.findById(syncId);
+    return current?.status === 'CANCELLED'
+      ? this.completedResponse(current.id, 'CANCELLED')
+      : null;
   }
 
   private async persistIndividualErrors(

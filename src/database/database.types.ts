@@ -282,7 +282,12 @@ type ChildInsert = {
 };
 
 type SyncJobStatus =
-  'PENDING' | 'RUNNING' | 'COMPLETED' | 'COMPLETED_WITH_ERRORS' | 'FAILED';
+  | 'PENDING'
+  | 'RUNNING'
+  | 'COMPLETED'
+  | 'COMPLETED_WITH_ERRORS'
+  | 'FAILED'
+  | 'CANCELLED';
 
 type SyncJobRow = {
   id: string;

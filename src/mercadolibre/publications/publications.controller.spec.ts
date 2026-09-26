@@ -15,6 +15,7 @@ describe('PublicationsController', () => {
   const findOne = jest.fn();
   const start = jest.fn();
   const processNext = jest.fn();
+  const cancel = jest.fn();
   const getStatus = jest.fn();
   const enqueue = jest.fn();
   let controller: PublicationsController;
@@ -24,7 +25,12 @@ describe('PublicationsController', () => {
     enqueue.mockResolvedValue(undefined);
     controller = new PublicationsController(
       { list, findOne } as unknown as PublicationsService,
-      { start, processNext, getStatus } as unknown as PublicationSyncJobService,
+      {
+        start,
+        processNext,
+        cancel,
+        getStatus,
+      } as unknown as PublicationSyncJobService,
       { dispatch: enqueue } as unknown as PublicationSyncDispatcherService,
       {} as PublicationSyncRetryService,
       {} as PublicationSyncOverviewService,
@@ -72,5 +78,18 @@ describe('PublicationsController', () => {
     expect(enqueue).toHaveBeenCalledWith(APP_USER_ID, SYNC_ID);
     expect(processNext).toHaveBeenCalledWith(APP_USER_ID, SYNC_ID);
     expect(getStatus).toHaveBeenCalledWith(APP_USER_ID, SYNC_ID);
+  });
+
+  it('delega la cancelación al servicio de jobs', async () => {
+    const cancelled = {
+      ok: true,
+      syncId: SYNC_ID,
+      status: 'CANCELLED',
+      hasMore: false,
+    };
+    cancel.mockResolvedValue(cancelled);
+
+    await expect(controller.cancelSync(USER, SYNC_ID)).resolves.toBe(cancelled);
+    expect(cancel).toHaveBeenCalledWith(APP_USER_ID, SYNC_ID);
   });
 });
