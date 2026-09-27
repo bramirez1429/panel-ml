@@ -1,4 +1,8 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  HttpException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   MercadoLibreConnection,
@@ -17,6 +21,11 @@ type InFlightRefresh = {
   sellerId: number;
   refreshToken: string;
   promise: Promise<string>;
+};
+
+export type MercadoLibreOperationContext = {
+  connection: MercadoLibreConnection;
+  accessToken: string;
 };
 
 @Injectable()
@@ -124,6 +133,37 @@ export class MercadolibreTokenService {
     return this.getOrStartRefresh(ownerUserId, connection);
   }
 
+  /** Ejecuta una operación con el token del workspace y un único retry por 401. */
+  async executeWithValidAccessToken<T>(
+    userId: string,
+    operation: (context: MercadoLibreOperationContext) => Promise<T>,
+  ): Promise<T> {
+    const connection = await this.getStoredConnection(userId);
+    const accessToken = await this.getValidAccessToken(userId, connection);
+
+    try {
+      return await operation({ connection, accessToken });
+    } catch (error: unknown) {
+      if (!this.isUnauthorized(error)) throw error;
+
+      const currentConnection = await this.getStoredConnection(userId);
+      if (currentConnection.seller_id !== connection.seller_id) throw error;
+
+      const retryAccessToken =
+        currentConnection.access_token !== accessToken
+          ? currentConnection.access_token
+          : await this.getOrStartRefresh(
+              currentConnection.user_id,
+              currentConnection,
+            );
+
+      return operation({
+        connection: currentConnection,
+        accessToken: retryAccessToken,
+      });
+    }
+  }
+
   /** Renueva el access token y guarda el reemplazo. */
   async refreshAccessToken(
     userId: string,
@@ -194,6 +234,17 @@ export class MercadolibreTokenService {
       );
     }
     return connection;
+  }
+
+  private isUnauthorized(error: unknown): boolean {
+    if (error instanceof UnauthorizedException) return true;
+    if (error instanceof HttpException) return error.getStatus() === 401;
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'status' in error &&
+      error.status === 401
+    );
   }
 
   /** Recupera el token que otro worker pudo haber renovado primero. */

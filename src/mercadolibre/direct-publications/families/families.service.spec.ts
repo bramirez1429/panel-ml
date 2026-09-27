@@ -1,6 +1,9 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 
-import type { MercadolibreTokenService } from '../../auth/mercadolibre-token.service';
+import type {
+  MercadolibreTokenService,
+  MercadoLibreOperationContext,
+} from '../../auth/mercadolibre-token.service';
 import type { MercadolibreApiService } from '../../shared/mercadolibre-api.service';
 import type { ItemsService } from '../items/items.service';
 import type { PublicationsSearchService } from '../publications/publications-search.service';
@@ -32,8 +35,12 @@ describe('FamiliesService', () => {
 
     expect(result.itemIds).toEqual(['MLA1', 'MLA2', 'MLA3']);
     expect(result.items.map(({ id }) => id)).toEqual(['MLA1', 'MLA2', 'MLA3']);
-    expect(context.token.getSharedStoredConnection).toHaveBeenCalledTimes(1);
-    expect(context.token.getSharedValidAccessToken).toHaveBeenCalledTimes(1);
+    expect(context.token.executeWithValidAccessToken).toHaveBeenCalledWith(
+      USER_ID,
+      expect.any(Function),
+    );
+    expect(context.token.getSharedStoredConnection).not.toHaveBeenCalled();
+    expect(context.token.getSharedValidAccessToken).not.toHaveBeenCalled();
     expect(context.api.get).toHaveBeenCalledWith(
       '/sites/MLA/user-products-families/123456789',
       'token',
@@ -78,12 +85,24 @@ describe('FamiliesService', () => {
 });
 
 function createService() {
+  const connection = {
+    user_id: USER_ID,
+    seller_id: 42,
+    nickname: 'SELLER',
+    access_token: 'token',
+    refresh_token: 'refresh-token',
+    expires_at: '2030-01-01T00:00:00.000Z',
+    updated_at: '2029-12-31T00:00:00.000Z',
+  };
   const token = {
-    getSharedStoredConnection: jest.fn().mockResolvedValue({
-      user_id: USER_ID,
-      seller_id: 42,
-    }),
-    getSharedValidAccessToken: jest.fn().mockResolvedValue('token'),
+    executeWithValidAccessToken: jest.fn(
+      (
+        _userId: string,
+        operation: (context: MercadoLibreOperationContext) => Promise<unknown>,
+      ) => operation({ connection, accessToken: 'token' }),
+    ),
+    getSharedStoredConnection: jest.fn(),
+    getSharedValidAccessToken: jest.fn(),
   };
   const api = { get: jest.fn() };
   const search = { searchByUserProductIds: jest.fn() };

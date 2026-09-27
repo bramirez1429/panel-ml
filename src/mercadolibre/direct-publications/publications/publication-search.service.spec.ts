@@ -1,6 +1,9 @@
 import { BadGatewayException, NotFoundException } from '@nestjs/common';
 
-import type { MercadolibreTokenService } from '../../auth/mercadolibre-token.service';
+import type {
+  MercadolibreTokenService,
+  MercadoLibreOperationContext,
+} from '../../auth/mercadolibre-token.service';
 import type { ItemsService } from '../items/items.service';
 import type { MlItem } from '../items/items.types';
 import { PublicationSearchService } from './publication-search.service';
@@ -52,7 +55,7 @@ describe('PublicationSearchService', () => {
     );
     expect(context.token.getSharedStoredConnection).not.toHaveBeenCalled();
     expect(context.token.getSharedValidAccessToken).not.toHaveBeenCalled();
-    expect(context.token.getStoredConnection).not.toHaveBeenCalled();
+    expect(context.token.executeWithValidAccessToken).not.toHaveBeenCalled();
     expect(context.items.getOne).not.toHaveBeenCalled();
   });
 
@@ -233,7 +236,9 @@ describe('PublicationSearchService', () => {
       new NotFoundException('Familia inexistente'),
     );
 
-    await expect(context.service.search(USER_ID, '999999')).resolves.toMatchObject({
+    await expect(
+      context.service.search(USER_ID, '999999'),
+    ).resolves.toMatchObject({
       items: [],
     });
   });
@@ -244,7 +249,9 @@ describe('PublicationSearchService', () => {
       new NotFoundException('Publicación inexistente'),
     );
 
-    await expect(context.service.search(USER_ID, 'MLA999999')).resolves.toMatchObject({
+    await expect(
+      context.service.search(USER_ID, 'MLA999999'),
+    ).resolves.toMatchObject({
       items: [],
     });
   });
@@ -266,13 +273,13 @@ describe('PublicationSearchService', () => {
     await expect(context.service.search(USER_ID, '   ')).rejects.toThrow(
       'q es obligatorio',
     );
-    expect(context.token.getStoredConnection).not.toHaveBeenCalled();
+    expect(context.token.executeWithValidAccessToken).not.toHaveBeenCalled();
     expect(context.families.getFamilyItems).not.toHaveBeenCalled();
     expect(context.items.getOne).not.toHaveBeenCalled();
     expect(context.title.search).not.toHaveBeenCalled();
   });
 
-  it('usa una sola conexión, token y consulta para un MLA', async () => {
+  it('usa el ejecutor del workspace y no la conexión global para un MLA', async () => {
     const context = createService();
     context.items.getOne.mockResolvedValue({
       ...item('MLA123'),
@@ -281,8 +288,12 @@ describe('PublicationSearchService', () => {
 
     await context.service.search(USER_ID, 'MLA123');
 
-    expect(context.token.getSharedStoredConnection).toHaveBeenCalledTimes(1);
-    expect(context.token.getSharedValidAccessToken).toHaveBeenCalledTimes(1);
+    expect(context.token.executeWithValidAccessToken).toHaveBeenCalledWith(
+      USER_ID,
+      expect.any(Function),
+    );
+    expect(context.token.getSharedStoredConnection).not.toHaveBeenCalled();
+    expect(context.token.getSharedValidAccessToken).not.toHaveBeenCalled();
     expect(context.items.getOne).toHaveBeenCalledTimes(1);
     expect(context.title.search).not.toHaveBeenCalled();
   });
@@ -310,10 +321,22 @@ describe('PublicationSearchService', () => {
 
 function createService() {
   const token = {
-    getStoredConnection: jest.fn().mockResolvedValue(CONNECTION),
-    getValidAccessToken: jest.fn().mockResolvedValue('valid-token'),
-    getSharedStoredConnection: jest.fn().mockResolvedValue(CONNECTION),
-    getSharedValidAccessToken: jest.fn().mockResolvedValue('valid-token'),
+    executeWithValidAccessToken: jest.fn(
+      (
+        _userId: string,
+        operation: (context: MercadoLibreOperationContext) => Promise<unknown>,
+      ) =>
+        operation({
+          connection: {
+            ...CONNECTION,
+            nickname: 'SELLER',
+            updated_at: '2029-12-31T00:00:00.000Z',
+          },
+          accessToken: 'valid-token',
+        }),
+    ),
+    getSharedStoredConnection: jest.fn(),
+    getSharedValidAccessToken: jest.fn(),
   };
   const items = { getOne: jest.fn(), getMany: jest.fn() };
   const title = { search: jest.fn() };

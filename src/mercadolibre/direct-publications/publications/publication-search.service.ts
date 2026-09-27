@@ -67,56 +67,70 @@ export class PublicationSearchService {
       } catch (error: unknown) {
         if (!(error instanceof NotFoundException)) throw error;
 
-        const connection = await this.tokenService.getSharedStoredConnection();
-        const accessToken =
-          await this.tokenService.getSharedValidAccessToken(connection);
-        return this.complete(criteria, connection.seller_id, accessToken, []);
+        return this.tokenService.executeWithValidAccessToken(
+          userId,
+          ({ connection, accessToken }) =>
+            Promise.resolve(
+              this.complete(criteria, connection.seller_id, accessToken, []),
+            ),
+        );
       }
     }
 
-    const connection = await this.tokenService.getSharedStoredConnection();
-    const accessToken =
-      await this.tokenService.getSharedValidAccessToken(connection);
-
-    if (criteria.type === 'MLA') {
-      let item: MlItem;
-      try {
-        item = await this.itemsService.getOne(criteria.value, accessToken);
-      } catch (error: unknown) {
-        if (error instanceof NotFoundException) {
-          return this.complete(criteria, connection.seller_id, accessToken, []);
+    return this.tokenService.executeWithValidAccessToken(
+      userId,
+      async ({ connection, accessToken }) => {
+        if (criteria.type === 'MLA') {
+          let item: MlItem;
+          try {
+            item = await this.itemsService.getOne(criteria.value, accessToken);
+          } catch (error: unknown) {
+            if (error instanceof NotFoundException) {
+              return this.complete(
+                criteria,
+                connection.seller_id,
+                accessToken,
+                [],
+              );
+            }
+            throw error;
+          }
+          const items = this.belongsToSeller(item, connection.seller_id)
+            ? [item]
+            : [];
+          return this.complete(
+            criteria,
+            connection.seller_id,
+            accessToken,
+            items,
+          );
         }
-        throw error;
-      }
-      const items = this.belongsToSeller(item, connection.seller_id)
-        ? [item]
-        : [];
-      return this.complete(criteria, connection.seller_id, accessToken, items);
-    }
 
-    if (criteria.type === 'MLAU') {
-      return this.searchUserProduct(
-        criteria,
-        connection.seller_id,
-        accessToken,
-      );
-    }
+        if (criteria.type === 'MLAU') {
+          return this.searchUserProduct(
+            criteria,
+            connection.seller_id,
+            accessToken,
+          );
+        }
 
-    const result = await this.titleSearchService.search(
-      connection.seller_id,
-      accessToken,
-      criteria.value,
-      Math.min(limit, 4),
-      cursor,
+        const result = await this.titleSearchService.search(
+          connection.seller_id,
+          accessToken,
+          criteria.value,
+          Math.min(limit, 4),
+          cursor,
+        );
+        return {
+          criteria,
+          done: result.done,
+          nextCursor: result.nextCursor,
+          sellerId: connection.seller_id,
+          accessToken,
+          items: result.items,
+        };
+      },
     );
-    return {
-      criteria,
-      done: result.done,
-      nextCursor: result.nextCursor,
-      sellerId: connection.seller_id,
-      accessToken,
-      items: result.items,
-    };
   }
 
   private async searchUserProduct(

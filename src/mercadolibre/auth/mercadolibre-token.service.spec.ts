@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import { UnauthorizedException } from '@nestjs/common';
 import {
   MercadoLibreConnection,
   SupabaseService,
@@ -114,7 +115,9 @@ describe('MercadolibreTokenService', () => {
         Promise.resolve(workspaceId === WORKSPACE_ID ? connection : null),
     );
 
-    await expect(service.getStoredConnection(OTHER_USER_ID)).rejects.toMatchObject({
+    await expect(
+      service.getStoredConnection(OTHER_USER_ID),
+    ).rejects.toMatchObject({
       status: 401,
     });
     expect(
@@ -196,6 +199,190 @@ describe('MercadolibreTokenService', () => {
       'renewed-access-token',
     );
     expect(refresh).toHaveBeenCalledWith(USER_ID, expiringConnection);
+  });
+
+  it('ejecuta con un token vigente sin refrescar', async () => {
+    supabaseService.getMercadoLibreConnectionByWorkspaceId.mockResolvedValue(
+      connection,
+    );
+    const operation = jest.fn().mockResolvedValue('ok');
+
+    await expect(
+      service.executeWithValidAccessToken(USER_ID, operation),
+    ).resolves.toBe('ok');
+
+    expect(operation).toHaveBeenCalledWith({
+      connection,
+      accessToken: connection.access_token,
+    });
+    expect(apiService.postForm).not.toHaveBeenCalled();
+  });
+
+  it('refresca un token próximo a vencer antes de ejecutar', async () => {
+    const now = 1_800_000_000_000;
+    jest.spyOn(Date, 'now').mockReturnValue(now);
+    const expiringConnection = {
+      ...connection,
+      expires_at: new Date(now + 5 * 60 * 1000).toISOString(),
+    };
+    supabaseService.getMercadoLibreConnectionByWorkspaceId.mockResolvedValue(
+      expiringConnection,
+    );
+    apiService.postForm.mockResolvedValue({
+      access_token: 'renewed-access',
+      refresh_token: 'renewed-refresh',
+      expires_in: 21_600,
+      user_id: connection.seller_id,
+    });
+    const operation = jest.fn().mockResolvedValue('ok');
+
+    await service.executeWithValidAccessToken(USER_ID, operation);
+
+    expect(operation).toHaveBeenCalledWith({
+      connection: expiringConnection,
+      accessToken: 'renewed-access',
+    });
+    expect(apiService.postForm).toHaveBeenCalledTimes(1);
+  });
+
+  it('fuerza refresh y reintenta una vez si ML responde 401', async () => {
+    supabaseService.getMercadoLibreConnectionByWorkspaceId.mockResolvedValue(
+      connection,
+    );
+    apiService.postForm.mockResolvedValue({
+      access_token: 'forced-access',
+      refresh_token: 'forced-refresh',
+      expires_in: 21_600,
+      user_id: connection.seller_id,
+    });
+    const operation = jest
+      .fn()
+      .mockRejectedValueOnce(new UnauthorizedException())
+      .mockResolvedValueOnce('recovered');
+
+    await expect(
+      service.executeWithValidAccessToken(USER_ID, operation),
+    ).resolves.toBe('recovered');
+
+    expect(operation).toHaveBeenNthCalledWith(1, {
+      connection,
+      accessToken: connection.access_token,
+    });
+    expect(operation).toHaveBeenNthCalledWith(2, {
+      connection,
+      accessToken: 'forced-access',
+    });
+    expect(apiService.postForm).toHaveBeenCalledTimes(1);
+  });
+
+  it('refresca con el owner técnico para otro usuario del workspace', async () => {
+    supabaseService.getMercadoLibreConnectionByWorkspaceId.mockResolvedValue(
+      connection,
+    );
+    const tokens = {
+      access_token: 'workspace-access',
+      refresh_token: 'workspace-refresh',
+      expires_in: 21_600,
+      user_id: connection.seller_id,
+    };
+    apiService.postForm.mockResolvedValue(tokens);
+    const operation = jest
+      .fn()
+      .mockRejectedValueOnce(new UnauthorizedException())
+      .mockResolvedValueOnce('ok');
+
+    await service.executeWithValidAccessToken(OTHER_USER_ID, operation);
+
+    expect(authService.saveRefreshedTokens).toHaveBeenCalledWith(
+      USER_ID,
+      connection,
+      tokens,
+    );
+    expect(workspaceRepository.findWorkspaceByUserId).toHaveBeenCalledWith(
+      OTHER_USER_ID,
+    );
+  });
+
+  it('usa el token renovado por otro worker sin refrescar otra vez', async () => {
+    const replacement = {
+      ...connection,
+      access_token: 'worker-access',
+      refresh_token: 'worker-refresh',
+      updated_at: '2030-01-01T00:00:00.000Z',
+    };
+    supabaseService.getMercadoLibreConnectionByWorkspaceId
+      .mockResolvedValueOnce(connection)
+      .mockResolvedValueOnce(replacement);
+    const operation = jest
+      .fn()
+      .mockRejectedValueOnce(new UnauthorizedException())
+      .mockResolvedValueOnce('recovered');
+
+    await expect(
+      service.executeWithValidAccessToken(USER_ID, operation),
+    ).resolves.toBe('recovered');
+
+    expect(operation).toHaveBeenNthCalledWith(2, {
+      connection: replacement,
+      accessToken: replacement.access_token,
+    });
+    expect(apiService.postForm).not.toHaveBeenCalled();
+  });
+
+  it('propaga el segundo 401 sin volver a reintentar', async () => {
+    supabaseService.getMercadoLibreConnectionByWorkspaceId.mockResolvedValue(
+      connection,
+    );
+    apiService.postForm.mockResolvedValue({
+      access_token: 'forced-access',
+      refresh_token: 'forced-refresh',
+      expires_in: 21_600,
+      user_id: connection.seller_id,
+    });
+    const operation = jest.fn().mockRejectedValue(new UnauthorizedException());
+
+    await expect(
+      service.executeWithValidAccessToken(USER_ID, operation),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+
+    expect(operation).toHaveBeenCalledTimes(2);
+    expect(apiService.postForm).toHaveBeenCalledTimes(1);
+  });
+
+  it('comparte un solo refresh entre dos operaciones que reciben 401', async () => {
+    supabaseService.getMercadoLibreConnectionByWorkspaceId.mockResolvedValue(
+      connection,
+    );
+    let resolveRefresh!: (value: unknown) => void;
+    apiService.postForm.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveRefresh = resolve;
+        }),
+    );
+    const operation = jest.fn(({ accessToken }: { accessToken: string }) =>
+      accessToken === connection.access_token
+        ? Promise.reject(new UnauthorizedException())
+        : Promise.resolve(accessToken),
+    );
+
+    const first = service.executeWithValidAccessToken(USER_ID, operation);
+    const second = service.executeWithValidAccessToken(USER_ID, operation);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    expect(apiService.postForm).toHaveBeenCalledTimes(1);
+    resolveRefresh({
+      access_token: 'shared-forced-access',
+      refresh_token: 'shared-forced-refresh',
+      expires_in: 21_600,
+      user_id: connection.seller_id,
+    });
+
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      'shared-forced-access',
+      'shared-forced-access',
+    ]);
+    expect(apiService.postForm).toHaveBeenCalledTimes(1);
   });
 
   it('usa una conexión del workspace y protege el refresh por owner técnico', async () => {
