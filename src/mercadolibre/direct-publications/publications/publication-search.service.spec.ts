@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadGatewayException, NotFoundException } from '@nestjs/common';
 
 import type { MercadolibreTokenService } from '../../auth/mercadolibre-token.service';
 import type { ItemsService } from '../items/items.service';
@@ -7,6 +7,7 @@ import { PublicationSearchService } from './publication-search.service';
 import type { PublicationTitleItemsSearchService } from './publication-title-items-search.service';
 import type { UserProductFamilyService } from '../../user-products/user-product-family.service';
 import type { PublicationsSearchService } from './publications-search.service';
+import type { FamiliesService } from '../families/families.service';
 
 const USER_ID = '11111111-1111-4111-8111-111111111111';
 const CONNECTION = {
@@ -20,20 +21,20 @@ const CONNECTION = {
 describe('PublicationSearchService', () => {
   it('familyId devuelve todos los MLA actuales y fuerza el familyId buscado', async () => {
     const context = createService();
-    context.userProductFamily.getFamily.mockResolvedValue({
-      familyId: '123456',
-      siteId: 'MLA',
-      userId: 42,
-      userProductIds: ['MLAU1', 'MLAU2'],
+    context.families.getFamilyItems.mockResolvedValue({
+      family: {
+        family_id: 123456,
+        site_id: 'MLA',
+        user_id: 42,
+        user_products_ids: ['MLAU1', 'MLAU2'],
+      },
+      items: [
+        { ...item('MLA1'), seller_id: 42, user_product_id: 'MLAU1' },
+        { ...item('MLA2'), seller_id: 42, user_product_id: 'MLAU2' },
+      ],
+      itemIds: ['MLA1', 'MLA2'],
+      accessToken: 'valid-token',
     });
-    context.publicationsSearch.searchByUserProductIds.mockResolvedValue([
-      'MLA1',
-      'MLA2',
-    ]);
-    context.items.getMany.mockResolvedValue([
-      { ...item('MLA1'), seller_id: 42, user_product_id: 'MLAU1' },
-      { ...item('MLA2'), seller_id: 42, user_product_id: 'MLAU2' },
-    ]);
 
     const result = await context.service.search(USER_ID, '123456');
 
@@ -45,31 +46,32 @@ describe('PublicationSearchService', () => {
       'MLAU1',
       'MLAU2',
     ]);
-    expect(
-      context.publicationsSearch.searchByUserProductIds,
-    ).toHaveBeenCalledWith(42, ['MLAU1', 'MLAU2'], 'valid-token');
-    expect(context.token.getSharedStoredConnection).toHaveBeenCalledTimes(1);
-    expect(context.token.getSharedValidAccessToken).toHaveBeenCalledTimes(1);
+    expect(context.families.getFamilyItems).toHaveBeenCalledWith(
+      USER_ID,
+      '123456',
+    );
+    expect(context.token.getSharedStoredConnection).not.toHaveBeenCalled();
+    expect(context.token.getSharedValidAccessToken).not.toHaveBeenCalled();
     expect(context.token.getStoredConnection).not.toHaveBeenCalled();
     expect(context.items.getOne).not.toHaveBeenCalled();
   });
 
   it('familyId excluye publicaciones que no pertenecen al seller compartido', async () => {
     const context = createService();
-    context.userProductFamily.getFamily.mockResolvedValue({
-      familyId: '123456',
-      siteId: 'MLA',
-      userId: 42,
-      userProductIds: ['MLAU1'],
+    context.families.getFamilyItems.mockResolvedValue({
+      family: {
+        family_id: 123456,
+        site_id: 'MLA',
+        user_id: 42,
+        user_products_ids: ['MLAU1'],
+      },
+      items: [
+        { ...item('MLA1'), seller_id: 42 },
+        { ...item('MLA-FOREIGN'), seller_id: 99 },
+      ],
+      itemIds: ['MLA1', 'MLA-FOREIGN'],
+      accessToken: 'valid-token',
     });
-    context.publicationsSearch.searchByUserProductIds.mockResolvedValue([
-      'MLA1',
-      'MLA-FOREIGN',
-    ]);
-    context.items.getMany.mockResolvedValue([
-      { ...item('MLA1'), seller_id: 42 },
-      { ...item('MLA-FOREIGN'), seller_id: 99 },
-    ]);
 
     const result = await context.service.search(USER_ID, '123456');
 
@@ -225,25 +227,36 @@ describe('PublicationSearchService', () => {
     );
   });
 
-  it('propaga el comportamiento de dominio para una familia inexistente', async () => {
+  it('una familia inexistente devuelve una lista vacÃ­a', async () => {
     const context = createService();
-    context.userProductFamily.getFamily.mockRejectedValue(
+    context.families.getFamilyItems.mockRejectedValue(
       new NotFoundException('Familia inexistente'),
     );
 
-    await expect(context.service.search(USER_ID, '999999')).rejects.toThrow(
-      NotFoundException,
-    );
+    await expect(context.service.search(USER_ID, '999999')).resolves.toMatchObject({
+      items: [],
+    });
   });
 
-  it('propaga el comportamiento de Mercado Libre para un MLA inexistente', async () => {
+  it('un MLA inexistente devuelve una lista vacÃ­a', async () => {
     const context = createService();
     context.items.getOne.mockRejectedValue(
       new NotFoundException('Publicación inexistente'),
     );
 
+    await expect(context.service.search(USER_ID, 'MLA999999')).resolves.toMatchObject({
+      items: [],
+    });
+  });
+
+  it('propaga un error real de Mercado Libre', async () => {
+    const context = createService();
+    context.items.getOne.mockRejectedValue(
+      new BadGatewayException('Mercado Libre no disponible'),
+    );
+
     await expect(context.service.search(USER_ID, 'MLA999999')).rejects.toThrow(
-      NotFoundException,
+      BadGatewayException,
     );
   });
 
@@ -254,7 +267,7 @@ describe('PublicationSearchService', () => {
       'q es obligatorio',
     );
     expect(context.token.getStoredConnection).not.toHaveBeenCalled();
-    expect(context.userProductFamily.getFamily).not.toHaveBeenCalled();
+    expect(context.families.getFamilyItems).not.toHaveBeenCalled();
     expect(context.items.getOne).not.toHaveBeenCalled();
     expect(context.title.search).not.toHaveBeenCalled();
   });
@@ -314,18 +327,21 @@ function createService() {
     resolveFamily: jest.fn(),
   };
   const publicationsSearch = { searchByUserProductIds: jest.fn() };
+  const families = { getFamilyItems: jest.fn() };
   return {
     token,
     items,
     title,
     userProductFamily,
     publicationsSearch,
+    families,
     service: new PublicationSearchService(
       token as unknown as MercadolibreTokenService,
       items as unknown as ItemsService,
       title as unknown as PublicationTitleItemsSearchService,
       userProductFamily as unknown as UserProductFamilyService,
       publicationsSearch as unknown as PublicationsSearchService,
+      families as unknown as FamiliesService,
     ),
   };
 }

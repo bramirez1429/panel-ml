@@ -1,7 +1,12 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 
 import { MercadolibreTokenService } from '../../auth/mercadolibre-token.service';
 import { UserProductFamilyService } from '../../user-products/user-product-family.service';
+import { FamiliesService } from '../families/families.service';
 import { ItemsService } from '../items/items.service';
 import type { MlItem } from '../items/items.types';
 import { parsePublicationSearchCriteria } from './publication-search-criteria';
@@ -22,6 +27,7 @@ export class PublicationSearchService {
     private readonly titleSearchService: PublicationTitleItemsSearchService,
     private readonly userProductFamilyService: UserProductFamilyService,
     private readonly publicationsSearchService: PublicationsSearchService,
+    private readonly familiesService: FamiliesService,
   ) {}
 
   async search(
@@ -47,7 +53,7 @@ export class PublicationSearchService {
   }
 
   async searchItems(
-    _userId: string,
+    userId: string,
     query: unknown,
     limit = 20,
     cursor?: string,
@@ -55,12 +61,33 @@ export class PublicationSearchService {
     const criteria = parsePublicationSearchCriteria(query);
     if (criteria.type === 'TITLE') this.validateLimit(limit);
 
+    if (criteria.type === 'FAMILY') {
+      try {
+        return await this.searchFamily(criteria, userId);
+      } catch (error: unknown) {
+        if (!(error instanceof NotFoundException)) throw error;
+
+        const connection = await this.tokenService.getSharedStoredConnection();
+        const accessToken =
+          await this.tokenService.getSharedValidAccessToken(connection);
+        return this.complete(criteria, connection.seller_id, accessToken, []);
+      }
+    }
+
     const connection = await this.tokenService.getSharedStoredConnection();
     const accessToken =
       await this.tokenService.getSharedValidAccessToken(connection);
 
     if (criteria.type === 'MLA') {
-      const item = await this.itemsService.getOne(criteria.value, accessToken);
+      let item: MlItem;
+      try {
+        item = await this.itemsService.getOne(criteria.value, accessToken);
+      } catch (error: unknown) {
+        if (error instanceof NotFoundException) {
+          return this.complete(criteria, connection.seller_id, accessToken, []);
+        }
+        throw error;
+      }
       const items = this.belongsToSeller(item, connection.seller_id)
         ? [item]
         : [];
@@ -73,10 +100,6 @@ export class PublicationSearchService {
         connection.seller_id,
         accessToken,
       );
-    }
-
-    if (criteria.type === 'FAMILY') {
-      return this.searchFamily(criteria, connection.seller_id, accessToken);
     }
 
     const result = await this.titleSearchService.search(
@@ -101,11 +124,21 @@ export class PublicationSearchService {
     sellerId: number,
     accessToken: string,
   ): Promise<PublicationItemsSearchResult> {
-    const resolved = await this.userProductFamilyService.resolveFamily(
-      criteria.value,
-      accessToken,
-      this.userProductFamilyService.createCache(),
-    );
+    let resolved: Awaited<
+      ReturnType<UserProductFamilyService['resolveFamily']>
+    >;
+    try {
+      resolved = await this.userProductFamilyService.resolveFamily(
+        criteria.value,
+        accessToken,
+        this.userProductFamilyService.createCache(),
+      );
+    } catch (error: unknown) {
+      if (error instanceof NotFoundException) {
+        return this.complete(criteria, sellerId, accessToken, []);
+      }
+      throw error;
+    }
     if (String(resolved.userId) !== String(sellerId)) {
       return this.complete(criteria, sellerId, accessToken, []);
     }
@@ -127,30 +160,18 @@ export class PublicationSearchService {
 
   private async searchFamily(
     criteria: Extract<PublicationSearchCriteria, { type: 'FAMILY' }>,
-    sellerId: number,
-    accessToken: string,
+    userId: string,
   ): Promise<PublicationItemsSearchResult> {
-    const family = await this.userProductFamilyService.getFamily(
-      criteria.value,
-      accessToken,
-      this.userProductFamilyService.createCache(),
-    );
-    if (String(family.userId) !== String(sellerId)) {
-      return this.complete(criteria, sellerId, accessToken, []);
-    }
-
-    const itemIds = await this.publicationsSearchService.searchByUserProductIds(
-      sellerId,
-      family.userProductIds,
-      accessToken,
-    );
-    const items = (await this.itemsService.getMany(itemIds, accessToken))
+    const { family, items, accessToken } =
+      await this.familiesService.getFamilyItems(userId, criteria.value);
+    const sellerId = Number(family.user_id);
+    const sellerItems = items
       .filter((item) => this.belongsToSeller(item, sellerId))
       .map((item) => ({
         ...item,
         family_id: criteria.value,
       }));
-    return this.complete(criteria, sellerId, accessToken, items);
+    return this.complete(criteria, sellerId, accessToken, sellerItems);
   }
 
   private complete(
