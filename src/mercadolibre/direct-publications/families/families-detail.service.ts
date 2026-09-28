@@ -5,6 +5,7 @@ import { PricingService } from '../pricing/pricing.service';
 import { PromotionsService } from '../promotions/promotions.service';
 import { PublicationDetailMapper } from '../publications/publication-detail.mapper';
 import { promotionCampaignItemCommerceOf } from '../promotions/promotion-campaign-item-commerce';
+import { resolveCanonicalSku } from '../sku/sku-resolver';
 
 @Injectable()
 export class FamiliesDetailService {
@@ -74,7 +75,7 @@ export class FamiliesDetailService {
             },
 
             sku: {
-              sellerCustomField: item.seller_custom_field ?? null,
+              sellerCustomField: resolveCanonicalSku(item),
 
               inventoryId: item.inventory_id ?? null,
             },

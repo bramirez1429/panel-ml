@@ -8,6 +8,7 @@ import { PublicationsMapper } from '../publications/publications.mapper';
 import type { MlItem } from '../items/items.types';
 
 import type { ClassicSkuUpdate, NewSkuUpdate } from './sku.types';
+import { resolveCanonicalSku } from './sku-resolver';
 
 type VariationAttribute = {
   id?: string;
@@ -52,7 +53,7 @@ export class SkuService {
 
         variations: variations.map((variation) => ({
           variationId: variation.id ?? null,
-          sku: this.findSku(variation.attributes),
+          sku: resolveCanonicalSku({ attributes: variation.attributes }),
         })),
       };
     }
@@ -61,7 +62,7 @@ export class SkuService {
       model: 'SHARED',
       itemId: item.id,
       hasVariations: false,
-      sku: this.findSku(item.attributes),
+      sku: resolveCanonicalSku(item),
     };
   }
 
@@ -160,7 +161,7 @@ export class SkuService {
       familyId,
       itemId: item.id,
       userProductId: item.user_product_id ?? null,
-      sku: this.findSku(item.attributes),
+      sku: resolveCanonicalSku(item),
     };
   }
 
@@ -227,23 +228,6 @@ export class SkuService {
     }
 
     return [...current, sellerSku];
-  }
-
-  /**
-   * Obtiene SELLER_SKU.
-   */
-  private findSku(attributes: VariationAttribute[] | undefined): string | null {
-    if (!Array.isArray(attributes)) {
-      return null;
-    }
-
-    const attribute = attributes.find((item) => item.id === 'SELLER_SKU');
-
-    if (!attribute || typeof attribute.value_name !== 'string') {
-      return null;
-    }
-
-    return attribute.value_name;
   }
 
   private getVariations(variations: unknown[] | undefined): ClassicVariation[] {
