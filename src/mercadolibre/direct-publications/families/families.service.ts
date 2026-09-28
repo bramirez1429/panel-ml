@@ -54,34 +54,35 @@ export class FamiliesService {
   }> {
     this.validateFamilyId(familyId);
 
-    const connection = await this.tokenService.getSharedStoredConnection();
-    const accessToken =
-      await this.tokenService.getSharedValidAccessToken(connection);
+    return this.tokenService.executeWithValidAccessToken(
+      userId,
+      async ({ connection, accessToken }) => {
+        // 1. family_id → MLAU.
+        const family = await this.apiService.get<MlFamilyResponse>(
+          `/sites/MLA/user-products-families/${familyId}`,
+          accessToken,
+        );
 
-    // 1. family_id → MLAU.
-    const family = await this.apiService.get<MlFamilyResponse>(
-      `/sites/MLA/user-products-families/${familyId}`,
-      accessToken,
+        this.validateSeller(family, connection.seller_id);
+
+        // 2. MLAU → MLA.
+        const itemIds = await this.searchService.searchByUserProductIds(
+          connection.seller_id,
+          family.user_products_ids,
+          accessToken,
+        );
+
+        // 3. Obtenemos todos los MLA completos.
+        const items = await this.itemsService.getMany(itemIds, accessToken);
+
+        return {
+          family,
+          items,
+          itemIds,
+          accessToken,
+        };
+      },
     );
-
-    this.validateSeller(family, connection.seller_id);
-
-    // 2. MLAU → MLA.
-    const itemIds = await this.searchService.searchByUserProductIds(
-      connection.seller_id,
-      family.user_products_ids,
-      accessToken,
-    );
-
-    // 3. Obtenemos todos los MLA completos.
-    const items = await this.itemsService.getMany(itemIds, accessToken);
-
-    return {
-      family,
-      items,
-      itemIds,
-      accessToken,
-    };
   }
 
   private validateFamilyId(familyId: string): void {

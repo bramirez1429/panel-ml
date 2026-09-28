@@ -5,6 +5,8 @@ import { PricingService } from '../pricing/pricing.service';
 import { PromotionsService } from '../promotions/promotions.service';
 import { PublicationsMapper } from './publications.mapper';
 import { PublicationDetailMapper } from './publication-detail.mapper';
+import { promotionCampaignItemCommerceOf } from '../promotions/promotion-campaign-item-commerce';
+import { resolveCanonicalSku } from '../sku/sku-resolver';
 @Injectable()
 export class PublicationDetailService {
   constructor(
@@ -80,7 +82,10 @@ export class PublicationDetailService {
       price,
       promotions: effectivePromotions,
 
-      sku: item.seller_custom_field ?? null,
+      installmentLabel:
+        promotionCampaignItemCommerceOf(item).installmentLabel,
+
+      sku: resolveCanonicalSku(item),
       inventoryId: item.inventory_id ?? null,
 
       thumbnail: item.thumbnail ?? null,

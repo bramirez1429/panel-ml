@@ -3,32 +3,16 @@ import { BadRequestException } from '@nestjs/common';
 import { parsePublicationSearchCriteria } from './publication-search-criteria';
 
 describe('parsePublicationSearchCriteria', () => {
-  it('detecta un familyId numérico', () => {
-    expect(parsePublicationSearchCriteria('123456')).toEqual({
-      type: 'FAMILY',
-      value: '123456',
-    });
-  });
-
-  it('detecta un MLA exacto', () => {
-    expect(parsePublicationSearchCriteria('MLA1947917494')).toEqual({
-      type: 'MLA',
-      value: 'MLA1947917494',
-    });
-  });
-
-  it('normaliza un MLA en minúsculas', () => {
-    expect(parsePublicationSearchCriteria('mla1947917494')).toEqual({
-      type: 'MLA',
-      value: 'MLA1947917494',
-    });
-  });
-
-  it('detecta una búsqueda por título', () => {
-    expect(parsePublicationSearchCriteria('remera mujer')).toEqual({
-      type: 'TITLE',
-      value: 'remera mujer',
-    });
+  it.each([
+    ['123456', { type: 'FAMILY', value: '123456' }],
+    ['MLA1947917494', { type: 'MLA', value: 'MLA1947917494' }],
+    ['mla1947917494', { type: 'MLA', value: 'MLA1947917494' }],
+    ['MLAU123456', { type: 'MLAU', value: 'MLAU123456' }],
+    ['mlau123456', { type: 'MLAU', value: 'MLAU123456' }],
+    ['remera mujer', { type: 'TITLE', value: 'remera mujer' }],
+    ['  Remera   Miami  ', { type: 'TITLE', value: 'Remera Miami' }],
+  ] as const)('clasifica %s', (query, expected) => {
+    expect(parsePublicationSearchCriteria(query)).toEqual(expected);
   });
 
   it('rechaza una query vacía', () => {

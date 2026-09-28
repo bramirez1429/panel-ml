@@ -3,11 +3,13 @@ import type { MlItem } from '../items/items.types';
 export type PublicationSearchCriteria =
   | { type: 'FAMILY'; value: string }
   | { type: 'MLA'; value: string }
+  | { type: 'MLAU'; value: string }
   | { type: 'TITLE'; value: string };
 
 export type PublicationSearchItem = {
   itemId: string;
   familyId: string | null;
+  userProductId: string | null;
   title: string | null;
   thumbnail: string | null;
   price: number | null;

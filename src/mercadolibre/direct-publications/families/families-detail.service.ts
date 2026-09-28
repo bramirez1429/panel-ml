@@ -4,6 +4,8 @@ import { FamiliesService } from './families.service';
 import { PricingService } from '../pricing/pricing.service';
 import { PromotionsService } from '../promotions/promotions.service';
 import { PublicationDetailMapper } from '../publications/publication-detail.mapper';
+import { promotionCampaignItemCommerceOf } from '../promotions/promotion-campaign-item-commerce';
+import { resolveCanonicalSku } from '../sku/sku-resolver';
 
 @Injectable()
 export class FamiliesDetailService {
@@ -32,12 +34,15 @@ export class FamiliesDetailService {
             this.promotionsService.getPromotions(userId, item.id, accessToken),
           ]);
 
+          const effectivePromotions =
+            PublicationDetailMapper.reconcilePromotions(price, promotions);
+
           const friendlyStatus = PublicationDetailMapper.getStatus(item.status);
 
           const friendlyPricing = PublicationDetailMapper.getPricing(price);
 
           const friendlyPromotion =
-            PublicationDetailMapper.getPromotion(promotions);
+            PublicationDetailMapper.getPromotion(effectivePromotions);
 
           const friendlyShipping = PublicationDetailMapper.getShipping(
             item.shipping,
@@ -70,14 +75,17 @@ export class FamiliesDetailService {
             },
 
             sku: {
-              sellerCustomField: item.seller_custom_field ?? null,
+              sellerCustomField: resolveCanonicalSku(item),
 
               inventoryId: item.inventory_id ?? null,
             },
 
             price,
 
-            promotions,
+            promotions: effectivePromotions,
+
+            installmentLabel:
+              promotionCampaignItemCommerceOf(item).installmentLabel,
 
             thumbnail: item.thumbnail ?? null,
 
