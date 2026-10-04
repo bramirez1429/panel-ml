@@ -26,6 +26,14 @@ export class ItemsService {
     );
   }
 
+  /** Trae un MLA incluyendo atributos internos de las variaciones. */
+  getOneWithAttributes(itemId: string, accessToken: string): Promise<MlItem> {
+    return this.apiService.get<MlItem>(
+      `/items/${itemId}?include_attributes=all`,
+      accessToken,
+    );
+  }
+
   /** Trae varios MLA en lotes de máximo 20. */
   async getMany(itemIds: string[], accessToken: string): Promise<MlItem[]> {
     const result: MlItem[] = [];

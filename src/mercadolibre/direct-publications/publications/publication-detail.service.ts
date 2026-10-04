@@ -19,7 +19,10 @@ export class PublicationDetailService {
   async getDetail(userId: string, itemId: string) {
     const accessToken = await this.tokenService.getValidAccessToken(userId);
 
-    const item = await this.itemsService.getOne(itemId, accessToken);
+    const item = await this.itemsService.getOneWithAttributes(
+      itemId,
+      accessToken,
+    );
 
     const [price, promotions] = await Promise.all([
       this.pricingService.getPrice(item, accessToken),
