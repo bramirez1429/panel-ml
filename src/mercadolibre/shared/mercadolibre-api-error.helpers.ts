@@ -49,6 +49,9 @@ export function throwMercadolibreApiError(
       'Mercado Libre no encontró la descripción solicitada',
     );
   }
+  if (kind === 'itemLookup' && status === 404) {
+    throw new NotFoundException('Mercado Libre no encontró la publicación solicitada');
+  }
   if (kind === 'variationDelete') {
     throwVariationDeleteApiError(status, safeData);
   }

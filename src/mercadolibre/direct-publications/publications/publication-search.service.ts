@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 
@@ -21,6 +22,8 @@ import { PublicationsSearchService } from './publications-search.service';
 
 @Injectable()
 export class PublicationSearchService {
+  private readonly logger = new Logger(PublicationSearchService.name);
+
   constructor(
     private readonly tokenService: MercadolibreTokenService,
     private readonly itemsService: ItemsService,
@@ -83,8 +86,13 @@ export class PublicationSearchService {
         if (criteria.type === 'MLA') {
           let item: MlItem;
           try {
-            item = await this.itemsService.getOne(criteria.value, accessToken);
+            item = await this.itemsService.getOne(
+              criteria.value,
+              accessToken,
+              'itemLookup',
+            );
           } catch (error: unknown) {
+            this.logItemLookupError(criteria.value, error);
             if (error instanceof NotFoundException) {
               return this.complete(
                 criteria,
@@ -212,5 +220,11 @@ export class PublicationSearchService {
     if (!Number.isInteger(limit) || limit < 1 || limit > 20) {
       throw new BadRequestException('limit debe estar entre 1 y 20');
     }
+  }
+
+  private logItemLookupError(itemId: string, error: unknown): void {
+    const errorType =
+      error instanceof Error ? error.constructor.name : typeof error;
+    this.logger.warn({ itemId, errorType });
   }
 }

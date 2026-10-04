@@ -3,6 +3,7 @@ import {
   BadRequestException,
   GatewayTimeoutException,
   Injectable,
+  Logger,
 } from '@nestjs/common';
 
 import {
@@ -32,6 +33,8 @@ export type MercadolibreApiRequestOptions = {
 
 @Injectable()
 export class MercadolibreApiService {
+  private readonly logger = new Logger(MercadolibreApiService.name);
+
   /** Ejecuta un GET autenticado cuando recibe un token. */
   get<T>(
     path: string,
@@ -237,6 +240,8 @@ export class MercadolibreApiService {
       throw new BadGatewayException('No se pudo conectar con Mercado Libre');
     }
 
+    this.logItemLookupStatus(path, kind, response.status);
+
     if (response.status === 204) {
       return {
         data: undefined as T,
@@ -313,6 +318,19 @@ export class MercadolibreApiService {
       throw new BadRequestException('timeoutMs debe ser un entero positivo');
     }
     return timeoutMs;
+  }
+
+  private logItemLookupStatus(
+    path: string,
+    kind: MercadoLibreRequestKind | undefined,
+    status: number,
+  ): void {
+    if (kind !== 'itemLookup') return;
+
+    const itemId = path.match(/^\/items\/(MLA\d+)$/iu)?.[1]?.toUpperCase();
+    if (!itemId) return;
+
+    this.logger.log({ itemId, status });
   }
 }
 
