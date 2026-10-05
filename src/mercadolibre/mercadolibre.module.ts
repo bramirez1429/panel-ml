@@ -104,6 +104,8 @@ import { ProductRankingService } from './direct-publications/product-ranking/pro
 import { ProductRankingVisitsService } from './direct-publications/product-ranking/product-ranking-visits.service';
 import { MercadolibreIntegrationStatusService } from './integration-status/mercadolibre-integration-status.service';
 import { WorkspaceModule } from '../workspaces/workspace.module';
+import { ReplicationController } from './direct-publications/replication/replication.controller';
+import { ReplicationCatalogService } from './direct-publications/replication/replication-catalog.service';
 
 @Module({
   imports: [AuthModule, SalesPersistenceModule, WorkspaceModule],
@@ -129,6 +131,7 @@ import { WorkspaceModule } from '../workspaces/workspace.module';
     SimilarPublicationController,
     ProductRankingController,
     StockBulkController,
+    ReplicationController,
   ],
   providers: [
     SupabaseService,
@@ -210,6 +213,7 @@ import { WorkspaceModule } from '../workspaces/workspace.module';
     ProductRankingService,
     ProductRankingVisitsService,
     MercadolibreIntegrationStatusService,
+    ReplicationCatalogService,
   ],
   exports: [
     MercadolibreProductsRepository,

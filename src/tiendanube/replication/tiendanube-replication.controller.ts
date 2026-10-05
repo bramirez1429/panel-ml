@@ -21,6 +21,8 @@ import type { TiendanubeSourceReplicationResult } from './tiendanube-replication
 import type { TiendanubeReplicationSourceStatusResponse } from './tiendanube-replication-status.types';
 import { TiendanubeReplicationService } from './tiendanube-replication.service';
 import { TiendanubeReplicationSourceDto } from './tiendanube-replication-source.dto';
+import { TiendanubeReplicationPreviewService } from './tiendanube-replication-preview.service';
+import type { TiendanubeReplicationPreview } from './tiendanube-replication-preview.service';
 
 @Controller('tiendanube/replication')
 @UseGuards(AccessTokenGuard)
@@ -28,6 +30,7 @@ export class TiendanubeReplicationController {
   constructor(
     private readonly replicationService: TiendanubeReplicationService,
     private readonly replicationStatusService: TiendanubeReplicationStatusService,
+    private readonly previewService: TiendanubeReplicationPreviewService,
   ) {}
 
   @Get('status')
@@ -37,6 +40,15 @@ export class TiendanubeReplicationController {
     @Query() query: TiendanubeReplicationStatusQueryDto,
   ): Promise<TiendanubeReplicationStatusResponse> {
     return this.replicationStatusService.getStatus(user.id, query.productIds);
+  }
+
+  @Get('preview-by-source')
+  @Header('Cache-Control', 'no-store')
+  getPreviewBySource(
+    @CurrentUser() user: SafeUser,
+    @Query('sourceKey') sourceKey: string,
+  ): Promise<TiendanubeReplicationPreview> {
+    return this.previewService.getPreview(user.id, sourceKey);
   }
 
   @Post('mercadolibre/source')

@@ -31,6 +31,7 @@ import { TiendanubePrivacyWebhookService } from './webhooks/tiendanube-privacy-w
 import { TiendanubeCategoriesController } from './categories/tiendanube-categories.controller';
 import { TiendanubeCategoriesService } from './categories/tiendanube-categories.service';
 import { WorkspaceModule } from '../workspaces/workspace.module';
+import { TiendanubeReplicationPreviewService } from './replication/tiendanube-replication-preview.service';
 
 @Module({
   imports: [
@@ -65,6 +66,7 @@ import { WorkspaceModule } from '../workspaces/workspace.module';
     TiendanubeProductResolver,
     TiendanubeExistingProductSyncService,
     TiendanubeSourceReplicationService,
+    TiendanubeReplicationPreviewService,
     {
       provide: TiendanubeConnectionRepository,
       useClass: SupabaseTiendanubeConnectionRepository,
