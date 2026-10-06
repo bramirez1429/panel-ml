@@ -10,6 +10,9 @@ type ProductAccumulator = {
   sourceKey: string;
   title: string;
   sold: number;
+  priceFrom: number | null;
+  priceTo: number | null;
+  currency: string | null;
   thumbnailUrl: string | null;
   familyId: string | null;
   itemId: string | null;
@@ -48,6 +51,12 @@ export class ReplicationCatalogService {
       const current = products.get(key);
       if (current) {
         current.sold += sold;
+        const price = validPrice(item.price);
+        if (price !== null) {
+          current.priceFrom = current.priceFrom === null ? price : Math.min(current.priceFrom, price);
+          current.priceTo = current.priceTo === null ? price : Math.max(current.priceTo, price);
+        }
+        if (!current.currency && item.currency_id) current.currency = item.currency_id;
         if (sold > current.representativeSold) {
           current.itemId = item.id;
           current.userProductId = item.user_product_id ?? null;
@@ -61,6 +70,9 @@ export class ReplicationCatalogService {
         sourceKey: key,
         title: item.family_name || item.title || familyId,
         sold,
+        priceFrom: validPrice(item.price),
+        priceTo: validPrice(item.price),
+        currency: item.currency_id ?? null,
         thumbnailUrl: bestItemImage(item),
         familyId,
         itemId: item.id,
@@ -75,6 +87,9 @@ export class ReplicationCatalogService {
       sourceKey: `item:${item.id}`,
       title: item.title || item.id,
       sold,
+      priceFrom: item.price ?? null,
+      priceTo: item.price ?? null,
+      currency: item.currency_id ?? null,
       thumbnailUrl: bestItemImage(item),
       familyId: null,
       itemId: item.id,
@@ -87,4 +102,8 @@ export class ReplicationCatalogService {
 
 function bestItemImage(item: MlItem): string | null {
   return item.pictures?.[0]?.secure_url ?? item.pictures?.[0]?.url ?? item.thumbnail ?? null;
+}
+
+function validPrice(value: number | undefined): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
 }
