@@ -51,16 +51,17 @@ export class ReplicationCatalogService {
         if (sold > current.representativeSold) {
           current.itemId = item.id;
           current.userProductId = item.user_product_id ?? null;
+          current.thumbnailUrl = bestItemImage(item);
           current.representativeSold = sold;
         }
-        if (!current.thumbnailUrl && item.thumbnail) current.thumbnailUrl = item.thumbnail;
+        if (!current.thumbnailUrl) current.thumbnailUrl = bestItemImage(item);
         return;
       }
       products.set(key, {
         sourceKey: key,
         title: item.family_name || item.title || familyId,
         sold,
-        thumbnailUrl: item.thumbnail ?? null,
+        thumbnailUrl: bestItemImage(item),
         familyId,
         itemId: item.id,
         userProductId: item.user_product_id ?? null,
@@ -74,7 +75,7 @@ export class ReplicationCatalogService {
       sourceKey: `item:${item.id}`,
       title: item.title || item.id,
       sold,
-      thumbnailUrl: item.thumbnail ?? null,
+      thumbnailUrl: bestItemImage(item),
       familyId: null,
       itemId: item.id,
       userProductId: null,
@@ -82,4 +83,8 @@ export class ReplicationCatalogService {
       representativeSold: sold,
     });
   }
+}
+
+function bestItemImage(item: MlItem): string | null {
+  return item.pictures?.[0]?.secure_url ?? item.pictures?.[0]?.url ?? item.thumbnail ?? null;
 }
