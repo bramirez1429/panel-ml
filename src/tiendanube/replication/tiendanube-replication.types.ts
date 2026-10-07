@@ -39,6 +39,7 @@ export type TiendanubeLocalizedValueDto = Readonly<{
 
 export type TiendanubeCreateProductVariantDto = Readonly<{
   price: string;
+  promotional_price?: string;
   stock_management: true;
   stock: number;
   sku?: string;
@@ -66,8 +67,10 @@ export type TiendanubeCreateProductDto = Readonly<{
 }>;
 
 export type TiendanubeReplicationOptions = Readonly<{
+  title?: string;
   priceMode: 'KEEP_SOURCE' | 'OVERRIDE';
   price?: number;
+  promotionalPrice?: number;
   categoryId: number;
   tagMode: 'KEEP_SOURCE' | 'OVERRIDE';
   tags?: string[];
