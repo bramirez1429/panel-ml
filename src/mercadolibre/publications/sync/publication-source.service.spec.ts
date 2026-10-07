@@ -43,6 +43,22 @@ function parsePath(path: string): URL {
 }
 
 describe('PublicationSourceService', () => {
+  it('obtiene el total sin recorrer el catÃ¡logo', async () => {
+    const { api, source } = createSource(() => ({
+      results: ['MLA1'],
+      paging: { total: 321 },
+    }));
+
+    await expect(source.getItemsTotal(123, 'private-token')).resolves.toBe(
+      321,
+    );
+
+    expect(api.calls).toHaveLength(1);
+    const query = parsePath(api.calls[0].path).searchParams;
+    expect(query.get('search_type')).toBe('scan');
+    expect(query.get('limit')).toBe('1');
+  });
+
   it('obtiene la primera página del scan sin scroll_id', async () => {
     const { api, source } = createSource(() => ({
       results: ['MLA1', 'MLA1', 'MLA2'],

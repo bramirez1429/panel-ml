@@ -61,6 +61,22 @@ export class PublicationSourceService {
     };
   }
 
+  /** Obtiene el total real de publicaciones sin recorrer el catÃ¡logo. */
+  async getItemsTotal(
+    sellerId: number,
+    accessToken: string,
+  ): Promise<number> {
+    const query = new URLSearchParams({
+      search_type: 'scan',
+      limit: '1',
+    });
+    const data = await this.apiService.get<unknown>(
+      `/users/${sellerId}/items/search?${query.toString()}`,
+      accessToken,
+    );
+    return parseSearchTotal(data);
+  }
+
   /** Recorre el scan y devuelve todos los MLA sin duplicados. */
   async getAllItemIds(
     sellerId: number,

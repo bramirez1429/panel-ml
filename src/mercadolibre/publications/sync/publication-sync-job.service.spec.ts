@@ -28,6 +28,7 @@ function job(
     scan_started: false,
     scroll_id: null,
     buffer_item_ids: [],
+    total_items: 0,
     processed_items: 0,
     products_saved: 0,
     children_saved: 0,
@@ -51,6 +52,7 @@ function setup() {
   const connection = { user_id: APP_USER_ID, seller_id: SELLER_ID };
   const jobs = {
     create: jest.fn().mockResolvedValue(job()),
+    findActiveBySellerId: jest.fn().mockResolvedValue(null),
     findById: jest.fn().mockResolvedValue(job()),
     claim: jest
       .fn()
@@ -66,6 +68,7 @@ function setup() {
   };
   const source = {
     fetchNextScanPage: jest.fn(),
+    getItemsTotal: jest.fn().mockResolvedValue(42),
   };
   const sync = {
     syncBatch: jest.fn(),
@@ -86,12 +89,70 @@ describe('PublicationSyncJobService', () => {
       ok: true,
       syncId: JOB_ID,
       status: 'PENDING',
+      totalItems: 0,
     });
     expect(token.getStoredConnection).toHaveBeenCalledWith(APP_USER_ID);
+    expect(jobs.findActiveBySellerId).toHaveBeenCalledWith(SELLER_ID);
     expect(jobs.create).toHaveBeenCalledTimes(1);
-    expect(token.getValidAccessToken).not.toHaveBeenCalled();
+    expect(jobs.create).toHaveBeenCalledWith(
+      expect.objectContaining({ sellerId: SELLER_ID, totalItems: 42 }),
+    );
+    expect(token.getValidAccessToken).toHaveBeenCalledWith(
+      APP_USER_ID,
+      expect.any(Object),
+    );
+    expect(source.getItemsTotal).toHaveBeenCalledWith(
+      SELLER_ID,
+      'private-token',
+    );
     expect(source.fetchNextScanPage).not.toHaveBeenCalled();
     expect(sync.syncBatch).not.toHaveBeenCalled();
+  });
+
+  it('reutiliza el job activo del seller sin crear ni consultar el total', async () => {
+    const { jobs, service, source, token } = setup();
+    jobs.findActiveBySellerId.mockResolvedValue(
+      job({ status: 'RUNNING', total_items: 75 }),
+    );
+
+    await expect(service.start(APP_USER_ID)).resolves.toEqual({
+      ok: true,
+      syncId: JOB_ID,
+      status: 'RUNNING',
+      totalItems: 75,
+    });
+
+    expect(jobs.create).not.toHaveBeenCalled();
+    expect(token.getValidAccessToken).not.toHaveBeenCalled();
+    expect(source.getItemsTotal).not.toHaveBeenCalled();
+  });
+
+  it('incluye el total real en el status del job', async () => {
+    const { jobs, service } = setup();
+    jobs.findById.mockResolvedValue(
+      job({
+        status: 'RUNNING',
+        total_items: 100,
+        processed_items: 25,
+        products_saved: 10,
+        children_saved: 15,
+        errors_count: 2,
+        last_error: 'Error temporal',
+      }),
+    );
+
+    await expect(service.getStatus(APP_USER_ID, JOB_ID)).resolves.toEqual({
+      ok: true,
+      syncId: JOB_ID,
+      status: 'RUNNING',
+      totalItems: 100,
+      processedItems: 25,
+      productsSaved: 10,
+      childrenSaved: 15,
+      errorsCount: 2,
+      lastError: 'Error temporal',
+      hasMore: true,
+    });
   });
 
   it('trae una página, procesa diez y luego consume el buffer', async () => {

@@ -10,6 +10,7 @@ export type CreateMercadolibreSyncJobInput = {
   id: string;
   sellerId: number;
   fullSyncId: string;
+  totalItems: number;
 };
 
 export type UpdateMercadolibreSyncJobProgressInput = {

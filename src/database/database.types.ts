@@ -289,6 +289,7 @@ type SyncJobRow = {
   scan_started: boolean;
   scroll_id: string | null;
   buffer_item_ids: Json;
+  total_items: number;
   processed_items: number;
   products_saved: number;
   children_saved: number;
@@ -309,6 +310,7 @@ type SyncJobInsert = {
   scan_started?: boolean;
   scroll_id?: string | null;
   buffer_item_ids?: Json;
+  total_items?: number;
   processed_items?: number;
   products_saved?: number;
   children_saved?: number;

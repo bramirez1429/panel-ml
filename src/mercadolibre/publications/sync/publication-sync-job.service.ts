@@ -44,12 +44,35 @@ export class PublicationSyncJobService {
   /** Crea una sincronización sin procesar publicaciones todavía. */
   async start(userId: string): Promise<SyncJobStartResponse> {
     const connection = await this.tokenService.getStoredConnection(userId);
-    const job = await this.jobsRepository.create({
-      id: randomUUID(),
-      sellerId: connection.seller_id,
-      fullSyncId: randomUUID(),
-    });
-    return { ok: true, syncId: job.id, status: 'PENDING' };
+    const active = await this.jobsRepository.findActiveBySellerId(
+      connection.seller_id,
+    );
+    if (active) return this.startResponse(active);
+
+    const accessToken = await this.tokenService.getValidAccessToken(
+      userId,
+      connection,
+    );
+    const totalItems = await this.sourceService.getItemsTotal(
+      connection.seller_id,
+      accessToken,
+    );
+    let job: MercadolibreSyncJob;
+    try {
+      job = await this.jobsRepository.create({
+        id: randomUUID(),
+        sellerId: connection.seller_id,
+        fullSyncId: randomUUID(),
+        totalItems,
+      });
+    } catch (error) {
+      const concurrent = await this.jobsRepository.findActiveBySellerId(
+        connection.seller_id,
+      );
+      if (concurrent) return this.startResponse(concurrent);
+      throw error;
+    }
+    return this.startResponse(job);
   }
 
   /** Procesa el siguiente bloque del trabajo. */
@@ -95,6 +118,7 @@ export class PublicationSyncJobService {
       ok: true,
       syncId: job.id,
       status: job.status,
+      totalItems: job.total_items,
       processedItems: job.processed_items,
       productsSaved: job.products_saved,
       childrenSaved: job.children_saved,
@@ -246,6 +270,16 @@ export class PublicationSyncJobService {
   /** Construye la respuesta de un trabajo completado. */
   private completedResponse(syncId: string): SyncJobCompletedResponse {
     return { ok: true, syncId, status: 'COMPLETED', hasMore: false };
+  }
+
+  /** Construye la respuesta inicial para un job nuevo o ya activo. */
+  private startResponse(job: MercadolibreSyncJob): SyncJobStartResponse {
+    return {
+      ok: true,
+      syncId: job.id,
+      status: job.status === 'RUNNING' ? 'RUNNING' : 'PENDING',
+      totalItems: job.total_items,
+    };
   }
 
   /** Registra el error sin incluir mensajes ni credenciales. */

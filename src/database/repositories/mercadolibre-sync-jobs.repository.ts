@@ -34,6 +34,7 @@ export class MercadolibreSyncJobsRepository {
         id: input.id,
         seller_id: input.sellerId,
         full_sync_id: input.fullSyncId,
+        total_items: input.totalItems,
       })
       .select('*')
       .single();
@@ -50,6 +51,24 @@ export class MercadolibreSyncJobsRepository {
       .from('mercadolibre_sync_jobs')
       .select('*')
       .eq('id', id)
+      .maybeSingle();
+
+    if (error) this.readError(error);
+    return data ? this.mapJob(data) : null;
+  }
+
+  /** Devuelve el trabajo activo mÃ¡s reciente del seller, si existe. */
+  async findActiveBySellerId(
+    sellerId: number,
+  ): Promise<MercadolibreSyncJob | null> {
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('mercadolibre_sync_jobs')
+      .select('*')
+      .eq('seller_id', sellerId)
+      .in('status', ['PENDING', 'RUNNING'])
+      .order('created_at', { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     if (error) this.readError(error);

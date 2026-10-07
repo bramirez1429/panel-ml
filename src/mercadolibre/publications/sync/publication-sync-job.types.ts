@@ -3,7 +3,8 @@ import { MercadolibreSyncJob } from '../../../database/repositories/mercadolibre
 export type SyncJobStartResponse = {
   ok: true;
   syncId: string;
-  status: 'PENDING';
+  status: 'PENDING' | 'RUNNING';
+  totalItems: number;
 };
 
 export type SyncJobPendingResponse = {
@@ -32,6 +33,7 @@ export type SyncJobStatusResponse = {
   ok: true;
   syncId: string;
   status: MercadolibreSyncJob['status'];
+  totalItems: number;
   processedItems: number;
   productsSaved: number;
   childrenSaved: number;

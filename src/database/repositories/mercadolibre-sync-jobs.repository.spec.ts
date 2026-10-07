@@ -19,6 +19,7 @@ function jobRow(status: SyncJobRow['status'] = 'PENDING'): SyncJobRow {
     scan_started: false,
     scroll_id: null,
     buffer_item_ids: [],
+    total_items: 0,
     processed_items: 0,
     products_saved: 0,
     children_saved: 0,
@@ -76,6 +77,7 @@ describe('MercadolibreSyncJobsRepository', () => {
       id: JOB_ID,
       sellerId: 123,
       fullSyncId: FULL_SYNC_ID,
+      totalItems: 42,
     });
     const found = await repository.findById(JOB_ID);
 
@@ -86,8 +88,26 @@ describe('MercadolibreSyncJobsRepository', () => {
       id: JOB_ID,
       seller_id: 123,
       full_sync_id: FULL_SYNC_ID,
+      total_items: 42,
     });
     expect(eq).toHaveBeenCalledWith('id', JOB_ID);
+  });
+
+  it('encuentra el trabajo PENDING o RUNNING mÃ¡s reciente del seller', async () => {
+    const row = jobRow('RUNNING');
+    const maybeSingle = jest.fn().mockResolvedValue({ data: row, error: null });
+    const limit = jest.fn().mockReturnValue({ maybeSingle });
+    const order = jest.fn().mockReturnValue({ limit });
+    const statusIn = jest.fn().mockReturnValue({ order });
+    const sellerEq = jest.fn().mockReturnValue({ in: statusIn });
+    const select = jest.fn().mockReturnValue({ eq: sellerEq });
+    const { repository } = setup({ select });
+
+    await expect(repository.findActiveBySellerId(123)).resolves.toEqual(row);
+    expect(sellerEq).toHaveBeenCalledWith('seller_id', 123);
+    expect(statusIn).toHaveBeenCalledWith('status', ['PENDING', 'RUNNING']);
+    expect(order).toHaveBeenCalledWith('created_at', { ascending: false });
+    expect(limit).toHaveBeenCalledWith(1);
   });
 
   it('reclama solamente un trabajo PENDING', async () => {
