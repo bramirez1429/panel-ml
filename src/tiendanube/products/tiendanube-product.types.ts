@@ -17,3 +17,11 @@ export type TiendanubeProductResponse = Readonly<{
   variants: readonly TiendanubeProductVariantResponse[];
   images: readonly TiendanubeProductImageResponse[];
 }>;
+
+export type TiendanubeProductByMercadolibreResponse = Readonly<{
+  linked: boolean;
+  price: number | null;
+  promotionalPrice: number | null;
+  stock: number | null;
+  sku: string | null;
+}>;

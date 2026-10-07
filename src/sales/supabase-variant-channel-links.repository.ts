@@ -24,6 +24,26 @@ export class SupabaseVariantChannelLinksRepository extends VariantChannelLinksRe
     return data.map(mapLink);
   }
 
+  async findByUserIdAndMlItemId(
+    userId: string,
+    mlItemId: string,
+    mlVariationId?: string,
+  ): Promise<VariantChannelLink[]> {
+    const query = this.supabase
+      .getClient()
+      .from('variant_channel_links')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('ml_item_id', mlItemId);
+    const { data, error } =
+      mlVariationId === undefined
+        ? await query
+        : await query.eq('ml_variation_id', mlVariationId);
+
+    if (error || !data) this.readError();
+    return data.map(mapLink);
+  }
+
   async save(link: SaveVariantChannelLink): Promise<VariantChannelLink> {
     const timestamp = new Date().toISOString();
     const { data, error } = await this.supabase

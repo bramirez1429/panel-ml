@@ -40,6 +40,7 @@ describe('SalesCurveService', () => {
     };
     const variantLinks = {
       findByUserId: jest.fn().mockResolvedValue(input?.links ?? []),
+      findByUserIdAndMlItemId: jest.fn(),
       save: jest.fn().mockImplementation((value) => Promise.resolve(value)),
     };
     const service = new SalesCurveService(
