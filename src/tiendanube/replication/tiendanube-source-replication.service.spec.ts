@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 
 import type { MercadolibreTokenService } from '../../mercadolibre/auth/mercadolibre-token.service';
 import type { TiendanubeConnectionRepository } from '../connections/tiendanube-connection.repository';
@@ -152,20 +152,28 @@ describe('TiendanubeSourceReplicationService', () => {
     });
   });
 
-  it('OVERRIDE reemplaza todos los precios y KEEP_SOURCE conserva los normalizados', async () => {
+  it('OVERRIDE reemplaza título y precios, incluida la promoción', async () => {
     await service.replicate(USER_ID, SOURCE_KEY, {
+      title: '  Remera promocionada  ',
       priceMode: 'OVERRIDE',
       price: 77.5,
+      promotionalPrice: 55,
       categoryId: 88,
       tagMode: 'KEEP_SOURCE',
     });
 
     const postCalls = api.post.mock.calls as unknown as Array<unknown[]>;
     expect(postCalls[0]?.[2]).toMatchObject({
+      name: { es: 'Remera promocionada' },
       categories: [88],
-      variants: [{ price: '77.50' }, { price: '77.50' }],
+      variants: [
+        { price: '77.50', promotional_price: '55.00' },
+        { price: '77.50', promotional_price: '55.00' },
+      ],
     });
+  });
 
+  it('KEEP_SOURCE conserva los precios normalizados', async () => {
     api.post.mockClear();
     await service.replicate(USER_ID, SOURCE_KEY, {
       priceMode: 'KEEP_SOURCE',
@@ -180,6 +188,36 @@ describe('TiendanubeSourceReplicationService', () => {
       tags: 'mercadolibre,original',
       variants: [{ price: '10.00' }, { price: '20.00' }],
     });
+  });
+
+  it('rechaza una promoción que no es menor al precio normal de cada variante', async () => {
+    await expect(
+      service.replicate(USER_ID, SOURCE_KEY, {
+        priceMode: 'KEEP_SOURCE',
+        promotionalPrice: 15,
+        categoryId: 88,
+        tagMode: 'KEEP_SOURCE',
+      }),
+    ).rejects.toEqual(
+      expect.objectContaining({
+        message: 'El precio promocional debe ser menor al precio normal',
+      }),
+    );
+
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it('rechaza un precio normal override no positivo', async () => {
+    await expect(
+      service.replicate(USER_ID, SOURCE_KEY, {
+        priceMode: 'OVERRIDE',
+        price: 0,
+        categoryId: 88,
+        tagMode: 'KEEP_SOURCE',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(api.post).not.toHaveBeenCalled();
   });
 
   it('KEEP_SOURCE conserva los tags provenientes de Mercado Libre', async () => {

@@ -10,6 +10,24 @@ import {
 } from './tiendanube-replication-source.dto';
 
 describe('TiendanubeReplicationOptionsDto tags', () => {
+  it('recorta un título y acepta un precio promocional positivo', async () => {
+    const options = createOptions({
+      title: '  Remera  ',
+      promotionalPrice: 99.5,
+    });
+
+    await expect(validate(options)).resolves.toHaveLength(0);
+    expect(options.title).toBe('Remera');
+  });
+
+  it.each([
+    ['título vacío', { title: '   ' }],
+    ['promoción cero', { promotionalPrice: 0 }],
+    ['promoción negativa', { promotionalPrice: -1 }],
+  ])('rechaza %s', async (_case, override) => {
+    await expect(validate(createOptions(override))).resolves.not.toHaveLength(0);
+  });
+
   it('recorta tags válidos en modo OVERRIDE', async () => {
     const options = createOptions({ tags: [' remera ', ' algodón '] });
 

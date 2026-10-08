@@ -5,6 +5,7 @@ import {
   IsInt,
   IsNotEmpty,
   IsNumber,
+  IsOptional,
   IsString,
   Matches,
   Min,
@@ -24,6 +25,12 @@ export enum TiendanubeTagMode {
 }
 
 export class TiendanubeReplicationOptionsDto {
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @Transform(({ value }: TransformFnParams) => trimString(value))
+  title?: string;
+
   @IsEnum(TiendanubePriceMode)
   priceMode!: TiendanubePriceMode;
 
@@ -34,6 +41,11 @@ export class TiendanubeReplicationOptionsDto {
   @IsNumber()
   @Min(0.000001)
   price?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0.000001)
+  promotionalPrice?: number;
 
   @IsInt()
   @Min(1)
@@ -58,6 +70,10 @@ function trimTags(value: unknown): unknown {
   return Array.isArray(value)
     ? value.map((tag: unknown) => (typeof tag === 'string' ? tag.trim() : tag))
     : value;
+}
+
+function trimString(value: unknown): unknown {
+  return typeof value === 'string' ? value.trim() : value;
 }
 
 export const TIENDANUBE_SOURCE_KEY_PATTERN =
