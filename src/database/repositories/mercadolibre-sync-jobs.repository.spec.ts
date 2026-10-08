@@ -248,6 +248,48 @@ describe('MercadolibreSyncJobsRepository', () => {
     expect(failMock.statusEq).toHaveBeenCalledWith('status', 'RUNNING');
   });
 
+  it('persiste el avance y marca FAILED en un único UPDATE', async () => {
+    const failed = {
+      ...jobRow('FAILED'),
+      processed_items: 10,
+      successful_items: 0,
+      failed_items: 10,
+      errors_count: 10,
+      finished_at: NOW,
+    };
+    const { repository, update, statusEq } = transitionSetup(failed);
+
+    await expect(
+      repository.failWithProgress(
+        JOB_ID,
+        {
+          scanStarted: true,
+          scrollId: 'scroll-1',
+          bufferItemIds: [],
+          processedItems: 10,
+          successfulItems: 0,
+          failedItems: 10,
+          productsSaved: 0,
+          childrenSaved: 0,
+          errorsCount: 10,
+        },
+        'El primer lote no pudo guardar ninguna publicación',
+      ),
+    ).resolves.toEqual(failed);
+
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'FAILED',
+        processed_items: 10,
+        successful_items: 0,
+        failed_items: 10,
+        errors_count: 10,
+        finished_at: NOW,
+      }),
+    );
+    expect(statusEq).toHaveBeenCalledWith('status', 'RUNNING');
+  });
+
   it('cancela solamente trabajos PENDING o RUNNING', async () => {
     const cancelled = {
       ...jobRow('CANCELLED'),

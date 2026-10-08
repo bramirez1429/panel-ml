@@ -172,6 +172,40 @@ export class MercadolibreSyncJobsRepository {
     return this.requireTransition(data, error);
   }
 
+  /** Persiste el avance del lote y detiene un trabajo con errores no recuperables. */
+  async failWithProgress(
+    id: string,
+    input: UpdateMercadolibreSyncJobProgressInput,
+    safeMessage: string,
+  ): Promise<MercadolibreSyncJob> {
+    const timestamp = new Date().toISOString();
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('mercadolibre_sync_jobs')
+      .update({
+        status: 'FAILED',
+        scan_started: input.scanStarted,
+        scroll_id: input.scrollId,
+        buffer_item_ids: input.bufferItemIds,
+        processed_items: input.processedItems,
+        successful_items: input.successfulItems,
+        failed_items: input.failedItems,
+        products_saved: input.productsSaved,
+        children_saved: input.childrenSaved,
+        errors_count: input.errorsCount,
+        retry_count: 0,
+        last_error: safeMessage,
+        finished_at: timestamp,
+        updated_at: timestamp,
+      })
+      .eq('id', id)
+      .eq('status', 'RUNNING')
+      .select('*')
+      .maybeSingle();
+
+    return this.requireTransition(data, error);
+  }
+
   /** Cancela un trabajo que todavía no finalizó. */
   async cancel(id: string): Promise<MercadolibreSyncJob> {
     const timestamp = new Date().toISOString();

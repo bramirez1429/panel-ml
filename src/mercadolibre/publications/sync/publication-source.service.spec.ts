@@ -165,6 +165,34 @@ describe('PublicationSourceService', () => {
     expect(api.calls[0].accessToken).toBe('private-token');
   });
 
+  it('compara un bulk controlado con el detalle del mismo ítem', async () => {
+    const publication = {
+      id: 'MLA1',
+      seller_id: 123,
+      title: 'Producto',
+    };
+    const { api, source } = createSource(({ path }) =>
+      path.startsWith('/items/bulk')
+        ? [{ id: 'MLA1', status_code: 200, body: publication }]
+        : publication,
+    );
+
+    const bulk = await source.fetchItemBatch(['MLA1'], 'private-token');
+    const detail = await source.getItem('MLA1', 'private-token');
+
+    expect(bulk.publications).toEqual([detail]);
+    expect(bulk.publications[0]).toMatchObject({
+      id: 'MLA1',
+      seller_id: 123,
+    });
+    const attributes = parsePath(api.calls[0].path).searchParams.get(
+      'attributes',
+    );
+    expect(attributes).toContain('body.id');
+    expect(attributes).toContain('body.seller_id');
+    expect(api.calls[1].path).toBe('/items/MLA1');
+  });
+
   it('conserva compatibilidad con el formato anterior del multiget', async () => {
     const { source } = createSource(() => [
       { code: 200, body: { id: 'MLA1', title: 'Producto' } },

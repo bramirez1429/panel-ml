@@ -20,6 +20,7 @@ import {
 } from './publication-sync-job-error.helpers';
 import {
   SyncJobCompletedResponse,
+  SyncJobFailedResponse,
   SyncJobNextResponse,
   SyncJobPendingResponse,
   SyncJobScanState,
@@ -28,7 +29,11 @@ import {
 } from './publication-sync-job.types';
 import { PublicationSourceService } from './publication-source.service';
 import { PublicationSyncService } from './publication-sync.service';
-import { PublicationSyncError, SyncAccess } from './publication-sync.types';
+import {
+  PublicationBatchDiagnostics,
+  PublicationSyncError,
+  SyncAccess,
+} from './publication-sync.types';
 
 const MAX_CONSECUTIVE_RETRIES = 3;
 type SyncJobStage = 'SCAN' | 'SYNC_BATCH' | 'CHECKPOINT' | 'FINALIZE';
@@ -158,20 +163,31 @@ export class PublicationSyncJobService {
     const result = await this.runStage(job.id, 'SYNC_BATCH', () =>
       this.syncService.syncBatch(batchIds, access, job.full_sync_id),
     );
+    this.logBatchDiagnostics(job.id, result.diagnostics);
     const batchProgress = calculateBatchProgress(batchIds, result.errors);
+    const progress = {
+      scanStarted: scan.scanStarted,
+      scrollId: scan.scrollId,
+      bufferItemIds: scan.bufferItemIds.slice(PUBLICATION_SYNC_BATCH_SIZE),
+      processedItems: job.processed_items + batchProgress.processedItems,
+      successfulItems: job.successful_items + batchProgress.successfulItems,
+      failedItems: job.failed_items + batchProgress.failedItems,
+      productsSaved: job.products_saved + result.productsSaved,
+      childrenSaved: job.children_saved + result.childrenSaved,
+      errorsCount: job.errors_count + result.errors.length,
+    };
+    if (isFirstBatchFailure(job, batchIds, batchProgress, result)) {
+      const failed = await this.runStage(job.id, 'CHECKPOINT', () =>
+        this.jobsRepository.failWithProgress(
+          job.id,
+          progress,
+          'El primer lote no pudo guardar ninguna publicación',
+        ),
+      );
+      return this.failedResponse(failed.id);
+    }
     const updated = await this.runStage(job.id, 'CHECKPOINT', () =>
-      this.jobsRepository.updateProgress(job.id, {
-        scanStarted: scan.scanStarted,
-        scrollId: scan.scrollId,
-        bufferItemIds: scan.bufferItemIds.slice(PUBLICATION_SYNC_BATCH_SIZE),
-        processedItems: job.processed_items + batchProgress.processedItems,
-        successfulItems:
-          job.successful_items + batchProgress.successfulItems,
-        failedItems: job.failed_items + batchProgress.failedItems,
-        productsSaved: job.products_saved + result.productsSaved,
-        childrenSaved: job.children_saved + result.childrenSaved,
-        errorsCount: job.errors_count + result.errors.length,
-      }),
+      this.jobsRepository.updateProgress(job.id, progress),
     );
     return this.pendingResponse(updated, batchIds.length);
   }
@@ -210,12 +226,19 @@ export class PublicationSyncJobService {
   private async finishJob(
     job: MercadolibreSyncJob,
     sellerId: number,
-  ): Promise<SyncJobCompletedResponse> {
+  ): Promise<SyncJobNextResponse> {
     const startedAt = job.started_at;
     if (!startedAt) {
       throw new ServiceUnavailableException(
         'No se pudo finalizar la sincronización de Mercado Libre',
       );
+    }
+    const failureMessage = completionFailureMessage(job);
+    if (failureMessage) {
+      const failed = await this.runStage(job.id, 'FINALIZE', () =>
+        this.jobsRepository.fail(job.id, failureMessage),
+      );
+      return this.failedResponse(failed.id);
     }
     return this.runStage(job.id, 'FINALIZE', async () => {
       await this.syncService.finalizeFullSync(
@@ -297,6 +320,11 @@ export class PublicationSyncJobService {
     return { ok: true, syncId, status: 'COMPLETED', hasMore: false };
   }
 
+  /** Construye la respuesta terminal de un trabajo fallido. */
+  private failedResponse(syncId: string): SyncJobFailedResponse {
+    return { ok: true, syncId, status: 'FAILED', hasMore: false };
+  }
+
   /** Construye la respuesta inicial para un job nuevo o ya activo. */
   private startResponse(job: MercadolibreSyncJob): SyncJobStartResponse {
     return this.statusResponse(job);
@@ -347,6 +375,26 @@ export class PublicationSyncJobService {
       safeSyncErrorLabel(error),
     );
   }
+
+  /** Registra solo contadores y estados HTTP de los errores del lote. */
+  private logBatchDiagnostics(
+    syncId: string,
+    diagnostics: PublicationBatchDiagnostics | undefined,
+  ): void {
+    const current = diagnostics ?? {
+      sourceErrors: 0,
+      sourceHttpStatuses: {},
+      ownedErrors: 0,
+      preparedErrors: 0,
+      variantResultErrors: 0,
+    };
+    const httpStatuses = Object.entries(current.sourceHttpStatuses)
+      .map(([status, count]) => `${status}:${count}`)
+      .join(',') || 'none';
+    this.logger.log(
+      `syncId=${syncId} etapa=SYNC_BATCH source.errors=${current.sourceErrors} owned.errors=${current.ownedErrors} prepared.errors=${current.preparedErrors} variantResult.errors=${current.variantResultErrors} multigetHttp=${httpStatuses}`,
+    );
+  }
 }
 
 /** Calcula resultados de lote conservando la restricción de progreso SQL. */
@@ -382,4 +430,38 @@ function calculateBatchProgress(
     successfulItems: processedItems - failedItems,
     failedItems,
   };
+}
+
+/** Detecta un primer lote completamente fallido antes de continuar el scan. */
+function isFirstBatchFailure(
+  job: MercadolibreSyncJob,
+  itemIds: readonly string[],
+  progress: {
+    processedItems: number;
+    successfulItems: number;
+    failedItems: number;
+  },
+  result: { productsSaved: number; childrenSaved: number },
+): boolean {
+  return (
+    job.processed_items === 0 &&
+    itemIds.length === PUBLICATION_SYNC_BATCH_SIZE &&
+    progress.failedItems === itemIds.length &&
+    result.productsSaved === 0 &&
+    result.childrenSaved === 0
+  );
+}
+
+/** Evita el cleanup cuando el scan terminó con errores o resultados incompletos. */
+function completionFailureMessage(job: MercadolibreSyncJob): string | null {
+  if (job.processed_items !== job.total_items) {
+    return 'La sincronización finalizó con publicaciones sin procesar';
+  }
+  if (job.failed_items > 0 || job.errors_count > 0) {
+    return 'La sincronización finalizó con publicaciones fallidas';
+  }
+  if (job.total_items > 0 && job.products_saved === 0) {
+    return 'La sincronización no guardó publicaciones detectadas';
+  }
+  return null;
 }

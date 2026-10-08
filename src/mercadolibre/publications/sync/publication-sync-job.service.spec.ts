@@ -60,6 +60,7 @@ function setup() {
       .fn()
       .mockResolvedValue(job({ status: 'RUNNING', started_at: STARTED_AT })),
     updateProgress: jest.fn().mockResolvedValue(job()),
+    failWithProgress: jest.fn().mockResolvedValue(job({ status: 'FAILED' })),
     releaseAfterError: jest.fn().mockResolvedValue(job()),
     complete: jest.fn().mockResolvedValue(job({ status: 'COMPLETED' })),
     cancel: jest.fn().mockResolvedValue(job({ status: 'CANCELLED' })),
@@ -299,8 +300,18 @@ describe('PublicationSyncJobService', () => {
     );
   });
 
-  it('finaliza y limpia solamente al recibir la página terminal', async () => {
+  it('finaliza y limpia una sincronización completa sin errores', async () => {
     const { jobs, service, source, sync } = setup();
+    const terminal = job({
+      scan_started: true,
+      total_items: 10,
+      processed_items: 10,
+      successful_items: 10,
+      products_saved: 10,
+      started_at: STARTED_AT,
+    });
+    jobs.findById.mockResolvedValue(terminal);
+    jobs.claim.mockResolvedValue(job({ ...terminal, status: 'RUNNING' }));
     source.fetchNextScanPage.mockResolvedValue({ itemIds: [], scrollId: null });
     await expect(
       service.processNext(APP_USER_ID, JOB_ID),
@@ -315,6 +326,114 @@ describe('PublicationSyncJobService', () => {
     );
     expect(jobs.complete).toHaveBeenCalledWith(JOB_ID);
     expect(jobs.updateProgress).not.toHaveBeenCalled();
+  });
+
+  it('detiene el primer lote completamente fallido sin encolar más avance', async () => {
+    const { jobs, service, source, sync } = setup();
+    const ids = itemIds(10);
+    source.fetchNextScanPage.mockResolvedValue({
+      itemIds: ids,
+      scrollId: 'scroll-1',
+    });
+    sync.syncBatch.mockResolvedValue({
+      productsSaved: 0,
+      childrenSaved: 0,
+      errors: ids.map((itemId) => ({ itemId, message: 'No encontrado' })),
+      diagnostics: {
+        sourceErrors: 10,
+        sourceHttpStatuses: { 404: 10 },
+        ownedErrors: 0,
+        preparedErrors: 0,
+        variantResultErrors: 0,
+      },
+    });
+    jobs.failWithProgress.mockResolvedValue(
+      job({
+        status: 'FAILED',
+        processed_items: 10,
+        failed_items: 10,
+        errors_count: 10,
+        started_at: STARTED_AT,
+      }),
+    );
+
+    await expect(service.processNext(APP_USER_ID, JOB_ID)).resolves.toEqual({
+      ok: true,
+      syncId: JOB_ID,
+      status: 'FAILED',
+      hasMore: false,
+    });
+
+    expect(jobs.failWithProgress).toHaveBeenCalledWith(
+      JOB_ID,
+      expect.objectContaining({
+        processedItems: 10,
+        successfulItems: 0,
+        failedItems: 10,
+        errorsCount: 10,
+      }),
+      'El primer lote no pudo guardar ninguna publicación',
+    );
+    expect(jobs.updateProgress).not.toHaveBeenCalled();
+    expect(sync.finalizeFullSync).not.toHaveBeenCalled();
+  });
+
+  it('no ejecuta cleanup cuando el scan termina con publicaciones fallidas', async () => {
+    const { jobs, service, sync } = setup();
+    const terminal = job({
+      scan_started: true,
+      total_items: 10,
+      processed_items: 10,
+      successful_items: 8,
+      failed_items: 2,
+      products_saved: 8,
+      errors_count: 2,
+      started_at: STARTED_AT,
+    });
+    jobs.findById.mockResolvedValue(terminal);
+    jobs.claim.mockResolvedValue(job({ ...terminal, status: 'RUNNING' }));
+    jobs.fail.mockResolvedValue(job({ ...terminal, status: 'FAILED' }));
+
+    await expect(service.processNext(APP_USER_ID, JOB_ID)).resolves.toEqual({
+      ok: true,
+      syncId: JOB_ID,
+      status: 'FAILED',
+      hasMore: false,
+    });
+
+    expect(jobs.fail).toHaveBeenCalledWith(
+      JOB_ID,
+      'La sincronización finalizó con publicaciones fallidas',
+    );
+    expect(sync.finalizeFullSync).not.toHaveBeenCalled();
+  });
+
+  it('no ejecuta cleanup cuando el scan termina incompleto', async () => {
+    const { jobs, service, sync } = setup();
+    const terminal = job({
+      scan_started: true,
+      total_items: 10,
+      processed_items: 9,
+      successful_items: 9,
+      products_saved: 9,
+      started_at: STARTED_AT,
+    });
+    jobs.findById.mockResolvedValue(terminal);
+    jobs.claim.mockResolvedValue(job({ ...terminal, status: 'RUNNING' }));
+    jobs.fail.mockResolvedValue(job({ ...terminal, status: 'FAILED' }));
+
+    await expect(service.processNext(APP_USER_ID, JOB_ID)).resolves.toEqual({
+      ok: true,
+      syncId: JOB_ID,
+      status: 'FAILED',
+      hasMore: false,
+    });
+
+    expect(jobs.fail).toHaveBeenCalledWith(
+      JOB_ID,
+      'La sincronización finalizó con publicaciones sin procesar',
+    );
+    expect(sync.finalizeFullSync).not.toHaveBeenCalled();
   });
 
   it('marca FAILED ante una falla fatal y no ejecuta cleanup', async () => {

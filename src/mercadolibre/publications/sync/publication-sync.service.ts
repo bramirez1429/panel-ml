@@ -10,6 +10,7 @@ import {
   MercadoLibrePublication,
   NormalizationContext,
   NormalizedPublicationBundle,
+  PublicationSourceError,
 } from '../publication.types';
 import { PUBLICATION_REQUEST_CONCURRENCY } from '../publication.constants';
 import {
@@ -82,6 +83,13 @@ export class PublicationSyncService {
         ...prepared.errors,
         ...variantResult.errors,
       ],
+      diagnostics: {
+        sourceErrors: source.errors.length,
+        sourceHttpStatuses: countSourceHttpStatuses(source.errors),
+        ownedErrors: owned.errors.length,
+        preparedErrors: prepared.errors.length,
+        variantResultErrors: variantResult.errors.length,
+      },
     };
   }
 
@@ -176,4 +184,15 @@ export class PublicationSyncService {
   private createContext(sellerId: number): NormalizationContext {
     return { sellerId, syncedAt: new Date().toISOString() };
   }
+}
+
+/** Cuenta códigos HTTP de errores multiget sin conservar respuestas externas. */
+function countSourceHttpStatuses(
+  errors: readonly PublicationSourceError[],
+): Record<string, number> {
+  return errors.reduce<Record<string, number>>((counts, error) => {
+    const status = String(error.status);
+    counts[status] = (counts[status] ?? 0) + 1;
+    return counts;
+  }, {});
 }

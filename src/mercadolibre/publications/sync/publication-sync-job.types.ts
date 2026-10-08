@@ -34,8 +34,17 @@ export type SyncJobCompletedResponse = {
   hasMore: false;
 };
 
+export type SyncJobFailedResponse = {
+  ok: true;
+  syncId: string;
+  status: 'FAILED';
+  hasMore: false;
+};
+
 export type SyncJobNextResponse =
-  SyncJobPendingResponse | SyncJobCompletedResponse;
+  | SyncJobPendingResponse
+  | SyncJobCompletedResponse
+  | SyncJobFailedResponse;
 
 export type SyncJobScanState = {
   scanStarted: boolean;
