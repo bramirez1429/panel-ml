@@ -1,6 +1,8 @@
 import { BadGatewayException } from '@nestjs/common';
 
 import type {
+  TiendanubeCatalogProductResponse,
+  TiendanubeCatalogProductVariantResponse,
   TiendanubeLocalizedText,
   TiendanubeProductImageResponse,
   TiendanubeProductResponse,
@@ -16,6 +18,17 @@ export class TiendanubeProductMapper {
     try {
       if (!Array.isArray(value)) invalidProductsResponse();
       return value.map(mapProduct);
+    } catch {
+      invalidProductsResponse();
+    }
+  }
+
+  static mapCatalogList(
+    value: unknown,
+  ): readonly TiendanubeCatalogProductResponse[] {
+    try {
+      if (!Array.isArray(value)) invalidProductsResponse();
+      return value.map(mapCatalogProduct);
     } catch {
       invalidProductsResponse();
     }
@@ -39,6 +52,30 @@ function mapProduct(value: unknown): TiendanubeProductResponse {
     published: value.published,
     variants: value.variants.map(mapVariant),
     images: value.images.map(mapImage),
+  };
+}
+
+function mapCatalogProduct(value: unknown): TiendanubeCatalogProductResponse {
+  if (
+    !isJsonObject(value) ||
+    !isPositiveSafeInteger(value.id) ||
+    !Array.isArray(value.variants)
+  ) {
+    invalidProductsResponse();
+  }
+
+  const publication = mapPublication(value);
+  const attributes = mapProductAttributes(value.attributes);
+
+  return {
+    id: value.id,
+    name: mapLocalizedText(value.name),
+    mainImage: mapMainImage(value.images),
+    tags: mapTags(value.tags),
+    ...publication,
+    variants: value.variants.map((variant) =>
+      mapCatalogVariant(variant, attributes),
+    ),
   };
 }
 
@@ -88,6 +125,141 @@ function mapImage(value: unknown): TiendanubeProductImageResponse {
     src: value.src,
     position: value.position,
   };
+}
+
+function mapPublication(value: Record<string, unknown>): Readonly<{
+  published: boolean;
+  visibility: 'visible' | 'unlisted' | 'hidden';
+}> {
+  const visibility = value.visibility;
+  const published = value.published;
+  const hasVisibility =
+    visibility === 'visible' ||
+    visibility === 'unlisted' ||
+    visibility === 'hidden';
+
+  if (published !== undefined && typeof published !== 'boolean') {
+    invalidProductsResponse();
+  }
+  if (visibility !== undefined && visibility !== null && !hasVisibility) {
+    invalidProductsResponse();
+  }
+  if (typeof published !== 'boolean' && !hasVisibility) {
+    invalidProductsResponse();
+  }
+
+  return {
+    published:
+      typeof published === 'boolean' ? published : visibility === 'visible',
+    visibility: hasVisibility ? visibility : published ? 'visible' : 'hidden',
+  };
+}
+
+function mapProductAttributes(
+  value: unknown,
+): readonly TiendanubeLocalizedText[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) invalidProductsResponse();
+  return value.map(mapLocalizedText);
+}
+
+function mapCatalogVariant(
+  value: unknown,
+  productAttributes: readonly TiendanubeLocalizedText[],
+): TiendanubeCatalogProductVariantResponse {
+  if (
+    !isJsonObject(value) ||
+    !isPositiveSafeInteger(value.id) ||
+    typeof value.stock_management !== 'boolean'
+  ) {
+    invalidProductsResponse();
+  }
+
+  return {
+    id: value.id,
+    attributes: mapVariantAttributes(value.values, productAttributes),
+    sku: mapOptionalText(value.sku),
+    stock: value.stock_management ? mapNullableNumber(value.stock) : null,
+    stockManagement: value.stock_management,
+    price: mapNullableNumber(value.price),
+    promotionalPrice: mapNullableNumber(value.promotional_price),
+  };
+}
+
+function mapVariantAttributes(
+  value: unknown,
+  productAttributes: readonly TiendanubeLocalizedText[],
+): readonly Readonly<{
+  name: TiendanubeLocalizedText | null;
+  value: TiendanubeLocalizedText;
+}>[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) invalidProductsResponse();
+
+  return value.map((attributeValue, index) => ({
+    name: productAttributes[index] ?? null,
+    value: mapLocalizedText(attributeValue),
+  }));
+}
+
+function mapMainImage(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  if (!Array.isArray(value)) invalidProductsResponse();
+
+  const candidates = value
+    .map((image, index) => {
+      if (!isJsonObject(image) || typeof image.src !== 'string') return null;
+      const src = image.src.trim();
+      if (!src) return null;
+      return {
+        src,
+        index,
+        position:
+          typeof image.position === 'number' && Number.isFinite(image.position)
+            ? image.position
+            : Number.MAX_SAFE_INTEGER,
+      };
+    })
+    .filter(
+      (image): image is { src: string; index: number; position: number } =>
+        image !== null,
+    )
+    .sort(
+      (left, right) =>
+        left.position - right.position || left.index - right.index,
+    );
+
+  return candidates[0]?.src ?? null;
+}
+
+function mapTags(value: unknown): readonly string[] {
+  if (value === undefined || value === null) return [];
+  if (typeof value === 'string') {
+    return value
+      .split(',')
+      .map((tag) => tag.trim())
+      .filter((tag) => tag.length > 0);
+  }
+  if (Array.isArray(value) && value.every((tag) => typeof tag === 'string')) {
+    return value
+      .map((tag) => tag.trim())
+      .filter((tag) => tag.length > 0);
+  }
+  invalidProductsResponse();
+}
+
+function mapOptionalText(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string') invalidProductsResponse();
+  const text = value.trim();
+  return text || null;
+}
+
+function mapNullableNumber(value: unknown): number | null {
+  if (value === undefined || value === null || value === '') return null;
+  const number = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(number)) invalidProductsResponse();
+  return number;
 }
 
 function isPositiveSafeInteger(value: unknown): value is number {

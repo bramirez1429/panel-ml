@@ -12,8 +12,10 @@ import { AccessTokenGuard } from '../../auth/presentation/access-token.guard';
 import { CurrentUser } from '../../auth/presentation/current-user.decorator';
 import type {
   TiendanubeProductByMercadolibreResponse,
+  TiendanubeProductsCatalogResponse,
   TiendanubeProductResponse,
 } from './tiendanube-product.types';
+import { TiendanubeProductsCatalogQueryDto } from './tiendanube-products-catalog-query.dto';
 import { TiendanubeProductsService } from './tiendanube-products.service';
 
 @Controller('tiendanube/products')
@@ -27,6 +29,15 @@ export class TiendanubeProductsController {
     @CurrentUser() user: SafeUser,
   ): Promise<readonly TiendanubeProductResponse[]> {
     return this.productsService.listByUserId(user.id);
+  }
+
+  @Get('catalog')
+  @Header('Cache-Control', 'no-store')
+  catalog(
+    @CurrentUser() user: SafeUser,
+    @Query() query: TiendanubeProductsCatalogQueryDto,
+  ): Promise<TiendanubeProductsCatalogResponse> {
+    return this.productsService.listCatalogByUserId(user.id, query);
   }
 
   @Get('by-ml/:itemId')
