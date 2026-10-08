@@ -28,10 +28,10 @@ export class PublicationSyncController {
   }
 
   @Get('active')
-  getActive(
+  async getActive(
     @CurrentUser() user: SafeUser,
-  ): Promise<SyncJobStatusResponse | null> {
-    return this.syncJobService.getActive(user.id);
+  ): Promise<{ activeSync: SyncJobStatusResponse | null }> {
+    return { activeSync: await this.syncJobService.getActive(user.id) };
   }
 
   @Post(':syncId/cancel')

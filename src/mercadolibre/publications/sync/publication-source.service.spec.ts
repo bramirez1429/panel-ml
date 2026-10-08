@@ -133,14 +133,16 @@ describe('PublicationSourceService', () => {
     ]);
   });
 
-  it('usa multiget de veinte, atributos fijos y errores saneados', async () => {
+  it('usa bulk de veinte, atributos body y errores individuales saneados', async () => {
     const { api, source } = createSource(() => [
       {
-        code: 200,
+        id: 'MLA1',
+        status_code: 200,
         body: { id: 'MLA1', title: 'Producto', access_token: 'secret' },
       },
       {
-        code: 403,
+        id: 'MLA2',
+        status_code: 403,
         body: { message: 'Forbidden', refresh_token: 'secret' },
       },
     ]);
@@ -153,9 +155,28 @@ describe('PublicationSourceService', () => {
     });
 
     const query = parsePath(api.calls[0].path).searchParams;
+    expect(parsePath(api.calls[0].path).pathname).toBe('/items/bulk');
     expect(query.get('ids')).toBe('MLA1,MLA2');
-    expect(query.get('attributes')).toBe(PUBLICATION_SYNC_ATTRIBUTES.join(','));
+    expect(query.get('attributes')).toBe(
+      PUBLICATION_SYNC_ATTRIBUTES.map(
+        (attribute) => `body.${attribute}`,
+      ).join(','),
+    );
     expect(api.calls[0].accessToken).toBe('private-token');
+  });
+
+  it('conserva compatibilidad con el formato anterior del multiget', async () => {
+    const { source } = createSource(() => [
+      { code: 200, body: { id: 'MLA1', title: 'Producto' } },
+      { code: 404, body: { message: 'Not found' } },
+    ]);
+
+    await expect(
+      source.fetchItemBatch(['MLA1', 'MLA2'], 'private-token'),
+    ).resolves.toEqual({
+      publications: [{ id: 'MLA1', title: 'Producto' }],
+      errors: [{ itemId: 'MLA2', status: 404, body: { message: 'Not found' } }],
+    });
   });
 
   it('ejecuta una sola solicitud multiget a la vez', async () => {

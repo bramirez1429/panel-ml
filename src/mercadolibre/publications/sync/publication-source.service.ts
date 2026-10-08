@@ -146,10 +146,12 @@ export class PublicationSourceService {
 
     const query = new URLSearchParams({
       ids: itemIds.join(','),
-      attributes: PUBLICATION_SYNC_ATTRIBUTES.join(','),
+      attributes: PUBLICATION_SYNC_ATTRIBUTES.map(
+        (attribute) => `body.${attribute}`,
+      ).join(','),
     });
     const data = await this.apiService.get<unknown>(
-      `/items?${query.toString()}`,
+      `/items/bulk?${query.toString()}`,
       accessToken,
     );
     return parseMultiget(itemIds, data);

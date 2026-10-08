@@ -1,6 +1,7 @@
 import {
   ConflictException,
   ForbiddenException,
+  HttpException,
   Injectable,
   Logger,
   NotFoundException,
@@ -28,7 +29,9 @@ import {
 import { PublicationSourceService } from './publication-source.service';
 import { PublicationSyncService } from './publication-sync.service';
 import { SyncAccess } from './publication-sync.types';
+
 const MAX_CONSECUTIVE_RETRIES = 3;
+type SyncJobStage = 'SCAN' | 'SYNC_BATCH' | 'CHECKPOINT' | 'FINALIZE';
 @Injectable()
 export class PublicationSyncJobService {
   private readonly logger = new Logger(PublicationSyncJobService.name);
@@ -152,20 +155,20 @@ export class PublicationSyncJobService {
     }
 
     const batchIds = scan.bufferItemIds.slice(0, PUBLICATION_SYNC_BATCH_SIZE);
-    const result = await this.syncService.syncBatch(
-      batchIds,
-      access,
-      job.full_sync_id,
+    const result = await this.runStage(job.id, 'SYNC_BATCH', () =>
+      this.syncService.syncBatch(batchIds, access, job.full_sync_id),
     );
-    const updated = await this.jobsRepository.updateProgress(job.id, {
-      scanStarted: scan.scanStarted,
-      scrollId: scan.scrollId,
-      bufferItemIds: scan.bufferItemIds.slice(PUBLICATION_SYNC_BATCH_SIZE),
-      processedItems: job.processed_items + batchIds.length,
-      productsSaved: job.products_saved + result.productsSaved,
-      childrenSaved: job.children_saved + result.childrenSaved,
-      errorsCount: job.errors_count + result.errors.length,
-    });
+    const updated = await this.runStage(job.id, 'CHECKPOINT', () =>
+      this.jobsRepository.updateProgress(job.id, {
+        scanStarted: scan.scanStarted,
+        scrollId: scan.scrollId,
+        bufferItemIds: scan.bufferItemIds.slice(PUBLICATION_SYNC_BATCH_SIZE),
+        processedItems: job.processed_items + batchIds.length,
+        productsSaved: job.products_saved + result.productsSaved,
+        childrenSaved: job.children_saved + result.childrenSaved,
+        errorsCount: job.errors_count + result.errors.length,
+      }),
+    );
     return this.pendingResponse(updated, batchIds.length);
   }
 
@@ -185,10 +188,12 @@ export class PublicationSyncJobService {
       return { scanStarted: true, scrollId: null, bufferItemIds: [] };
     }
 
-    const page = await this.sourceService.fetchNextScanPage(
-      access.sellerId,
-      access.accessToken,
-      job.scan_started ? (job.scroll_id ?? undefined) : undefined,
+    const page = await this.runStage(job.id, 'SCAN', () =>
+      this.sourceService.fetchNextScanPage(
+        access.sellerId,
+        access.accessToken,
+        job.scan_started ? (job.scroll_id ?? undefined) : undefined,
+      ),
     );
     return {
       scanStarted: true,
@@ -207,17 +212,19 @@ export class PublicationSyncJobService {
         'No se pudo finalizar la sincronización de Mercado Libre',
       );
     }
-    await this.syncService.finalizeFullSync(
-      sellerId,
-      job.full_sync_id,
-      job.started_at,
-    );
-    try {
-      const completed = await this.jobsRepository.complete(job.id);
-      return this.completedResponse(completed.id);
-    } catch (error) {
-      throw new CompletionPersistenceError(error);
-    }
+    return this.runStage(job.id, 'FINALIZE', async () => {
+      await this.syncService.finalizeFullSync(
+        sellerId,
+        job.full_sync_id,
+        job.started_at,
+      );
+      try {
+        const completed = await this.jobsRepository.complete(job.id);
+        return this.completedResponse(completed.id);
+      } catch (error) {
+        throw new CompletionPersistenceError(error);
+      }
+    });
   }
 
   /** Busca un trabajo y verifica que pertenezca al seller actual. */
@@ -304,6 +311,28 @@ export class PublicationSyncJobService {
       lastError: job.last_error,
       hasMore: job.status === 'PENDING' || job.status === 'RUNNING',
     };
+  }
+
+  /** Registra una etapa sin incluir tokens, publicaciones ni respuestas externas. */
+  private async runStage<T>(
+    syncId: string,
+    stage: SyncJobStage,
+    action: () => Promise<T>,
+  ): Promise<T> {
+    this.logger.log(`syncId=${syncId} etapa=${stage}`);
+    try {
+      return await action();
+    } catch (error) {
+      const sourceError =
+        error instanceof CompletionPersistenceError ? error.originalError : error;
+      const httpStatus =
+        sourceError instanceof HttpException ? sourceError.getStatus() : 'N/A';
+      this.logger.error(
+        `syncId=${syncId} etapa=${stage} httpStatus=${httpStatus}`,
+        safeSyncErrorLabel(sourceError),
+      );
+      throw error;
+    }
   }
 
   /** Registra el error sin incluir mensajes ni credenciales. */

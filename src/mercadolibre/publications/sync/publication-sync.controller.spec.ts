@@ -79,14 +79,18 @@ describe('PublicationSyncController', () => {
     };
     getActive.mockResolvedValue(response);
 
-    await expect(controller.getActive(USER)).resolves.toBe(response);
+    await expect(controller.getActive(USER)).resolves.toEqual({
+      activeSync: response,
+    });
     expect(getActive).toHaveBeenCalledWith(USER.id);
   });
 
   it('devuelve null cuando el seller no tiene un trabajo activo', async () => {
     getActive.mockResolvedValue(null);
 
-    await expect(controller.getActive(USER)).resolves.toBeNull();
+    await expect(controller.getActive(USER)).resolves.toEqual({
+      activeSync: null,
+    });
     expect(getActive).toHaveBeenCalledWith(USER.id);
   });
 
