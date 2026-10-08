@@ -11,7 +11,9 @@ const ACCESS_TOKEN_A = 'private-tiendanube-access-token-a';
 type ConnectionRepositoryMock = jest.Mocked<
   Pick<TiendanubeConnectionRepository, 'findCredentialsByUserId'>
 >;
-type ApiServiceMock = jest.Mocked<Pick<TiendanubeApiService, 'get'>>;
+type ApiServiceMock = jest.Mocked<
+  Pick<TiendanubeApiService, 'get' | 'getWithMeta'>
+>;
 
 describe('TiendanubeProductsService', () => {
   let service: TiendanubeProductsService;
@@ -24,6 +26,7 @@ describe('TiendanubeProductsService', () => {
     };
     apiService = {
       get: jest.fn().mockRejectedValue(new Error('Unexpected API call')),
+      getWithMeta: jest.fn().mockRejectedValue(new Error('Unexpected API call')),
     };
     service = new TiendanubeProductsService(
       connectionRepository as unknown as TiendanubeConnectionRepository,
@@ -137,5 +140,105 @@ describe('TiendanubeProductsService', () => {
       message: 'No se pudo conectar con Tiendanube',
     });
     expect(JSON.stringify(caught)).not.toContain(ACCESS_TOKEN_A);
+  });
+
+  it('consulta una pagina completa del catalogo y proyecta variantes', async () => {
+    connectionRepository.findCredentialsByUserId.mockResolvedValue({
+      storeId: '987654',
+      accessToken: ACCESS_TOKEN_A,
+      scope: 'read_products',
+    });
+    apiService.getWithMeta.mockResolvedValue({
+      data: [
+        {
+          id: 1234,
+          name: { es: 'Remera' },
+          published: true,
+          visibility: 'visible',
+          tags: ' verano, remera ',
+          attributes: [{ es: 'Color' }, { es: 'Talle' }],
+          images: [
+            { src: 'https://example.com/secondary.jpg', position: 2 },
+            { src: 'https://example.com/main.jpg', position: 1 },
+          ],
+          variants: [
+            {
+              id: 101,
+              values: [{ es: 'Rojo' }, { es: 'M' }],
+              sku: 'SKU-101',
+              stock_management: true,
+              stock: 7,
+              price: '25000.50',
+              promotional_price: '19999',
+            },
+            {
+              id: 102,
+              values: [{ es: 'Azul' }, { es: 'L' }],
+              sku: null,
+              stock_management: false,
+              stock: null,
+              price: '25000.50',
+              promotional_price: null,
+            },
+          ],
+        },
+      ],
+      headers: new Headers({ 'x-total-count': '41' }),
+    });
+
+    await expect(
+      service.listCatalogByUserId(USER_A, {
+        page: 2,
+        limit: 20,
+        q: ' remera azul ',
+      }),
+    ).resolves.toEqual({
+      products: [
+        {
+          id: 1234,
+          name: { es: 'Remera' },
+          mainImage: 'https://example.com/main.jpg',
+          tags: ['verano', 'remera'],
+          published: true,
+          visibility: 'visible',
+          variants: [
+            {
+              id: 101,
+              attributes: [
+                { name: { es: 'Color' }, value: { es: 'Rojo' } },
+                { name: { es: 'Talle' }, value: { es: 'M' } },
+              ],
+              sku: 'SKU-101',
+              stock: 7,
+              stockManagement: true,
+              price: 25000.5,
+              promotionalPrice: 19999,
+            },
+            {
+              id: 102,
+              attributes: [
+                { name: { es: 'Color' }, value: { es: 'Azul' } },
+                { name: { es: 'Talle' }, value: { es: 'L' } },
+              ],
+              sku: null,
+              stock: null,
+              stockManagement: false,
+              price: 25000.5,
+              promotionalPrice: null,
+            },
+          ],
+        },
+      ],
+      page: 2,
+      hasMore: true,
+      total: 41,
+    });
+
+    expect(apiService.getWithMeta).toHaveBeenCalledWith(
+      '987654',
+      '/products?page=2&per_page=20&q=remera+azul',
+      ACCESS_TOKEN_A,
+    );
+    expect(apiService.get).not.toHaveBeenCalled();
   });
 });

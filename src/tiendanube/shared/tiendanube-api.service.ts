@@ -42,6 +42,11 @@ export type TiendanubeOAuthTokenRequest = Readonly<{
 
 type TiendanubeErrorContext = 'api' | 'oauth';
 
+export type TiendanubeApiResponse<T> = Readonly<{
+  data: T | undefined;
+  headers: Headers;
+}>;
+
 @Injectable()
 export class TiendanubeApiService {
   constructor(
@@ -54,6 +59,17 @@ export class TiendanubeApiService {
     accessToken?: string,
   ): Promise<T | undefined> {
     return this.requestJson<T>(storeId, path, {
+      method: 'GET',
+      accessToken,
+    });
+  }
+
+  getWithMeta<T>(
+    storeId: string | number,
+    path: string,
+    accessToken?: string,
+  ): Promise<TiendanubeApiResponse<T>> {
+    return this.requestJsonWithMeta<T>(storeId, path, {
       method: 'GET',
       accessToken,
     });
@@ -97,10 +113,10 @@ export class TiendanubeApiService {
   }
 
   /** Intercambia credenciales únicamente contra el endpoint OAuth oficial. */
-  postOAuthToken<T>(
+  async postOAuthToken<T>(
     request: TiendanubeOAuthTokenRequest,
   ): Promise<T | undefined> {
-    return this.executeJsonRequest<T>(
+    const response = await this.executeJsonRequest<T>(
       TIENDANUBE_OAUTH_TOKEN_URL,
       {
         method: 'POST',
@@ -112,6 +128,8 @@ export class TiendanubeApiService {
       [request.client_secret, request.code],
       'oauth',
     );
+
+    return response.data;
   }
 
   private async requestJson<T>(
@@ -119,6 +137,16 @@ export class TiendanubeApiService {
     path: string,
     request: TiendanubeRequest,
   ): Promise<T | undefined> {
+    const response = await this.requestJsonWithMeta<T>(storeId, path, request);
+
+    return response.data;
+  }
+
+  private requestJsonWithMeta<T>(
+    storeId: string | number,
+    path: string,
+    request: TiendanubeRequest,
+  ): Promise<TiendanubeApiResponse<T>> {
     const url = this.buildUrl(storeId, path);
     const init: RequestInit = {
       method: request.method,
@@ -144,7 +172,7 @@ export class TiendanubeApiService {
     init: RequestInit,
     sensitiveValues: readonly string[],
     errorContext: TiendanubeErrorContext,
-  ): Promise<T | undefined> {
+  ): Promise<TiendanubeApiResponse<T>> {
     let response: Response;
 
     try {
@@ -160,7 +188,7 @@ export class TiendanubeApiService {
     }
 
     if (response.status === 204) {
-      return undefined;
+      return { data: undefined, headers: response.headers };
     }
 
     const data = await readJson(response);
@@ -189,7 +217,7 @@ export class TiendanubeApiService {
       );
     }
 
-    return data as T;
+    return { data: data as T, headers: response.headers };
   }
 
   private buildHeaders(accessToken?: string, hasBody = false): Headers {

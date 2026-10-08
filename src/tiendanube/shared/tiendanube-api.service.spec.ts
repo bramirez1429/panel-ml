@@ -8,10 +8,14 @@ import {
   type TiendanubeEnvironment,
 } from './tiendanube.config';
 
-function jsonResponse(body: unknown, status = 200): Response {
+function jsonResponse(
+  body: unknown,
+  status = 200,
+  headers: Record<string, string> = {},
+): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...headers },
   });
 }
 
@@ -49,6 +53,24 @@ describe('TiendanubeApiService', () => {
     expect(url).toBe('https://api.tiendanube.com/2025-03/1234/store');
     expect(headers.get('user-agent')).toBe('Panel ML (contact@example.com)');
     expect(headers.has('authorization')).toBe(false);
+  });
+
+  it('expone los metadatos de una consulta GET sin alterar get', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([{ id: 123 }], 200, { 'x-total-count': '156' }),
+    );
+
+    const response = await service.getWithMeta<readonly { id: number }[]>(
+      '1234',
+      '/products?page=2&per_page=20',
+      'private-access-token',
+    );
+
+    expect(response.data).toEqual([{ id: 123 }]);
+    expect(response.headers.get('x-total-count')).toBe('156');
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      'https://api.tiendanube.com/2025-03/1234/products?page=2&per_page=20',
+    );
   });
 
   it('usa 30 segundos para GET, POST, PUT y DELETE', async () => {
