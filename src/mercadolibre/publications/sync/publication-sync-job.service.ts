@@ -207,7 +207,8 @@ export class PublicationSyncJobService {
     job: MercadolibreSyncJob,
     sellerId: number,
   ): Promise<SyncJobCompletedResponse> {
-    if (!job.started_at) {
+    const startedAt = job.started_at;
+    if (!startedAt) {
       throw new ServiceUnavailableException(
         'No se pudo finalizar la sincronización de Mercado Libre',
       );
@@ -216,7 +217,7 @@ export class PublicationSyncJobService {
       await this.syncService.finalizeFullSync(
         sellerId,
         job.full_sync_id,
-        job.started_at,
+        startedAt,
       );
       try {
         const completed = await this.jobsRepository.complete(job.id);
