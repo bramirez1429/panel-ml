@@ -10,7 +10,9 @@ const USER = {
 
 describe('PublicationSyncController', () => {
   const start = jest.fn();
+  const getActive = jest.fn();
   const getStatus = jest.fn();
+  const cancel = jest.fn();
   const enqueue = jest.fn();
   let controller: PublicationSyncController;
 
@@ -18,7 +20,7 @@ describe('PublicationSyncController', () => {
     jest.resetAllMocks();
     enqueue.mockResolvedValue(undefined);
     controller = new PublicationSyncController(
-      { start, getStatus } as unknown as PublicationSyncJobService,
+      { start, getActive, getStatus, cancel } as unknown as PublicationSyncJobService,
       { enqueue } as unknown as PublicationSyncQueueService,
     );
   });
@@ -29,6 +31,12 @@ describe('PublicationSyncController', () => {
       syncId: SYNC_ID,
       status: 'PENDING' as const,
       totalItems: 42,
+      processedItems: 0,
+      productsSaved: 0,
+      childrenSaved: 0,
+      errorsCount: 0,
+      lastError: null,
+      hasMore: true,
     };
     start.mockResolvedValue(response);
 
@@ -37,7 +45,7 @@ describe('PublicationSyncController', () => {
     expect(enqueue).toHaveBeenCalledWith(USER.id, SYNC_ID);
   });
 
-  it('devuelve el status actual del job', async () => {
+  it('devuelve el status actual del job con un UUID válido', async () => {
     const response = {
       ok: true as const,
       syncId: SYNC_ID,
@@ -54,5 +62,50 @@ describe('PublicationSyncController', () => {
 
     await expect(controller.getStatus(USER, SYNC_ID)).resolves.toBe(response);
     expect(getStatus).toHaveBeenCalledWith(USER.id, SYNC_ID);
+  });
+
+  it('devuelve el trabajo activo del seller autenticado', async () => {
+    const response = {
+      ok: true as const,
+      syncId: SYNC_ID,
+      status: 'PENDING' as const,
+      totalItems: 42,
+      processedItems: 10,
+      productsSaved: 7,
+      childrenSaved: 3,
+      errorsCount: 0,
+      lastError: null,
+      hasMore: true,
+    };
+    getActive.mockResolvedValue(response);
+
+    await expect(controller.getActive(USER)).resolves.toBe(response);
+    expect(getActive).toHaveBeenCalledWith(USER.id);
+  });
+
+  it('devuelve null cuando el seller no tiene un trabajo activo', async () => {
+    getActive.mockResolvedValue(null);
+
+    await expect(controller.getActive(USER)).resolves.toBeNull();
+    expect(getActive).toHaveBeenCalledWith(USER.id);
+  });
+
+  it('cancela un job con un UUID válido', async () => {
+    const response = {
+      ok: true as const,
+      syncId: SYNC_ID,
+      status: 'CANCELLED' as const,
+      totalItems: 42,
+      processedItems: 10,
+      productsSaved: 7,
+      childrenSaved: 3,
+      errorsCount: 0,
+      lastError: null,
+      hasMore: false,
+    };
+    cancel.mockResolvedValue(response);
+
+    await expect(controller.cancel(USER, SYNC_ID)).resolves.toBe(response);
+    expect(cancel).toHaveBeenCalledWith(USER.id, SYNC_ID);
   });
 });

@@ -279,7 +279,12 @@ type ChildInsert = {
   updated_at?: string;
 };
 
-type SyncJobStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
+type SyncJobStatus =
+  | 'PENDING'
+  | 'RUNNING'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'CANCELLED';
 
 type SyncJobRow = {
   id: string;

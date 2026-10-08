@@ -60,6 +60,7 @@ function setup() {
     updateProgress: jest.fn().mockResolvedValue(job()),
     releaseAfterError: jest.fn().mockResolvedValue(job()),
     complete: jest.fn().mockResolvedValue(job({ status: 'COMPLETED' })),
+    cancel: jest.fn().mockResolvedValue(job({ status: 'CANCELLED' })),
     fail: jest.fn().mockResolvedValue(job({ status: 'FAILED' })),
   };
   const token = {
@@ -90,6 +91,12 @@ describe('PublicationSyncJobService', () => {
       syncId: JOB_ID,
       status: 'PENDING',
       totalItems: 0,
+      processedItems: 0,
+      productsSaved: 0,
+      childrenSaved: 0,
+      errorsCount: 0,
+      lastError: null,
+      hasMore: true,
     });
     expect(token.getStoredConnection).toHaveBeenCalledWith(APP_USER_ID);
     expect(jobs.findActiveBySellerId).toHaveBeenCalledWith(SELLER_ID);
@@ -120,6 +127,12 @@ describe('PublicationSyncJobService', () => {
       syncId: JOB_ID,
       status: 'RUNNING',
       totalItems: 75,
+      processedItems: 0,
+      productsSaved: 0,
+      childrenSaved: 0,
+      errorsCount: 0,
+      lastError: null,
+      hasMore: true,
     });
 
     expect(jobs.create).not.toHaveBeenCalled();
@@ -153,6 +166,42 @@ describe('PublicationSyncJobService', () => {
       lastError: 'Error temporal',
       hasMore: true,
     });
+  });
+
+  it('devuelve el trabajo activo del seller con el contrato de progreso', async () => {
+    const { jobs, service } = setup();
+    jobs.findActiveBySellerId.mockResolvedValue(
+      job({
+        status: 'RUNNING',
+        total_items: 100,
+        processed_items: 25,
+        products_saved: 10,
+        children_saved: 15,
+        errors_count: 2,
+        last_error: 'Error temporal',
+      }),
+    );
+
+    await expect(service.getActive(APP_USER_ID)).resolves.toEqual({
+      ok: true,
+      syncId: JOB_ID,
+      status: 'RUNNING',
+      totalItems: 100,
+      processedItems: 25,
+      productsSaved: 10,
+      childrenSaved: 15,
+      errorsCount: 2,
+      lastError: 'Error temporal',
+      hasMore: true,
+    });
+    expect(jobs.findActiveBySellerId).toHaveBeenCalledWith(SELLER_ID);
+  });
+
+  it('devuelve null cuando el seller no tiene un trabajo activo', async () => {
+    const { jobs, service } = setup();
+
+    await expect(service.getActive(APP_USER_ID)).resolves.toBeNull();
+    expect(jobs.findActiveBySellerId).toHaveBeenCalledWith(SELLER_ID);
   });
 
   it('trae una página, procesa diez y luego consume el buffer', async () => {

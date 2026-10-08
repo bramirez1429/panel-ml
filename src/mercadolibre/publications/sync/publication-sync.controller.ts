@@ -27,6 +27,21 @@ export class PublicationSyncController {
     return result;
   }
 
+  @Get('active')
+  getActive(
+    @CurrentUser() user: SafeUser,
+  ): Promise<SyncJobStatusResponse | null> {
+    return this.syncJobService.getActive(user.id);
+  }
+
+  @Post(':syncId/cancel')
+  cancel(
+    @CurrentUser() user: SafeUser,
+    @Param('syncId', ParseUUIDPipe) syncId: string,
+  ): Promise<SyncJobStatusResponse> {
+    return this.syncJobService.cancel(user.id, syncId);
+  }
+
   @Get(':syncId')
   getStatus(
     @CurrentUser() user: SafeUser,

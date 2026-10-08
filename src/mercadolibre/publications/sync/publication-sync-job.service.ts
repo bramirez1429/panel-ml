@@ -88,6 +88,9 @@ export class PublicationSyncJobService {
     if (existing.status === 'FAILED') {
       throw new ConflictException('La sincronización finalizó con error');
     }
+    if (existing.status === 'CANCELLED') {
+      throw new ConflictException('La sincronización fue cancelada');
+    }
 
     const job = await this.jobsRepository.claim(
       existing.id,
@@ -114,18 +117,28 @@ export class PublicationSyncJobService {
   ): Promise<SyncJobStatusResponse> {
     const connection = await this.tokenService.getStoredConnection(userId);
     const job = await this.findOwnedJob(syncId, connection.seller_id);
-    return {
-      ok: true,
-      syncId: job.id,
-      status: job.status,
-      totalItems: job.total_items,
-      processedItems: job.processed_items,
-      productsSaved: job.products_saved,
-      childrenSaved: job.children_saved,
-      errorsCount: job.errors_count,
-      lastError: job.last_error,
-      hasMore: job.status === 'PENDING' || job.status === 'RUNNING',
-    };
+    return this.statusResponse(job);
+  }
+
+  /** Devuelve el trabajo activo del seller autenticado, si existe. */
+  async getActive(
+    userId: string,
+  ): Promise<SyncJobStatusResponse | null> {
+    const connection = await this.tokenService.getStoredConnection(userId);
+    const job = await this.jobsRepository.findActiveBySellerId(
+      connection.seller_id,
+    );
+    return job ? this.statusResponse(job) : null;
+  }
+
+  /** Cancela un trabajo que pertenezca al seller autenticado. */
+  async cancel(userId: string, syncId: string): Promise<SyncJobStatusResponse> {
+    const connection = await this.tokenService.getStoredConnection(userId);
+    const job = await this.findOwnedJob(syncId, connection.seller_id);
+    if (job.status !== 'PENDING' && job.status !== 'RUNNING') {
+      throw new ConflictException('La sincronización ya finalizó');
+    }
+    return this.statusResponse(await this.jobsRepository.cancel(job.id));
   }
 
   /** Procesa el buffer reclamado o completa un scan terminado. */
@@ -274,11 +287,22 @@ export class PublicationSyncJobService {
 
   /** Construye la respuesta inicial para un job nuevo o ya activo. */
   private startResponse(job: MercadolibreSyncJob): SyncJobStartResponse {
+    return this.statusResponse(job);
+  }
+
+  /** Construye el contrato de progreso compartido por inicio y consulta. */
+  private statusResponse(job: MercadolibreSyncJob): SyncJobStatusResponse {
     return {
       ok: true,
       syncId: job.id,
-      status: job.status === 'RUNNING' ? 'RUNNING' : 'PENDING',
+      status: job.status,
       totalItems: job.total_items,
+      processedItems: job.processed_items,
+      productsSaved: job.products_saved,
+      childrenSaved: job.children_saved,
+      errorsCount: job.errors_count,
+      lastError: job.last_error,
+      hasMore: job.status === 'PENDING' || job.status === 'RUNNING',
     };
   }
 

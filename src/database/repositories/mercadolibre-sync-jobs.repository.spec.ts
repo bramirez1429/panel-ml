@@ -48,7 +48,7 @@ function transitionSetup(data: SyncJobRow | null, error: unknown = null) {
   const maybeSingle = jest.fn().mockResolvedValue({ data, error });
   const select = jest.fn().mockReturnValue({ maybeSingle });
   const statusEq = jest.fn().mockReturnValue({ select });
-  const idEq = jest.fn().mockReturnValue({ eq: statusEq });
+  const idEq = jest.fn().mockReturnValue({ eq: statusEq, in: statusEq });
   const update = jest.fn().mockReturnValue({ eq: idEq });
   return { ...setup({ update }), update, idEq, statusEq };
 }
@@ -232,6 +232,28 @@ describe('MercadolibreSyncJobsRepository', () => {
       }),
     );
     expect(failMock.statusEq).toHaveBeenCalledWith('status', 'RUNNING');
+  });
+
+  it('cancela solamente trabajos PENDING o RUNNING', async () => {
+    const cancelled = {
+      ...jobRow('CANCELLED'),
+      finished_at: '2026-08-10T02:00:00.000Z',
+    };
+    const { repository, update, idEq, statusEq } = transitionSetup(cancelled);
+
+    await expect(repository.cancel(JOB_ID)).resolves.toEqual(cancelled);
+
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'CANCELLED',
+        finished_at: NOW,
+      }),
+    );
+    expect(idEq).toHaveBeenCalledWith('id', JOB_ID);
+    expect(statusEq).toHaveBeenCalledWith('status', [
+      'PENDING',
+      'RUNNING',
+    ]);
   });
 
   it('convierte errores de lectura y escritura en mensajes genéricos', async () => {

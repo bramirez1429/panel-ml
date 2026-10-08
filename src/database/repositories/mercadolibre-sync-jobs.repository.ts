@@ -170,6 +170,25 @@ export class MercadolibreSyncJobsRepository {
     return this.requireTransition(data, error);
   }
 
+  /** Cancela un trabajo que todavía no finalizó. */
+  async cancel(id: string): Promise<MercadolibreSyncJob> {
+    const timestamp = new Date().toISOString();
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('mercadolibre_sync_jobs')
+      .update({
+        status: 'CANCELLED',
+        finished_at: timestamp,
+        updated_at: timestamp,
+      })
+      .eq('id', id)
+      .in('status', ['PENDING', 'RUNNING'])
+      .select('*')
+      .maybeSingle();
+
+    return this.requireTransition(data, error);
+  }
+
   /** Marca como FAILED solamente un error no recuperable. */
   async fail(id: string, safeMessage: string): Promise<MercadolibreSyncJob> {
     const timestamp = new Date().toISOString();
