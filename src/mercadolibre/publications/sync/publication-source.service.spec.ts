@@ -1,4 +1,8 @@
-import { BadGatewayException, BadRequestException } from '@nestjs/common';
+import {
+  BadGatewayException,
+  BadRequestException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { MercadolibreApiService } from '../../shared/mercadolibre-api.service';
 import { MercadoLibreRequestKind } from '../../shared/mercadolibre.types';
 import { PUBLICATION_SYNC_ATTRIBUTES } from '../publication.constants';
@@ -193,6 +197,100 @@ describe('PublicationSourceService', () => {
     expect(api.calls[1].path).toBe('/items/MLA1');
   });
 
+  it('recupera por detalle individual una respuesta bulk sin status_code', async () => {
+    const publication = { id: 'MLA1', seller_id: 123, title: 'Producto' };
+    const { api, source } = createSource(({ path }) =>
+      path.startsWith('/items/bulk')
+        ? [{ id: 'MLA1', body: { id: 'MLA1' } }]
+        : publication,
+    );
+
+    await expect(
+      source.fetchItemBatch(['MLA1'], 'private-token', 123),
+    ).resolves.toEqual({ publications: [publication], errors: [] });
+
+    expect(api.calls.map((call) => call.path)).toEqual([
+      expect.stringContaining('/items/bulk?'),
+      '/items/MLA1',
+    ]);
+    expect(api.calls[1].kind).toBe('itemLookup');
+  });
+
+  it('recupera por detalle individual una entrada bulk sin id raíz', async () => {
+    const publication = { id: 'MLA1', seller_id: 123, title: 'Producto' };
+    const { api, source } = createSource(({ path }) =>
+      path.startsWith('/items/bulk')
+        ? [{ status_code: 200, body: publication }]
+        : publication,
+    );
+
+    await expect(
+      source.fetchItemBatch(['MLA1'], 'private-token', 123),
+    ).resolves.toEqual({ publications: [publication], errors: [] });
+
+    expect(api.calls).toHaveLength(2);
+    expect(api.calls[1].path).toBe('/items/MLA1');
+  });
+
+  it('recupera solo los IDs faltantes de la respuesta bulk', async () => {
+    const { api, source } = createSource(({ path }) => {
+      if (path.startsWith('/items/bulk')) {
+        return [
+          {
+            id: 'MLA1',
+            status_code: 200,
+            body: { id: 'MLA1', seller_id: 123 },
+          },
+        ];
+      }
+      return { id: 'MLA2', seller_id: 123 };
+    });
+
+    await expect(
+      source.fetchItemBatch(['MLA1', 'MLA2'], 'private-token', 123),
+    ).resolves.toEqual({
+      publications: [
+        { id: 'MLA1', seller_id: 123 },
+        { id: 'MLA2', seller_id: 123 },
+      ],
+      errors: [],
+    });
+
+    expect(api.calls.map((call) => parsePath(call.path).pathname)).toEqual([
+      '/items/bulk',
+      '/items/MLA2',
+    ]);
+  });
+
+  it('conserva los errores HTTP reales informados por bulk', async () => {
+    const { api, source } = createSource(() => [
+      {
+        id: 'MLA1',
+        status_code: 429,
+        body: { message: 'rate limited' },
+      },
+    ]);
+
+    await expect(
+      source.fetchItemBatch(['MLA1'], 'private-token'),
+    ).resolves.toEqual({
+      publications: [],
+      errors: [{ itemId: 'MLA1', status: 429, body: { message: 'rate limited' } }],
+    });
+    expect(api.calls).toHaveLength(1);
+  });
+
+  it('propaga un error HTTP real del fallback individual', async () => {
+    const { source } = createSource(({ path }) => {
+      if (path.startsWith('/items/bulk')) return { invalid: true };
+      throw new ServiceUnavailableException('rate limited');
+    });
+
+    await expect(
+      source.fetchItemBatch(['MLA1'], 'private-token', 123),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
+
   it('conserva compatibilidad con el formato anterior del multiget', async () => {
     const { source } = createSource(() => [
       { code: 200, body: { id: 'MLA1', title: 'Producto' } },
@@ -313,7 +411,7 @@ describe('PublicationSourceService', () => {
       {
         path: '/items/MLA123?include_attributes=all',
         accessToken: 'private-token',
-        kind: undefined,
+        kind: 'itemLookup',
       },
     ]);
   });

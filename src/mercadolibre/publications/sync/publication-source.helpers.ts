@@ -17,6 +17,17 @@ type MultigetEntry = {
   body?: unknown;
 };
 
+export type ParsedMultiget = PublicationSourceResult & {
+  fallbackItemIds: string[];
+  diagnostics: MultigetDiagnostics;
+};
+
+export type MultigetDiagnostics = {
+  responseType: 'array' | 'other';
+  entriesWithStatusCode: number;
+  realHttpStatuses: Record<string, number>;
+};
+
 /** Divide una lista en grupos del tamaño indicado. */
 export function chunk<T>(values: T[], size: number): T[][] {
   const result: T[][] = [];
@@ -64,34 +75,65 @@ export function parseSearchTotal(data: unknown): number {
 export function parseMultiget(
   requestedIds: string[],
   data: unknown,
-): PublicationSourceResult {
+): ParsedMultiget {
   if (!Array.isArray(data)) {
-    throw new BadGatewayException('Respuesta multiget inválida');
+    return {
+      publications: [],
+      errors: [],
+      fallbackItemIds: [...requestedIds],
+      diagnostics: {
+        responseType: 'other',
+        entriesWithStatusCode: 0,
+        realHttpStatuses: {},
+      },
+    };
   }
 
   const entries = indexEntries(requestedIds, data);
   const publications: MercadoLibrePublication[] = [];
   const errors: PublicationSourceError[] = [];
+  const fallbackItemIds: string[] = [];
+  const realHttpStatuses: Record<string, number> = {};
 
   for (const itemId of requestedIds) {
     const entry = entries.get(itemId);
     if (!entry) {
-      errors.push({ itemId, status: 502, body: 'Respuesta faltante' });
+      fallbackItemIds.push(itemId);
       continue;
     }
     const status = entryStatus(entry);
     const body = entry.body ?? null;
-    if (status === 200 && isJsonObject(body) && body.id === itemId) {
+    if (
+      status === 200 &&
+      hasExpectedEntryId(entry, itemId) &&
+      isJsonObject(body) &&
+      body.id === itemId
+    ) {
       publications.push(sanitizeMercadoLibreData(body));
+    } else if (status === 200 || !hasStatus(entry)) {
+      fallbackItemIds.push(itemId);
     } else {
       errors.push({
         itemId,
         status,
         body: sanitizeMercadoLibreData(body),
       });
+      const statusKey = String(status);
+      realHttpStatuses[statusKey] = (realHttpStatuses[statusKey] ?? 0) + 1;
     }
   }
-  return { publications, errors };
+  return {
+    publications,
+    errors,
+    fallbackItemIds,
+    diagnostics: {
+      responseType: 'array',
+      entriesWithStatusCode: data.filter(
+        (entry) => isJsonObject(entry) && validStatus(entry.status_code),
+      ).length,
+      realHttpStatuses,
+    },
+  };
 }
 
 /** Indexa cada respuesta multiget por el ID solicitado. */
@@ -120,7 +162,18 @@ function entryId(entry: MultigetEntry): string | undefined {
 /** Lee status_code del bulk y conserva code del multiget anterior. */
 function entryStatus(entry: MultigetEntry): number {
   if (validStatus(entry.status_code)) return entry.status_code;
-  return validStatus(entry.code) ? entry.code : 502;
+  return validStatus(entry.code) ? entry.code : 200;
+}
+
+/** Distingue una entrada sin estado de un error HTTP informado por Mercado Libre. */
+function hasStatus(entry: MultigetEntry): boolean {
+  return validStatus(entry.status_code) || validStatus(entry.code);
+}
+
+/** Exige el id raíz del contrato bulk y acepta body.id en el formato anterior. */
+function hasExpectedEntryId(entry: MultigetEntry, itemId: string): boolean {
+  if (validStatus(entry.status_code)) return entry.id === itemId;
+  return entryId(entry) === itemId;
 }
 
 /** Indica si un valor es un estado HTTP. */

@@ -2,6 +2,7 @@ import {
   BadGatewayException,
   BadRequestException,
   Injectable,
+  Logger,
 } from '@nestjs/common';
 import {
   MercadolibreApiService,
@@ -34,6 +35,8 @@ import {
 
 @Injectable()
 export class PublicationSourceService {
+  private readonly logger = new Logger(PublicationSourceService.name);
+
   /** Prepara el acceso compartido a Mercado Libre. */
   constructor(private readonly apiService: MercadolibreApiService) {}
 
@@ -109,6 +112,7 @@ export class PublicationSourceService {
   async getPublicationDetails(
     itemIds: string[],
     accessToken: string,
+    expectedSellerId?: number,
   ): Promise<PublicationSourceResult> {
     const batches = chunk([...new Set(itemIds)], PUBLICATION_MULTIGET_SIZE);
     const results: PublicationSourceResult[] = [];
@@ -124,7 +128,9 @@ export class PublicationSourceService {
       );
       results.push(
         ...(await Promise.all(
-          current.map((ids) => this.fetchItemBatch(ids, accessToken)),
+          current.map((ids) =>
+            this.fetchItemBatch(ids, accessToken, expectedSellerId),
+          ),
         )),
       );
     }
@@ -138,6 +144,7 @@ export class PublicationSourceService {
   async fetchItemBatch(
     itemIds: string[],
     accessToken: string,
+    expectedSellerId?: number,
   ): Promise<PublicationSourceResult> {
     if (itemIds.length === 0) return { publications: [], errors: [] };
     if (itemIds.length > PUBLICATION_MULTIGET_SIZE) {
@@ -154,7 +161,93 @@ export class PublicationSourceService {
       `/items/bulk?${query.toString()}`,
       accessToken,
     );
-    return parseMultiget(itemIds, data);
+    const parsed = parseMultiget(itemIds, data);
+    if (parsed.fallbackItemIds.length === 0) {
+      this.logBulkResult(parsed, 0, parsed.errors.length);
+      return { publications: parsed.publications, errors: parsed.errors };
+    }
+
+    let recovered: PublicationSourceResult;
+    try {
+      recovered = await this.fetchFallbackItems(
+        parsed.fallbackItemIds,
+        accessToken,
+        expectedSellerId,
+      );
+    } catch (error) {
+      this.logBulkResult(parsed, 0, parsed.fallbackItemIds.length);
+      throw error;
+    }
+    const result = {
+      publications: [...parsed.publications, ...recovered.publications],
+      errors: [...parsed.errors, ...recovered.errors],
+    };
+    this.logBulkResult(parsed, recovered.publications.length, result.errors.length);
+    return result;
+  }
+
+  /** Recupera solo las entradas bulk sin formato interpretable. */
+  private async fetchFallbackItems(
+    itemIds: string[],
+    accessToken: string,
+    expectedSellerId?: number,
+  ): Promise<PublicationSourceResult> {
+    const results: PublicationSourceResult[] = [];
+    for (
+      let index = 0;
+      index < itemIds.length;
+      index += MERCADOLIBRE_REQUEST_CONCURRENCY
+    ) {
+      const current = itemIds.slice(
+        index,
+        index + MERCADOLIBRE_REQUEST_CONCURRENCY,
+      );
+      results.push(
+        ...(await Promise.all(
+          current.map(async (itemId) => {
+            const publication = await this.getValidatedItem(
+              itemId,
+              accessToken,
+              false,
+            );
+            if (
+              expectedSellerId !== undefined &&
+              publication.seller_id !== expectedSellerId
+            ) {
+              return {
+                publications: [],
+                errors: [
+                  {
+                    itemId,
+                    status: 403,
+                    body: 'La publicación pertenece a otro vendedor',
+                  },
+                ],
+              };
+            }
+            return { publications: [publication], errors: [] };
+          }),
+        )),
+      );
+    }
+    return {
+      publications: results.flatMap((result) => result.publications),
+      errors: results.flatMap((result) => result.errors),
+    };
+  }
+
+  /** Registra diagnóstico técnico del bulk sin exponer publicaciones ni credenciales. */
+  private logBulkResult(
+    parsed: ReturnType<typeof parseMultiget>,
+    recovered: number,
+    failed: number,
+  ): void {
+    const statuses = Object.entries(parsed.diagnostics.realHttpStatuses)
+      .map(([status, count]) => `${status}:${count}`)
+      .join(',');
+    this.logger.log(
+      `multiget responseType=${parsed.diagnostics.responseType} statusCodeEntries=${parsed.diagnostics.entriesWithStatusCode} fallback=${parsed.fallbackItemIds.length} recovered=${recovered} failed=${failed} http=${statuses || 'none'}`,
+    );
   }
 
   /** Obtiene y valida una publicación individual. */
@@ -186,6 +279,7 @@ export class PublicationSourceService {
     const data = await this.apiService.get<unknown>(
       `/items/${encodeURIComponent(itemId)}${suffix}`,
       accessToken,
+      'itemLookup',
     );
     if (!isJsonObject(data) || data.id !== itemId) {
       throw new BadGatewayException('Respuesta de publicación inválida');

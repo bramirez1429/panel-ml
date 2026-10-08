@@ -50,6 +50,7 @@ export class PublicationSyncService {
     const source = await this.sourceService.getPublicationDetails(
       itemIds,
       access.accessToken,
+      access.sellerId,
     );
     const owned = filterPublicationsBySeller(
       source.publications,

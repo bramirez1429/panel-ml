@@ -119,6 +119,7 @@ describe('PublicationSyncService', () => {
     expect(source.getPublicationDetails).toHaveBeenCalledWith(
       ['MLA1', 'MLA2'],
       'private-token',
+      123,
     );
     expect(preparer.prepare).toHaveBeenCalledTimes(1);
     expect(writer.save).toHaveBeenCalledWith(sharedBundle(), FULL_SYNC_ID);
