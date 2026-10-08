@@ -111,6 +111,8 @@ export class MercadolibreSyncJobsRepository {
         scroll_id: input.scrollId,
         buffer_item_ids: input.bufferItemIds,
         processed_items: input.processedItems,
+        successful_items: input.successfulItems,
+        failed_items: input.failedItems,
         products_saved: input.productsSaved,
         children_saved: input.childrenSaved,
         errors_count: input.errorsCount,
@@ -252,12 +254,32 @@ export class MercadolibreSyncJobsRepository {
 
   /** Registra un error de escritura sin filtrar datos internos. */
   private writeError(error?: unknown): never {
+    const postgresCode = postgresErrorDetail(error, 'code');
+    const constraint = postgresErrorDetail(error, 'constraint');
     this.logger.error(
-      'Error actualizando mercadolibre_sync_jobs',
-      error instanceof Error ? error.stack : String(error),
+      `Error actualizando mercadolibre_sync_jobs postgresCode=${postgresCode} constraint=${constraint}`,
     );
     throw new ServiceUnavailableException(
       'No se pudo actualizar la sincronización de Mercado Libre',
     );
   }
+}
+
+/** Obtiene metadatos seguros de errores PostgreSQL sin registrar su mensaje. */
+function postgresErrorDetail(
+  error: unknown,
+  field: 'code' | 'constraint',
+): string {
+  if (!isPostgresError(error)) return 'N/A';
+  const value = error[field];
+  return typeof value === 'string' && /^[A-Za-z0-9_.-]+$/.test(value)
+    ? value
+    : 'N/A';
+}
+
+/** Limita el acceso a los metadatos seguros devueltos por PostgREST. */
+function isPostgresError(
+  error: unknown,
+): error is { code?: unknown; constraint?: unknown } {
+  return typeof error === 'object' && error !== null && !Array.isArray(error);
 }

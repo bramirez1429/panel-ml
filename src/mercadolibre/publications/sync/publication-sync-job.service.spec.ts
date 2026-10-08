@@ -30,6 +30,8 @@ function job(
     buffer_item_ids: [],
     total_items: 0,
     processed_items: 0,
+    successful_items: 0,
+    failed_items: 0,
     products_saved: 0,
     children_saved: 0,
     errors_count: 0,
@@ -147,6 +149,8 @@ describe('PublicationSyncJobService', () => {
         status: 'RUNNING',
         total_items: 100,
         processed_items: 25,
+        successful_items: 23,
+        failed_items: 2,
         products_saved: 10,
         children_saved: 15,
         errors_count: 2,
@@ -175,6 +179,8 @@ describe('PublicationSyncJobService', () => {
         status: 'RUNNING',
         total_items: 100,
         processed_items: 25,
+        successful_items: 23,
+        failed_items: 2,
         products_saved: 10,
         children_saved: 15,
         errors_count: 2,
@@ -213,6 +219,8 @@ describe('PublicationSyncJobService', () => {
       scroll_id: 'scroll-1',
       buffer_item_ids: ids.slice(10),
       processed_items: 10,
+      successful_items: 10,
+      failed_items: 0,
       products_saved: 6,
       children_saved: 4,
       started_at: STARTED_AT,
@@ -221,6 +229,8 @@ describe('PublicationSyncJobService', () => {
       ...afterFirst,
       buffer_item_ids: ids.slice(20),
       processed_items: 20,
+      successful_items: 20,
+      failed_items: 0,
       products_saved: 11,
       children_saved: 9,
     });
@@ -265,6 +275,24 @@ describe('PublicationSyncJobService', () => {
       processedItems: 20,
       hasMore: true,
     });
+    expect(jobs.updateProgress).toHaveBeenNthCalledWith(
+      1,
+      JOB_ID,
+      expect.objectContaining({
+        processedItems: 10,
+        successfulItems: 10,
+        failedItems: 0,
+      }),
+    );
+    expect(jobs.updateProgress).toHaveBeenNthCalledWith(
+      2,
+      JOB_ID,
+      expect.objectContaining({
+        processedItems: 20,
+        successfulItems: 20,
+        failedItems: 0,
+      }),
+    );
     expect(token.getValidAccessToken).toHaveBeenCalledWith(
       APP_USER_ID,
       connection,
@@ -327,38 +355,90 @@ describe('PublicationSyncJobService', () => {
     expect(jobs.fail).not.toHaveBeenCalled();
   });
 
-  it('acumula errores individuales y mantiene el job pendiente', async () => {
+  it('acumula dos publicaciones fallidas una sola vez ante errores duplicados', async () => {
     const { jobs, service, sync } = setup();
     const ids = itemIds(10);
     const current = job({
       buffer_item_ids: ids,
       errors_count: 2,
       processed_items: 20,
+      successful_items: 18,
+      failed_items: 2,
     });
     jobs.findById.mockResolvedValue(current);
     jobs.claim.mockResolvedValue(
       job({ ...current, status: 'RUNNING', started_at: STARTED_AT }),
     );
     jobs.updateProgress.mockResolvedValue(
-      job({ processed_items: 30, errors_count: 3, started_at: STARTED_AT }),
+      job({
+        processed_items: 30,
+        successful_items: 26,
+        failed_items: 4,
+        errors_count: 5,
+        started_at: STARTED_AT,
+      }),
     );
     sync.syncBatch.mockResolvedValue({
       productsSaved: 4,
       childrenSaved: 5,
-      errors: [{ itemId: 'MLA3', message: 'No encontrado' }],
+      errors: [
+        { itemId: 'MLA3', message: 'No encontrado' },
+        { itemId: 'MLA3', message: 'Error duplicado' },
+        { itemId: 'MLA7', message: 'No encontrado' },
+      ],
     });
     await expect(
       service.processNext(APP_USER_ID, JOB_ID),
     ).resolves.toMatchObject({
       status: 'PENDING',
       processedItems: 30,
-      errorsCount: 3,
+      errorsCount: 5,
     });
     expect(jobs.updateProgress).toHaveBeenCalledWith(
       JOB_ID,
-      expect.objectContaining({ processedItems: 30, errorsCount: 3 }),
+      expect.objectContaining({
+        processedItems: 30,
+        successfulItems: 26,
+        failedItems: 4,
+        errorsCount: 5,
+      }),
     );
     expect(jobs.fail).not.toHaveBeenCalled();
+  });
+
+  it('no contabiliza éxitos cuando un error no identifica la publicación', async () => {
+    const { jobs, service, sync } = setup();
+    const ids = itemIds(10);
+    const current = job({ buffer_item_ids: ids });
+    jobs.findById.mockResolvedValue(current);
+    jobs.claim.mockResolvedValue(
+      job({ ...current, status: 'RUNNING', started_at: STARTED_AT }),
+    );
+    jobs.updateProgress.mockResolvedValue(
+      job({
+        processed_items: 10,
+        successful_items: 0,
+        failed_items: 10,
+        errors_count: 1,
+        started_at: STARTED_AT,
+      }),
+    );
+    sync.syncBatch.mockResolvedValue({
+      productsSaved: 0,
+      childrenSaved: 0,
+      errors: [{ message: 'Error sin itemId' }],
+    });
+
+    await service.processNext(APP_USER_ID, JOB_ID);
+
+    expect(jobs.updateProgress).toHaveBeenCalledWith(
+      JOB_ID,
+      expect.objectContaining({
+        processedItems: 10,
+        successfulItems: 0,
+        failedItems: 10,
+      }),
+    );
   });
 
   it('rechaza jobs de otro vendedor antes de reclamarlos', async () => {

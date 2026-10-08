@@ -22,6 +22,8 @@ function job(retryCount: number, status: MercadolibreSyncJob['status']) {
     buffer_item_ids: ['MLA1'],
     total_items: 0,
     processed_items: 0,
+    successful_items: 0,
+    failed_items: 0,
     products_saved: 0,
     children_saved: 0,
     errors_count: 0,

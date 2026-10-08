@@ -296,6 +296,8 @@ type SyncJobRow = {
   buffer_item_ids: Json;
   total_items: number;
   processed_items: number;
+  successful_items: number;
+  failed_items: number;
   products_saved: number;
   children_saved: number;
   errors_count: number;
@@ -317,6 +319,8 @@ type SyncJobInsert = {
   buffer_item_ids?: Json;
   total_items?: number;
   processed_items?: number;
+  successful_items?: number;
+  failed_items?: number;
   products_saved?: number;
   children_saved?: number;
   errors_count?: number;

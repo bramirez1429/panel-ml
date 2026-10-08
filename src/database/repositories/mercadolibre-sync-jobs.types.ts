@@ -18,6 +18,8 @@ export type UpdateMercadolibreSyncJobProgressInput = {
   scrollId: string | null;
   bufferItemIds: string[];
   processedItems: number;
+  successfulItems: number;
+  failedItems: number;
   productsSaved: number;
   childrenSaved: number;
   errorsCount: number;

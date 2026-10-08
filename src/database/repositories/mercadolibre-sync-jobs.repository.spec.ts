@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { Database } from '../database.types';
 import { SupabaseService } from '../supabase.service';
@@ -21,6 +22,8 @@ function jobRow(status: SyncJobRow['status'] = 'PENDING'): SyncJobRow {
     buffer_item_ids: [],
     total_items: 0,
     processed_items: 0,
+    successful_items: 0,
+    failed_items: 0,
     products_saved: 0,
     children_saved: 0,
     errors_count: 0,
@@ -144,21 +147,30 @@ describe('MercadolibreSyncJobsRepository', () => {
       scroll_id: 'scroll-2',
       buffer_item_ids: ['MLA11'],
       processed_items: 10,
+      successful_items: 9,
+      failed_items: 1,
       products_saved: 4,
       children_saved: 6,
       errors_count: 1,
     };
     const { repository, update, statusEq } = transitionSetup(pending);
 
-    await repository.updateProgress(JOB_ID, {
+    const progress = {
       scanStarted: true,
       scrollId: 'scroll-2',
       bufferItemIds: ['MLA11'],
       processedItems: 10,
+      successfulItems: 9,
+      failedItems: 1,
       productsSaved: 4,
       childrenSaved: 6,
       errorsCount: 1,
-    });
+    };
+    expect(progress.processedItems).toBe(
+      progress.successfulItems + progress.failedItems,
+    );
+
+    await repository.updateProgress(JOB_ID, progress);
 
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -167,6 +179,8 @@ describe('MercadolibreSyncJobsRepository', () => {
         scroll_id: 'scroll-2',
         buffer_item_ids: ['MLA11'],
         processed_items: 10,
+        successful_items: 9,
+        failed_items: 1,
         products_saved: 4,
         children_saved: 6,
         errors_count: 1,
@@ -270,12 +284,24 @@ describe('MercadolibreSyncJobsRepository', () => {
       message: 'No se pudo leer la sincronización de Mercado Libre',
     });
 
-    const writeMock = transitionSetup(null, {
-      message: 'sensitive database details',
-    });
-    await expect(writeMock.repository.complete(JOB_ID)).rejects.toMatchObject({
-      status: 503,
-      message: 'No se pudo actualizar la sincronización de Mercado Libre',
-    });
+    const logger = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+    try {
+      const writeMock = transitionSetup(null, {
+        code: '23514',
+        constraint: 'mercadolibre_sync_jobs_progress_check',
+        message: 'access_token=private-token',
+      });
+      await expect(writeMock.repository.complete(JOB_ID)).rejects.toMatchObject({
+        status: 503,
+        message: 'No se pudo actualizar la sincronización de Mercado Libre',
+      });
+
+      expect(logger).toHaveBeenCalledWith(
+        'Error actualizando mercadolibre_sync_jobs postgresCode=23514 constraint=mercadolibre_sync_jobs_progress_check',
+      );
+      expect(JSON.stringify(logger.mock.calls)).not.toContain('private-token');
+    } finally {
+      logger.mockRestore();
+    }
   });
 });

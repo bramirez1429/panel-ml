@@ -28,7 +28,7 @@ import {
 } from './publication-sync-job.types';
 import { PublicationSourceService } from './publication-source.service';
 import { PublicationSyncService } from './publication-sync.service';
-import { SyncAccess } from './publication-sync.types';
+import { PublicationSyncError, SyncAccess } from './publication-sync.types';
 
 const MAX_CONSECUTIVE_RETRIES = 3;
 type SyncJobStage = 'SCAN' | 'SYNC_BATCH' | 'CHECKPOINT' | 'FINALIZE';
@@ -158,12 +158,16 @@ export class PublicationSyncJobService {
     const result = await this.runStage(job.id, 'SYNC_BATCH', () =>
       this.syncService.syncBatch(batchIds, access, job.full_sync_id),
     );
+    const batchProgress = calculateBatchProgress(batchIds, result.errors);
     const updated = await this.runStage(job.id, 'CHECKPOINT', () =>
       this.jobsRepository.updateProgress(job.id, {
         scanStarted: scan.scanStarted,
         scrollId: scan.scrollId,
         bufferItemIds: scan.bufferItemIds.slice(PUBLICATION_SYNC_BATCH_SIZE),
-        processedItems: job.processed_items + batchIds.length,
+        processedItems: job.processed_items + batchProgress.processedItems,
+        successfulItems:
+          job.successful_items + batchProgress.successfulItems,
+        failedItems: job.failed_items + batchProgress.failedItems,
         productsSaved: job.products_saved + result.productsSaved,
         childrenSaved: job.children_saved + result.childrenSaved,
         errorsCount: job.errors_count + result.errors.length,
@@ -343,4 +347,39 @@ export class PublicationSyncJobService {
       safeSyncErrorLabel(error),
     );
   }
+}
+
+/** Calcula resultados de lote conservando la restricción de progreso SQL. */
+function calculateBatchProgress(
+  itemIds: readonly string[],
+  errors: readonly PublicationSyncError[],
+): {
+  processedItems: number;
+  successfulItems: number;
+  failedItems: number;
+} {
+  const batchItemIds = new Set(itemIds);
+  const failedItemIds = new Set<string>();
+  let hasUnidentifiedError = false;
+
+  for (const error of errors) {
+    if (
+      typeof error.itemId !== 'string' ||
+      !batchItemIds.has(error.itemId)
+    ) {
+      hasUnidentifiedError = true;
+      continue;
+    }
+    failedItemIds.add(error.itemId);
+  }
+
+  const processedItems = itemIds.length;
+  const failedItems = hasUnidentifiedError
+    ? processedItems
+    : failedItemIds.size;
+  return {
+    processedItems,
+    successfulItems: processedItems - failedItems,
+    failedItems,
+  };
 }
