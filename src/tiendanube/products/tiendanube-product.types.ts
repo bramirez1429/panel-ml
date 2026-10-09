@@ -18,6 +18,7 @@ export type TiendanubeProductResponse = Readonly<{
   images: readonly TiendanubeProductImageResponse[];
 }>;
 
+<<<<<<< HEAD
 export type TiendanubeProductByMercadolibreResponse = Readonly<{
   linked: boolean;
   price: number | null;
@@ -26,6 +27,8 @@ export type TiendanubeProductByMercadolibreResponse = Readonly<{
   sku: string | null;
 }>;
 
+=======
+>>>>>>> origin/feat/sincronizacion-publicaciones
 export type TiendanubeCatalogVariantAttributeResponse = Readonly<{
   name: TiendanubeLocalizedText | null;
   value: TiendanubeLocalizedText;

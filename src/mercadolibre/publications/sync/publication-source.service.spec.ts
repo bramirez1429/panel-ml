@@ -1,4 +1,8 @@
-import { BadGatewayException, BadRequestException } from '@nestjs/common';
+import {
+  BadGatewayException,
+  BadRequestException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { MercadolibreApiService } from '../../shared/mercadolibre-api.service';
 import { MercadoLibreRequestKind } from '../../shared/mercadolibre.types';
 import { PUBLICATION_SYNC_ATTRIBUTES } from '../publication.constants';
@@ -43,6 +47,22 @@ function parsePath(path: string): URL {
 }
 
 describe('PublicationSourceService', () => {
+  it('obtiene el total sin recorrer el catÃ¡logo', async () => {
+    const { api, source } = createSource(() => ({
+      results: ['MLA1'],
+      paging: { total: 321 },
+    }));
+
+    await expect(source.getItemsTotal(123, 'private-token')).resolves.toBe(
+      321,
+    );
+
+    expect(api.calls).toHaveLength(1);
+    const query = parsePath(api.calls[0].path).searchParams;
+    expect(query.get('search_type')).toBe('scan');
+    expect(query.get('limit')).toBe('1');
+  });
+
   it('obtiene la primera página del scan sin scroll_id', async () => {
     const { api, source } = createSource(() => ({
       results: ['MLA1', 'MLA1', 'MLA2'],
@@ -117,14 +137,16 @@ describe('PublicationSourceService', () => {
     ]);
   });
 
-  it('usa multiget de veinte, atributos fijos y errores saneados', async () => {
+  it('usa bulk de veinte, atributos body y errores individuales saneados', async () => {
     const { api, source } = createSource(() => [
       {
-        code: 200,
+        id: 'MLA1',
+        status_code: 200,
         body: { id: 'MLA1', title: 'Producto', access_token: 'secret' },
       },
       {
-        code: 403,
+        id: 'MLA2',
+        status_code: 403,
         body: { message: 'Forbidden', refresh_token: 'secret' },
       },
     ]);
@@ -137,9 +159,150 @@ describe('PublicationSourceService', () => {
     });
 
     const query = parsePath(api.calls[0].path).searchParams;
+    expect(parsePath(api.calls[0].path).pathname).toBe('/items/bulk');
     expect(query.get('ids')).toBe('MLA1,MLA2');
-    expect(query.get('attributes')).toBe(PUBLICATION_SYNC_ATTRIBUTES.join(','));
+    expect(query.get('attributes')).toBe(
+      PUBLICATION_SYNC_ATTRIBUTES.map(
+        (attribute) => `body.${attribute}`,
+      ).join(','),
+    );
     expect(api.calls[0].accessToken).toBe('private-token');
+  });
+
+  it('compara un bulk controlado con el detalle del mismo ítem', async () => {
+    const publication = {
+      id: 'MLA1',
+      seller_id: 123,
+      title: 'Producto',
+    };
+    const { api, source } = createSource(({ path }) =>
+      path.startsWith('/items/bulk')
+        ? [{ id: 'MLA1', status_code: 200, body: publication }]
+        : publication,
+    );
+
+    const bulk = await source.fetchItemBatch(['MLA1'], 'private-token');
+    const detail = await source.getItem('MLA1', 'private-token');
+
+    expect(bulk.publications).toEqual([detail]);
+    expect(bulk.publications[0]).toMatchObject({
+      id: 'MLA1',
+      seller_id: 123,
+    });
+    const attributes = parsePath(api.calls[0].path).searchParams.get(
+      'attributes',
+    );
+    expect(attributes).toContain('body.id');
+    expect(attributes).toContain('body.seller_id');
+    expect(api.calls[1].path).toBe('/items/MLA1');
+  });
+
+  it('recupera por detalle individual una respuesta bulk sin status_code', async () => {
+    const publication = { id: 'MLA1', seller_id: 123, title: 'Producto' };
+    const { api, source } = createSource(({ path }) =>
+      path.startsWith('/items/bulk')
+        ? [{ id: 'MLA1', body: { id: 'MLA1' } }]
+        : publication,
+    );
+
+    await expect(
+      source.fetchItemBatch(['MLA1'], 'private-token', 123),
+    ).resolves.toEqual({ publications: [publication], errors: [] });
+
+    expect(api.calls.map((call) => call.path)).toEqual([
+      expect.stringContaining('/items/bulk?'),
+      '/items/MLA1',
+    ]);
+    expect(api.calls[1].kind).toBe('itemLookup');
+  });
+
+  it('recupera por detalle individual una entrada bulk sin id raíz', async () => {
+    const publication = { id: 'MLA1', seller_id: 123, title: 'Producto' };
+    const { api, source } = createSource(({ path }) =>
+      path.startsWith('/items/bulk')
+        ? [{ status_code: 200, body: publication }]
+        : publication,
+    );
+
+    await expect(
+      source.fetchItemBatch(['MLA1'], 'private-token', 123),
+    ).resolves.toEqual({ publications: [publication], errors: [] });
+
+    expect(api.calls).toHaveLength(2);
+    expect(api.calls[1].path).toBe('/items/MLA1');
+  });
+
+  it('recupera solo los IDs faltantes de la respuesta bulk', async () => {
+    const { api, source } = createSource(({ path }) => {
+      if (path.startsWith('/items/bulk')) {
+        return [
+          {
+            id: 'MLA1',
+            status_code: 200,
+            body: { id: 'MLA1', seller_id: 123 },
+          },
+        ];
+      }
+      return { id: 'MLA2', seller_id: 123 };
+    });
+
+    await expect(
+      source.fetchItemBatch(['MLA1', 'MLA2'], 'private-token', 123),
+    ).resolves.toEqual({
+      publications: [
+        { id: 'MLA1', seller_id: 123 },
+        { id: 'MLA2', seller_id: 123 },
+      ],
+      errors: [],
+    });
+
+    expect(api.calls.map((call) => parsePath(call.path).pathname)).toEqual([
+      '/items/bulk',
+      '/items/MLA2',
+    ]);
+  });
+
+  it('conserva los errores HTTP reales informados por bulk', async () => {
+    const { api, source } = createSource(() => [
+      {
+        id: 'MLA1',
+        status_code: 429,
+        body: { message: 'rate limited' },
+      },
+    ]);
+
+    await expect(
+      source.fetchItemBatch(['MLA1'], 'private-token'),
+    ).resolves.toEqual({
+      publications: [],
+      errors: [{ itemId: 'MLA1', status: 429, body: { message: 'rate limited' } }],
+    });
+    expect(api.calls).toHaveLength(1);
+  });
+
+  it('propaga un error HTTP real del fallback individual', async () => {
+    const { source } = createSource(({ path }) => {
+      if (path.startsWith('/items/bulk')) return { invalid: true };
+      throw new ServiceUnavailableException('rate limited');
+    });
+
+    await expect(
+      source.fetchItemBatch(['MLA1'], 'private-token', 123),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
+
+  it('conserva compatibilidad con el formato anterior del multiget', async () => {
+    const { source } = createSource(() => [
+      { code: 200, body: { id: 'MLA1', title: 'Producto' } },
+      { code: 404, body: { message: 'Not found' } },
+    ]);
+
+    await expect(
+      source.fetchItemBatch(['MLA1', 'MLA2'], 'private-token'),
+    ).resolves.toEqual({
+      publications: [{ id: 'MLA1', title: 'Producto' }],
+      errors: [{ itemId: 'MLA2', status: 404, body: { message: 'Not found' } }],
+    });
   });
 
   it('ejecuta una sola solicitud multiget a la vez', async () => {
@@ -248,7 +411,7 @@ describe('PublicationSourceService', () => {
       {
         path: '/items/MLA123?include_attributes=all',
         accessToken: 'private-token',
-        kind: undefined,
+        kind: 'itemLookup',
       },
     ]);
   });

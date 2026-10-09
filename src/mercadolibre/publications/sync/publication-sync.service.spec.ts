@@ -107,11 +107,19 @@ describe('PublicationSyncService', () => {
       productsSaved: 2,
       childrenSaved: 2,
       errors: [],
+      diagnostics: {
+        sourceErrors: 0,
+        sourceHttpStatuses: {},
+        ownedErrors: 0,
+        preparedErrors: 0,
+        variantResultErrors: 0,
+      },
     });
 
     expect(source.getPublicationDetails).toHaveBeenCalledWith(
       ['MLA1', 'MLA2'],
       'private-token',
+      123,
     );
     expect(preparer.prepare).toHaveBeenCalledTimes(1);
     expect(writer.save).toHaveBeenCalledWith(sharedBundle(), FULL_SYNC_ID);
@@ -150,6 +158,13 @@ describe('PublicationSyncService', () => {
 
     expect(result.productsSaved).toBe(1);
     expect(result.errors).toHaveLength(4);
+    expect(result.diagnostics).toEqual({
+      sourceErrors: 1,
+      sourceHttpStatuses: { 404: 1 },
+      ownedErrors: 1,
+      preparedErrors: 1,
+      variantResultErrors: 1,
+    });
   });
 
   it('sincroniza un webhook SHARED sin marca de full sync', async () => {

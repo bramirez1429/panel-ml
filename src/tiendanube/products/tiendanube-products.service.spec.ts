@@ -15,9 +15,12 @@ type ConnectionRepositoryMock = jest.Mocked<
 type ApiServiceMock = jest.Mocked<
   Pick<TiendanubeApiService, 'get' | 'getWithMeta'>
 >;
+<<<<<<< HEAD
 type VariantLinksRepositoryMock = jest.Mocked<
   Pick<VariantChannelLinksRepository, 'findByUserIdAndMlItemId'>
 >;
+=======
+>>>>>>> origin/feat/sincronizacion-publicaciones
 
 describe('TiendanubeProductsService', () => {
   let service: TiendanubeProductsService;
@@ -32,9 +35,12 @@ describe('TiendanubeProductsService', () => {
     apiService = {
       get: jest.fn().mockRejectedValue(new Error('Unexpected API call')),
       getWithMeta: jest.fn().mockRejectedValue(new Error('Unexpected API call')),
+<<<<<<< HEAD
     };
     variantLinks = {
       findByUserIdAndMlItemId: jest.fn(),
+=======
+>>>>>>> origin/feat/sincronizacion-publicaciones
     };
     service = new TiendanubeProductsService(
       connectionRepository as unknown as TiendanubeConnectionRepository,
@@ -151,6 +157,7 @@ describe('TiendanubeProductsService', () => {
     expect(JSON.stringify(caught)).not.toContain(ACCESS_TOKEN_A);
   });
 
+<<<<<<< HEAD
   it('lee la variante de Tiendanube vinculada sin buscar productos por nombre', async () => {
     variantLinks.findByUserIdAndMlItemId.mockResolvedValue([
       {
@@ -223,6 +230,9 @@ describe('TiendanubeProductsService', () => {
   });
 
   it('consulta el catálogo paginado de la tienda del usuario', async () => {
+=======
+  it('consulta una pagina completa del catalogo y proyecta variantes', async () => {
+>>>>>>> origin/feat/sincronizacion-publicaciones
     connectionRepository.findCredentialsByUserId.mockResolvedValue({
       storeId: '987654',
       accessToken: ACCESS_TOKEN_A,
@@ -235,6 +245,7 @@ describe('TiendanubeProductsService', () => {
           name: { es: 'Remera' },
           published: true,
           visibility: 'visible',
+<<<<<<< HEAD
           tags: 'verano,remera',
           attributes: [{ es: 'Color' }],
           images: [{ src: 'https://example.com/main.jpg', position: 1 }],
@@ -243,6 +254,28 @@ describe('TiendanubeProductsService', () => {
               id: 101,
               values: [{ es: 'Rojo' }],
               sku: 'SKU-101',
+=======
+          tags: ' verano, remera ',
+          attributes: [{ es: 'Color' }, { es: 'Talle' }],
+          images: [
+            { src: 'https://example.com/secondary.jpg', position: 2 },
+            { src: 'https://example.com/main.jpg', position: 1 },
+          ],
+          variants: [
+            {
+              id: 101,
+              values: [{ es: 'Rojo' }, { es: 'M' }],
+              sku: 'SKU-101',
+              stock_management: true,
+              stock: 7,
+              price: '25000.50',
+              promotional_price: '19999',
+            },
+            {
+              id: 102,
+              values: [{ es: 'Azul' }, { es: 'L' }],
+              sku: null,
+>>>>>>> origin/feat/sincronizacion-publicaciones
               stock_management: false,
               stock: null,
               price: '25000.50',
@@ -251,11 +284,16 @@ describe('TiendanubeProductsService', () => {
           ],
         },
       ],
+<<<<<<< HEAD
       headers: new Headers({ 'x-total-count': '21' }),
+=======
+      headers: new Headers({ 'x-total-count': '41' }),
+>>>>>>> origin/feat/sincronizacion-publicaciones
     });
 
     await expect(
       service.listCatalogByUserId(USER_A, {
+<<<<<<< HEAD
         page: 1,
         limit: 20,
         q: ' remera ',
@@ -273,6 +311,41 @@ describe('TiendanubeProductsService', () => {
             {
               id: 101,
               sku: 'SKU-101',
+=======
+        page: 2,
+        limit: 20,
+        q: ' remera azul ',
+      }),
+    ).resolves.toEqual({
+      products: [
+        {
+          id: 1234,
+          name: { es: 'Remera' },
+          mainImage: 'https://example.com/main.jpg',
+          tags: ['verano', 'remera'],
+          published: true,
+          visibility: 'visible',
+          variants: [
+            {
+              id: 101,
+              attributes: [
+                { name: { es: 'Color' }, value: { es: 'Rojo' } },
+                { name: { es: 'Talle' }, value: { es: 'M' } },
+              ],
+              sku: 'SKU-101',
+              stock: 7,
+              stockManagement: true,
+              price: 25000.5,
+              promotionalPrice: 19999,
+            },
+            {
+              id: 102,
+              attributes: [
+                { name: { es: 'Color' }, value: { es: 'Azul' } },
+                { name: { es: 'Talle' }, value: { es: 'L' } },
+              ],
+              sku: null,
+>>>>>>> origin/feat/sincronizacion-publicaciones
               stock: null,
               stockManagement: false,
               price: 25000.5,
@@ -281,11 +354,25 @@ describe('TiendanubeProductsService', () => {
           ],
         },
       ],
+<<<<<<< HEAD
     });
     expect(apiService.getWithMeta).toHaveBeenCalledWith(
       '987654',
       '/products?page=1&per_page=20&q=remera',
       ACCESS_TOKEN_A,
     );
+=======
+      page: 2,
+      hasMore: true,
+      total: 41,
+    });
+
+    expect(apiService.getWithMeta).toHaveBeenCalledWith(
+      '987654',
+      '/products?page=2&per_page=20&q=remera+azul',
+      ACCESS_TOKEN_A,
+    );
+    expect(apiService.get).not.toHaveBeenCalled();
+>>>>>>> origin/feat/sincronizacion-publicaciones
   });
 });

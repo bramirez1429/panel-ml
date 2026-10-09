@@ -106,6 +106,7 @@ import { MercadolibreIntegrationStatusService } from './integration-status/merca
 import { WorkspaceModule } from '../workspaces/workspace.module';
 import { ReplicationController } from './direct-publications/replication/replication.controller';
 import { ReplicationCatalogService } from './direct-publications/replication/replication-catalog.service';
+import { PublicationSyncController } from './publications/sync/publication-sync.controller';
 
 @Module({
   imports: [AuthModule, SalesPersistenceModule, WorkspaceModule],
@@ -132,6 +133,7 @@ import { ReplicationCatalogService } from './direct-publications/replication/rep
     ProductRankingController,
     StockBulkController,
     ReplicationController,
+    PublicationSyncController,
   ],
   providers: [
     SupabaseService,

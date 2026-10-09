@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { Database } from '../database.types';
 import { SupabaseService } from '../supabase.service';
@@ -19,7 +20,10 @@ function jobRow(status: SyncJobRow['status'] = 'PENDING'): SyncJobRow {
     scan_started: false,
     scroll_id: null,
     buffer_item_ids: [],
+    total_items: 0,
     processed_items: 0,
+    successful_items: 0,
+    failed_items: 0,
     products_saved: 0,
     children_saved: 0,
     errors_count: 0,
@@ -47,7 +51,7 @@ function transitionSetup(data: SyncJobRow | null, error: unknown = null) {
   const maybeSingle = jest.fn().mockResolvedValue({ data, error });
   const select = jest.fn().mockReturnValue({ maybeSingle });
   const statusEq = jest.fn().mockReturnValue({ select });
-  const idEq = jest.fn().mockReturnValue({ eq: statusEq });
+  const idEq = jest.fn().mockReturnValue({ eq: statusEq, in: statusEq });
   const update = jest.fn().mockReturnValue({ eq: idEq });
   return { ...setup({ update }), update, idEq, statusEq };
 }
@@ -76,6 +80,7 @@ describe('MercadolibreSyncJobsRepository', () => {
       id: JOB_ID,
       sellerId: 123,
       fullSyncId: FULL_SYNC_ID,
+      totalItems: 42,
     });
     const found = await repository.findById(JOB_ID);
 
@@ -86,8 +91,26 @@ describe('MercadolibreSyncJobsRepository', () => {
       id: JOB_ID,
       seller_id: 123,
       full_sync_id: FULL_SYNC_ID,
+      total_items: 42,
     });
     expect(eq).toHaveBeenCalledWith('id', JOB_ID);
+  });
+
+  it('encuentra el trabajo PENDING o RUNNING mÃ¡s reciente del seller', async () => {
+    const row = jobRow('RUNNING');
+    const maybeSingle = jest.fn().mockResolvedValue({ data: row, error: null });
+    const limit = jest.fn().mockReturnValue({ maybeSingle });
+    const order = jest.fn().mockReturnValue({ limit });
+    const statusIn = jest.fn().mockReturnValue({ order });
+    const sellerEq = jest.fn().mockReturnValue({ in: statusIn });
+    const select = jest.fn().mockReturnValue({ eq: sellerEq });
+    const { repository } = setup({ select });
+
+    await expect(repository.findActiveBySellerId(123)).resolves.toEqual(row);
+    expect(sellerEq).toHaveBeenCalledWith('seller_id', 123);
+    expect(statusIn).toHaveBeenCalledWith('status', ['PENDING', 'RUNNING']);
+    expect(order).toHaveBeenCalledWith('created_at', { ascending: false });
+    expect(limit).toHaveBeenCalledWith(1);
   });
 
   it('reclama solamente un trabajo PENDING', async () => {
@@ -124,21 +147,30 @@ describe('MercadolibreSyncJobsRepository', () => {
       scroll_id: 'scroll-2',
       buffer_item_ids: ['MLA11'],
       processed_items: 10,
+      successful_items: 9,
+      failed_items: 1,
       products_saved: 4,
       children_saved: 6,
       errors_count: 1,
     };
     const { repository, update, statusEq } = transitionSetup(pending);
 
-    await repository.updateProgress(JOB_ID, {
+    const progress = {
       scanStarted: true,
       scrollId: 'scroll-2',
       bufferItemIds: ['MLA11'],
       processedItems: 10,
+      successfulItems: 9,
+      failedItems: 1,
       productsSaved: 4,
       childrenSaved: 6,
       errorsCount: 1,
-    });
+    };
+    expect(progress.processedItems).toBe(
+      progress.successfulItems + progress.failedItems,
+    );
+
+    await repository.updateProgress(JOB_ID, progress);
 
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -147,6 +179,8 @@ describe('MercadolibreSyncJobsRepository', () => {
         scroll_id: 'scroll-2',
         buffer_item_ids: ['MLA11'],
         processed_items: 10,
+        successful_items: 9,
+        failed_items: 1,
         products_saved: 4,
         children_saved: 6,
         errors_count: 1,
@@ -214,6 +248,70 @@ describe('MercadolibreSyncJobsRepository', () => {
     expect(failMock.statusEq).toHaveBeenCalledWith('status', 'RUNNING');
   });
 
+  it('persiste el avance y marca FAILED en un único UPDATE', async () => {
+    const failed = {
+      ...jobRow('FAILED'),
+      processed_items: 10,
+      successful_items: 0,
+      failed_items: 10,
+      errors_count: 10,
+      finished_at: NOW,
+    };
+    const { repository, update, statusEq } = transitionSetup(failed);
+
+    await expect(
+      repository.failWithProgress(
+        JOB_ID,
+        {
+          scanStarted: true,
+          scrollId: 'scroll-1',
+          bufferItemIds: [],
+          processedItems: 10,
+          successfulItems: 0,
+          failedItems: 10,
+          productsSaved: 0,
+          childrenSaved: 0,
+          errorsCount: 10,
+        },
+        'El primer lote no pudo guardar ninguna publicación',
+      ),
+    ).resolves.toEqual(failed);
+
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'FAILED',
+        processed_items: 10,
+        successful_items: 0,
+        failed_items: 10,
+        errors_count: 10,
+        finished_at: NOW,
+      }),
+    );
+    expect(statusEq).toHaveBeenCalledWith('status', 'RUNNING');
+  });
+
+  it('cancela solamente trabajos PENDING o RUNNING', async () => {
+    const cancelled = {
+      ...jobRow('CANCELLED'),
+      finished_at: '2026-08-10T02:00:00.000Z',
+    };
+    const { repository, update, idEq, statusEq } = transitionSetup(cancelled);
+
+    await expect(repository.cancel(JOB_ID)).resolves.toEqual(cancelled);
+
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'CANCELLED',
+        finished_at: NOW,
+      }),
+    );
+    expect(idEq).toHaveBeenCalledWith('id', JOB_ID);
+    expect(statusEq).toHaveBeenCalledWith('status', [
+      'PENDING',
+      'RUNNING',
+    ]);
+  });
+
   it('convierte errores de lectura y escritura en mensajes genéricos', async () => {
     const maybeSingle = jest.fn().mockResolvedValue({
       data: null,
@@ -228,12 +326,24 @@ describe('MercadolibreSyncJobsRepository', () => {
       message: 'No se pudo leer la sincronización de Mercado Libre',
     });
 
-    const writeMock = transitionSetup(null, {
-      message: 'sensitive database details',
-    });
-    await expect(writeMock.repository.complete(JOB_ID)).rejects.toMatchObject({
-      status: 503,
-      message: 'No se pudo actualizar la sincronización de Mercado Libre',
-    });
+    const logger = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+    try {
+      const writeMock = transitionSetup(null, {
+        code: '23514',
+        constraint: 'mercadolibre_sync_jobs_progress_check',
+        message: 'access_token=private-token',
+      });
+      await expect(writeMock.repository.complete(JOB_ID)).rejects.toMatchObject({
+        status: 503,
+        message: 'No se pudo actualizar la sincronización de Mercado Libre',
+      });
+
+      expect(logger).toHaveBeenCalledWith(
+        'Error actualizando mercadolibre_sync_jobs postgresCode=23514 constraint=mercadolibre_sync_jobs_progress_check',
+      );
+      expect(JSON.stringify(logger.mock.calls)).not.toContain('private-token');
+    } finally {
+      logger.mockRestore();
+    }
   });
 });

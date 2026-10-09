@@ -11,6 +11,7 @@ import { TiendanubeConnectionRepository } from '../connections/tiendanube-connec
 import { TiendanubeApiService } from '../shared/tiendanube-api.service';
 import { TiendanubeProductMapper } from './tiendanube-product.mapper';
 import type {
+<<<<<<< HEAD
   TiendanubeProductsCatalogQuery,
   TiendanubeProductsCatalogResponse,
   TiendanubeProductByMercadolibreResponse,
@@ -24,6 +25,12 @@ const UNLINKED_PRODUCT: TiendanubeProductByMercadolibreResponse = {
   stock: null,
   sku: null,
 };
+=======
+  TiendanubeProductResponse,
+  TiendanubeProductsCatalogQuery,
+  TiendanubeProductsCatalogResponse,
+} from './tiendanube-product.types';
+>>>>>>> origin/feat/sincronizacion-publicaciones
 
 @Injectable()
 export class TiendanubeProductsService {
@@ -85,6 +92,7 @@ export class TiendanubeProductsService {
       ...(total === undefined ? {} : { total }),
     };
   }
+<<<<<<< HEAD
 
   async getByMercadolibreItem(
     userId: string,
@@ -127,6 +135,8 @@ export class TiendanubeProductsService {
 
     return mapLinkedVariant(response);
   }
+=======
+>>>>>>> origin/feat/sincronizacion-publicaciones
 }
 
 function buildCatalogPath(query: TiendanubeProductsCatalogQuery): string {
@@ -144,6 +154,7 @@ function parseTotal(value: string | null): number | undefined {
   if (value === null || !/^\d+$/u.test(value)) return undefined;
   const total = Number(value);
   return Number.isSafeInteger(total) ? total : undefined;
+<<<<<<< HEAD
 }
 
 function parseMlItemId(value: unknown): string {
@@ -206,4 +217,6 @@ function parseSku(value: unknown): string | null {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+=======
+>>>>>>> origin/feat/sincronizacion-publicaciones
 }

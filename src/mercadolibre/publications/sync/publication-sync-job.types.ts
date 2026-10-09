@@ -1,10 +1,19 @@
 import { MercadolibreSyncJob } from '../../../database/repositories/mercadolibre-sync-jobs.types';
 
-export type SyncJobStartResponse = {
+export type SyncJobStatusResponse = {
   ok: true;
   syncId: string;
-  status: 'PENDING';
+  status: MercadolibreSyncJob['status'];
+  totalItems: number;
+  processedItems: number;
+  productsSaved: number;
+  childrenSaved: number;
+  errorsCount: number;
+  lastError: string | null;
+  hasMore: boolean;
 };
+
+export type SyncJobStartResponse = SyncJobStatusResponse;
 
 export type SyncJobPendingResponse = {
   ok: true;
@@ -25,20 +34,17 @@ export type SyncJobCompletedResponse = {
   hasMore: false;
 };
 
-export type SyncJobNextResponse =
-  SyncJobPendingResponse | SyncJobCompletedResponse;
-
-export type SyncJobStatusResponse = {
+export type SyncJobFailedResponse = {
   ok: true;
   syncId: string;
-  status: MercadolibreSyncJob['status'];
-  processedItems: number;
-  productsSaved: number;
-  childrenSaved: number;
-  errorsCount: number;
-  lastError: string | null;
-  hasMore: boolean;
+  status: 'FAILED';
+  hasMore: false;
 };
+
+export type SyncJobNextResponse =
+  | SyncJobPendingResponse
+  | SyncJobCompletedResponse
+  | SyncJobFailedResponse;
 
 export type SyncJobScanState = {
   scanStarted: boolean;

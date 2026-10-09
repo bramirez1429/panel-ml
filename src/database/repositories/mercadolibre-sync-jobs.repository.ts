@@ -34,6 +34,7 @@ export class MercadolibreSyncJobsRepository {
         id: input.id,
         seller_id: input.sellerId,
         full_sync_id: input.fullSyncId,
+        total_items: input.totalItems,
       })
       .select('*')
       .single();
@@ -50,6 +51,24 @@ export class MercadolibreSyncJobsRepository {
       .from('mercadolibre_sync_jobs')
       .select('*')
       .eq('id', id)
+      .maybeSingle();
+
+    if (error) this.readError(error);
+    return data ? this.mapJob(data) : null;
+  }
+
+  /** Devuelve el trabajo activo mÃ¡s reciente del seller, si existe. */
+  async findActiveBySellerId(
+    sellerId: number,
+  ): Promise<MercadolibreSyncJob | null> {
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('mercadolibre_sync_jobs')
+      .select('*')
+      .eq('seller_id', sellerId)
+      .in('status', ['PENDING', 'RUNNING'])
+      .order('created_at', { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     if (error) this.readError(error);
@@ -92,6 +111,8 @@ export class MercadolibreSyncJobsRepository {
         scroll_id: input.scrollId,
         buffer_item_ids: input.bufferItemIds,
         processed_items: input.processedItems,
+        successful_items: input.successfulItems,
+        failed_items: input.failedItems,
         products_saved: input.productsSaved,
         children_saved: input.childrenSaved,
         errors_count: input.errorsCount,
@@ -145,6 +166,59 @@ export class MercadolibreSyncJobsRepository {
       })
       .eq('id', id)
       .eq('status', 'RUNNING')
+      .select('*')
+      .maybeSingle();
+
+    return this.requireTransition(data, error);
+  }
+
+  /** Persiste el avance del lote y detiene un trabajo con errores no recuperables. */
+  async failWithProgress(
+    id: string,
+    input: UpdateMercadolibreSyncJobProgressInput,
+    safeMessage: string,
+  ): Promise<MercadolibreSyncJob> {
+    const timestamp = new Date().toISOString();
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('mercadolibre_sync_jobs')
+      .update({
+        status: 'FAILED',
+        scan_started: input.scanStarted,
+        scroll_id: input.scrollId,
+        buffer_item_ids: input.bufferItemIds,
+        processed_items: input.processedItems,
+        successful_items: input.successfulItems,
+        failed_items: input.failedItems,
+        products_saved: input.productsSaved,
+        children_saved: input.childrenSaved,
+        errors_count: input.errorsCount,
+        retry_count: 0,
+        last_error: safeMessage,
+        finished_at: timestamp,
+        updated_at: timestamp,
+      })
+      .eq('id', id)
+      .eq('status', 'RUNNING')
+      .select('*')
+      .maybeSingle();
+
+    return this.requireTransition(data, error);
+  }
+
+  /** Cancela un trabajo que todavía no finalizó. */
+  async cancel(id: string): Promise<MercadolibreSyncJob> {
+    const timestamp = new Date().toISOString();
+    const { data, error } = await this.supabaseService
+      .getClient()
+      .from('mercadolibre_sync_jobs')
+      .update({
+        status: 'CANCELLED',
+        finished_at: timestamp,
+        updated_at: timestamp,
+      })
+      .eq('id', id)
+      .in('status', ['PENDING', 'RUNNING'])
       .select('*')
       .maybeSingle();
 
@@ -214,12 +288,32 @@ export class MercadolibreSyncJobsRepository {
 
   /** Registra un error de escritura sin filtrar datos internos. */
   private writeError(error?: unknown): never {
+    const postgresCode = postgresErrorDetail(error, 'code');
+    const constraint = postgresErrorDetail(error, 'constraint');
     this.logger.error(
-      'Error actualizando mercadolibre_sync_jobs',
-      error instanceof Error ? error.stack : String(error),
+      `Error actualizando mercadolibre_sync_jobs postgresCode=${postgresCode} constraint=${constraint}`,
     );
     throw new ServiceUnavailableException(
       'No se pudo actualizar la sincronización de Mercado Libre',
     );
   }
+}
+
+/** Obtiene metadatos seguros de errores PostgreSQL sin registrar su mensaje. */
+function postgresErrorDetail(
+  error: unknown,
+  field: 'code' | 'constraint',
+): string {
+  if (!isPostgresError(error)) return 'N/A';
+  const value = error[field];
+  return typeof value === 'string' && /^[A-Za-z0-9_.-]+$/.test(value)
+    ? value
+    : 'N/A';
+}
+
+/** Limita el acceso a los metadatos seguros devueltos por PostgREST. */
+function isPostgresError(
+  error: unknown,
+): error is { code?: unknown; constraint?: unknown } {
+  return typeof error === 'object' && error !== null && !Array.isArray(error);
 }

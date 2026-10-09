@@ -23,6 +23,15 @@ export type PublicationBatchResult = {
   productsSaved: number;
   childrenSaved: number;
   errors: PublicationSyncError[];
+  diagnostics?: PublicationBatchDiagnostics;
+};
+
+export type PublicationBatchDiagnostics = {
+  sourceErrors: number;
+  sourceHttpStatuses: Record<string, number>;
+  ownedErrors: number;
+  preparedErrors: number;
+  variantResultErrors: number;
 };
 
 export type PublicationScanPage = {

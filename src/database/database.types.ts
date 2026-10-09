@@ -279,7 +279,12 @@ type ChildInsert = {
   updated_at?: string;
 };
 
-type SyncJobStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
+type SyncJobStatus =
+  | 'PENDING'
+  | 'RUNNING'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'CANCELLED';
 
 type SyncJobRow = {
   id: string;
@@ -289,7 +294,10 @@ type SyncJobRow = {
   scan_started: boolean;
   scroll_id: string | null;
   buffer_item_ids: Json;
+  total_items: number;
   processed_items: number;
+  successful_items: number;
+  failed_items: number;
   products_saved: number;
   children_saved: number;
   errors_count: number;
@@ -309,7 +317,10 @@ type SyncJobInsert = {
   scan_started?: boolean;
   scroll_id?: string | null;
   buffer_item_ids?: Json;
+  total_items?: number;
   processed_items?: number;
+  successful_items?: number;
+  failed_items?: number;
   products_saved?: number;
   children_saved?: number;
   errors_count?: number;

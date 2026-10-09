@@ -55,7 +55,11 @@ describe('TiendanubeApiService', () => {
     expect(headers.has('authorization')).toBe(false);
   });
 
+<<<<<<< HEAD
   it('expone los metadatos de una consulta GET', async () => {
+=======
+  it('expone los metadatos de una consulta GET sin alterar get', async () => {
+>>>>>>> origin/feat/sincronizacion-publicaciones
     fetchMock.mockResolvedValueOnce(
       jsonResponse([{ id: 123 }], 200, { 'x-total-count': '156' }),
     );
@@ -68,6 +72,12 @@ describe('TiendanubeApiService', () => {
 
     expect(response.data).toEqual([{ id: 123 }]);
     expect(response.headers.get('x-total-count')).toBe('156');
+<<<<<<< HEAD
+=======
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      'https://api.tiendanube.com/2025-03/1234/products?page=2&per_page=20',
+    );
+>>>>>>> origin/feat/sincronizacion-publicaciones
   });
 
   it('usa 30 segundos para GET, POST, PUT y DELETE', async () => {

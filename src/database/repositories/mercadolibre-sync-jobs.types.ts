@@ -10,6 +10,7 @@ export type CreateMercadolibreSyncJobInput = {
   id: string;
   sellerId: number;
   fullSyncId: string;
+  totalItems: number;
 };
 
 export type UpdateMercadolibreSyncJobProgressInput = {
@@ -17,6 +18,8 @@ export type UpdateMercadolibreSyncJobProgressInput = {
   scrollId: string | null;
   bufferItemIds: string[];
   processedItems: number;
+  successfulItems: number;
+  failedItems: number;
   productsSaved: number;
   childrenSaved: number;
   errorsCount: number;
