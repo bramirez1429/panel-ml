@@ -280,11 +280,7 @@ type ChildInsert = {
 };
 
 type SyncJobStatus =
-  | 'PENDING'
-  | 'RUNNING'
-  | 'COMPLETED'
-  | 'FAILED'
-  | 'CANCELLED';
+  'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 
 type SyncJobRow = {
   id: string;
@@ -702,6 +698,15 @@ export type Database = {
           p_store_id: string;
           p_ml_source_key: string;
           p_reservation_version: string;
+        };
+        Returns: boolean;
+      };
+      complete_reconciled_tiendanube_product_link_by_source: {
+        Args: {
+          p_user_id: string;
+          p_store_id: string;
+          p_ml_source_key: string;
+          p_tiendanube_product_id: string;
         };
         Returns: boolean;
       };

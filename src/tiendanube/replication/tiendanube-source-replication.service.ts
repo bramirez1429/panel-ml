@@ -23,6 +23,16 @@ import { withoutVariantImageSources } from './tiendanube-replication-payload';
 
 type CreatedProduct = Readonly<{ id?: unknown }>;
 
+export type TiendanubeMigrationReplicationResult = Readonly<{
+  action: 'created' | 'already-exists' | 'review-required';
+  sourceKey: string;
+  tiendanubeProductId?: string;
+}>;
+
+type MigrationExecution = Readonly<{
+  beforeCreate: () => Promise<void>;
+}>;
+
 @Injectable()
 export class TiendanubeSourceReplicationService {
   constructor(
@@ -40,6 +50,86 @@ export class TiendanubeSourceReplicationService {
     sourceKey: string,
     options?: TiendanubeReplicationOptions,
   ): Promise<TiendanubeSourceReplicationResult> {
+    return this.replicateInternal(
+      userId,
+      sourceKey,
+      options,
+    ) as Promise<TiendanubeSourceReplicationResult>;
+  }
+
+  /**
+   * Variante exclusiva del job global: no actualiza coincidencias existentes y
+   * conserva la reserva si el POST queda incierto para poder reconciliarlo.
+   */
+  async replicateForMigration(
+    userId: string,
+    sourceKey: string,
+    execution: MigrationExecution,
+  ): Promise<TiendanubeMigrationReplicationResult> {
+    return this.replicateInternal(
+      userId,
+      sourceKey,
+      undefined,
+      execution,
+    ) as Promise<TiendanubeMigrationReplicationResult>;
+  }
+
+  async reconcileMigration(
+    userId: string,
+    sourceKey: string,
+  ): Promise<TiendanubeMigrationReplicationResult | null> {
+    const tnConnection =
+      await this.connectionRepository.findOwnedCredentialsByUserId(userId);
+    if (!tnConnection?.accessToken.trim())
+      throw new UnauthorizedException('Primero conectá Tiendanube');
+    const links = this.linkRepository as unknown as SourceReservationRepository;
+    const link = await this.linkRepository.findBySourceKey({
+      userId: tnConnection.userId,
+      storeId: tnConnection.storeId,
+      sourceKey,
+    });
+    if (link?.status === 'COMPLETED' && link.tiendanubeProductId) {
+      return {
+        action: 'already-exists',
+        sourceKey,
+        tiendanubeProductId: link.tiendanubeProductId,
+      };
+    }
+    if (link?.status !== 'PENDING') return null;
+
+    const mlConnection =
+      await this.mercadoLibreTokenService.getStoredConnection(userId);
+    const token = await this.mercadoLibreTokenService.getValidAccessToken(
+      userId,
+      mlConnection,
+    );
+    const source = await this.sourceResolver.resolve(
+      sourceKey,
+      mlConnection.seller_id,
+      token,
+    );
+    const productId = await this.productResolver.resolve(
+      tnConnection,
+      source.skus,
+    );
+    if (!productId) return null;
+    await links.completeReconciledBySource({
+      userId: tnConnection.userId,
+      storeId: tnConnection.storeId,
+      sourceKey,
+      tiendanubeProductId: productId,
+    });
+    return { action: 'created', sourceKey, tiendanubeProductId: productId };
+  }
+
+  private async replicateInternal(
+    userId: string,
+    sourceKey: string,
+    options?: TiendanubeReplicationOptions,
+    migration?: MigrationExecution,
+  ): Promise<
+    TiendanubeSourceReplicationResult | TiendanubeMigrationReplicationResult
+  > {
     const mlConnection =
       await this.mercadoLibreTokenService.getStoredConnection(userId);
     const tnConnection =
@@ -55,6 +145,24 @@ export class TiendanubeSourceReplicationService {
       if (!category || typeof category !== 'object')
         throw new ConflictException('La categoría de Tiendanube no existe');
     }
+    const context = {
+      userId: tnConnection.userId,
+      storeId: tnConnection.storeId,
+      sourceKey,
+    };
+    if (migration) {
+      const existingLink = await this.linkRepository.findBySourceKey(context);
+      if (
+        existingLink?.status === 'COMPLETED' &&
+        existingLink.tiendanubeProductId
+      ) {
+        return {
+          action: 'already-exists',
+          sourceKey,
+          tiendanubeProductId: existingLink.tiendanubeProductId,
+        };
+      }
+    }
     const token = await this.mercadoLibreTokenService.getValidAccessToken(
       userId,
       mlConnection,
@@ -68,14 +176,16 @@ export class TiendanubeSourceReplicationService {
       ? applyReplicationOptions(source.product, options)
       : source.product;
     const links = this.linkRepository as unknown as SourceReservationRepository;
-    const context = {
-      userId: tnConnection.userId,
-      storeId: tnConnection.storeId,
-      sourceKey,
-    };
     const reservation = await links.reserveBySource(context);
     if (reservation.outcome === 'PENDING')
       throw new ConflictException('La replicación está pendiente');
+    if (migration && reservation.outcome === 'COMPLETED') {
+      return {
+        action: 'already-exists',
+        sourceKey,
+        tiendanubeProductId: reservation.tiendanubeProductId,
+      };
+    }
     let productId =
       reservation.outcome === 'COMPLETED'
         ? reservation.tiendanubeProductId
@@ -89,6 +199,20 @@ export class TiendanubeSourceReplicationService {
       productId = await this.productResolver.resolve(tnConnection, source.skus);
 
     if (productId) {
+      if (migration) {
+        if (reservation.outcome === 'RESERVED') {
+          await links.failBySource({
+            ...context,
+            linkId: reservation.linkId,
+            reservationVersion: reservation.reservationVersion,
+          });
+        }
+        return {
+          action: 'review-required',
+          sourceKey,
+          tiendanubeProductId: productId,
+        };
+      }
       if (this.existingProductSync) {
         await this.existingProductSync.sync(tnConnection, productId, payload);
       } else {
@@ -117,14 +241,17 @@ export class TiendanubeSourceReplicationService {
 
     let created: CreatedProduct | undefined;
     try {
+      if (migration) await migration.beforeCreate();
       created = await this.api.post<CreatedProduct>(
         tnConnection.storeId,
         '/products',
-        withoutVariantImageSources(payload),
+        withoutVariantImageSources(
+          migration ? { ...payload, visibility: 'hidden' } : payload,
+        ),
         tnConnection.accessToken,
       );
     } catch (error) {
-      if (reservation.outcome === 'RESERVED') {
+      if (reservation.outcome === 'RESERVED' && !migration) {
         await links.failBySource({
           ...context,
           linkId: reservation.linkId,
@@ -134,7 +261,7 @@ export class TiendanubeSourceReplicationService {
       throw error;
     }
     const createdId = parseProductId(created);
-    if (this.existingProductSync) {
+    if (this.existingProductSync && !migration) {
       await this.existingProductSync.sync(tnConnection, createdId, payload);
     }
     if (reservation.outcome === 'RESERVED') {
@@ -144,6 +271,9 @@ export class TiendanubeSourceReplicationService {
         reservationVersion: reservation.reservationVersion,
         tiendanubeProductId: createdId,
       });
+    }
+    if (migration) {
+      return { action: 'created', sourceKey, tiendanubeProductId: createdId };
     }
     return {
       ok: true,
@@ -205,7 +335,9 @@ function resolvePromotionalPrice(
     !Number.isFinite(options.promotionalPrice) ||
     options.promotionalPrice <= 0
   ) {
-    throw new BadRequestException('El precio promocional debe ser mayor a cero');
+    throw new BadRequestException(
+      'El precio promocional debe ser mayor a cero',
+    );
   }
 
   return options.promotionalPrice;

@@ -55,7 +55,7 @@ export type TiendanubeCreateProductVariantDto = Readonly<{
 export type TiendanubeCreateProductDto = Readonly<{
   name: TiendanubeLocalizedValueDto;
   description?: TiendanubeLocalizedValueDto;
-  visibility: 'visible';
+  visibility: 'visible' | 'hidden';
   images: readonly Readonly<{ src: string }>[];
   attributes: readonly TiendanubeLocalizedValueDto[];
   variants: readonly TiendanubeCreateProductVariantDto[];

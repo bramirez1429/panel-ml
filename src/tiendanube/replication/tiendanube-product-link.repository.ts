@@ -106,6 +106,14 @@ export type SourceReservationRepository = Readonly<{
       reservationVersion: string;
     }>,
   ): Promise<void>;
+  completeReconciledBySource(
+    input: Readonly<{
+      userId: string;
+      storeId: string;
+      sourceKey: string;
+      tiendanubeProductId: string;
+    }>,
+  ): Promise<void>;
 }>;
 
 export abstract class TiendanubeProductLinkRepository {

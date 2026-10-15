@@ -28,6 +28,7 @@ const PRODUCT = {
 describe('TiendanubeSourceReplicationService', () => {
   let service: TiendanubeSourceReplicationService;
   let links: {
+    findBySourceKey: jest.Mock;
     reserveBySource: jest.Mock;
     completeBySource: jest.Mock;
     failBySource: jest.Mock;
@@ -50,6 +51,7 @@ describe('TiendanubeSourceReplicationService', () => {
       }),
     };
     links = {
+      findBySourceKey: jest.fn().mockResolvedValue(null),
       reserveBySource: jest.fn().mockResolvedValue({
         outcome: 'RESERVED',
         linkId: 'link-1',
@@ -101,6 +103,27 @@ describe('TiendanubeSourceReplicationService', () => {
       reservationVersion: '2030-01-01T00:00:00.000Z',
       tiendanubeProductId: '99',
     });
+  });
+
+  it('crea oculto en la migración global sin sincronizar productos existentes', async () => {
+    const beforeCreate = jest.fn().mockResolvedValue(undefined);
+
+    await expect(
+      service.replicateForMigration(USER_ID, SOURCE_KEY, { beforeCreate }),
+    ).resolves.toEqual({
+      action: 'created',
+      sourceKey: SOURCE_KEY,
+      tiendanubeProductId: '99',
+    });
+
+    expect(beforeCreate).toHaveBeenCalledTimes(1);
+    expect(api.post).toHaveBeenCalledWith(
+      STORE_ID,
+      '/products',
+      expect.objectContaining({ visibility: 'hidden' }),
+      TOKEN,
+    );
+    expect(api.put).not.toHaveBeenCalled();
   });
 
   it('usa el owner de la conexión compartida al reservar y completar', async () => {

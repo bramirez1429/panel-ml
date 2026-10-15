@@ -32,6 +32,11 @@ import { TiendanubeCategoriesController } from './categories/tiendanube-categori
 import { TiendanubeCategoriesService } from './categories/tiendanube-categories.service';
 import { WorkspaceModule } from '../workspaces/workspace.module';
 import { TiendanubeReplicationPreviewService } from './replication/tiendanube-replication-preview.service';
+import { TiendanubeMigrationController } from './migration/tiendanube-migration.controller';
+import { TiendanubeMigrationDiscoveryService } from './migration/tiendanube-migration-discovery.service';
+import { TiendanubeMigrationQueue } from './migration/tiendanube-migration.queue';
+import { SupabaseTiendanubeMigrationRepository } from './migration/supabase-tiendanube-migration.repository';
+import { TiendanubeMigrationService } from './migration/tiendanube-migration.service';
 
 @Module({
   imports: [
@@ -48,6 +53,7 @@ import { TiendanubeReplicationPreviewService } from './replication/tiendanube-re
     TiendanubeReplicationController,
     TiendanubeReplicationUpsertController,
     TiendanubeCategoriesController,
+    TiendanubeMigrationController,
   ],
   providers: [
     SupabaseService,
@@ -67,6 +73,10 @@ import { TiendanubeReplicationPreviewService } from './replication/tiendanube-re
     TiendanubeExistingProductSyncService,
     TiendanubeSourceReplicationService,
     TiendanubeReplicationPreviewService,
+    SupabaseTiendanubeMigrationRepository,
+    TiendanubeMigrationDiscoveryService,
+    TiendanubeMigrationService,
+    TiendanubeMigrationQueue,
     {
       provide: TiendanubeConnectionRepository,
       useClass: SupabaseTiendanubeConnectionRepository,
