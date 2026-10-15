@@ -5,7 +5,11 @@ import { TiendanubeMigrationService } from './tiendanube-migration.service';
 
 export const TIENDANUBE_MIGRATION_QUEUE_TOPIC = 'tiendanube-global-migration';
 
-export type TiendanubeMigrationQueueMessage = Readonly<{ jobId: string }>;
+export type TiendanubeMigrationQueueMode = 'CONTINUE' | 'SINGLE_ITEM';
+export type TiendanubeMigrationQueueMessage = Readonly<{
+  jobId: string;
+  mode?: TiendanubeMigrationQueueMode;
+}>;
 
 @Injectable()
 export class TiendanubeMigrationQueue {
@@ -23,7 +27,11 @@ export class TiendanubeMigrationQueue {
   }
 
   async consume(message: TiendanubeMigrationQueueMessage): Promise<void> {
-    const result = await this.migrationService.processNext(message.jobId);
-    if (result.hasMore) await this.enqueue(message, result.delaySeconds ?? 1);
+    const result = await this.migrationService.processNext(message.jobId, {
+      mode: message.mode ?? 'CONTINUE',
+    });
+    if (result.hasMore) {
+      await this.enqueue(message, result.delaySeconds ?? 1);
+    }
   }
 }

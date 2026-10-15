@@ -1,4 +1,5 @@
 import { ForbiddenException, GatewayTimeoutException } from '@nestjs/common';
+import { readFileSync } from 'node:fs';
 
 import type { MercadolibreTokenService } from '../../mercadolibre/auth/mercadolibre-token.service';
 import type { TiendanubeConnectionRepository } from '../connections/tiendanube-connection.repository';
@@ -99,12 +100,48 @@ describe('TiendanubeMigrationService', () => {
   it('ignora entregas duplicadas cuando el lease ya está tomado', async () => {
     const dependencies = setup();
     dependencies.repository.claimJob.mockResolvedValue(false);
-    await expect(dependencies.service.processNext(JOB_ID)).resolves.toEqual({
-      hasMore: false,
-    });
+    dependencies.repository.findJob.mockResolvedValue(
+      job({ locked_until: new Date(Date.now() + 60_000).toISOString() }),
+    );
+    await expect(dependencies.service.processNext(JOB_ID)).resolves.toEqual(
+      expect.objectContaining({ hasMore: true }),
+    );
     expect(
       dependencies.replication.replicateForMigration,
     ).not.toHaveBeenCalled();
+  });
+
+  it('reanuda el job existente de forma atÃ³mica y valida propietario y estado', async () => {
+    const dependencies = setup();
+    dependencies.repository.findJob.mockResolvedValue(job({ status: 'PAUSED' }));
+    dependencies.repository.resumeJob.mockResolvedValue(true);
+    await expect(
+      dependencies.service.resume(USER_ID, JOB_ID),
+    ).resolves.toEqual(expect.objectContaining({ id: JOB_ID }));
+    expect(dependencies.repository.resumeJob).toHaveBeenCalledWith(JOB_ID);
+
+    dependencies.repository.findJob.mockResolvedValue(job({ status: 'RUNNING' }));
+    await expect(dependencies.service.resume(USER_ID, JOB_ID)).rejects.toThrow();
+  });
+
+  it('procesa un Ãºnico producto y pausa antes de programar otro', async () => {
+    const dependencies = setup();
+    await expect(
+      dependencies.service.processNext(JOB_ID, { mode: 'SINGLE_ITEM' }),
+    ).resolves.toEqual(expect.objectContaining({ hasMore: false, terminal: true }));
+    expect(dependencies.repository.pauseJob).toHaveBeenCalledWith(
+      JOB_ID,
+      expect.stringContaining('Ejecución controlada'),
+    );
+  });
+
+  it('mantiene calificadas las columnas ambiguas de claim_next', () => {
+    const sql = readFileSync(
+      'supabase/migrations/20261015000000_create_tiendanube_migration_jobs.sql',
+      'utf8',
+    );
+    expect(sql).toContain('migration_item.attempts + 1');
+    expect(sql).toContain('where migration_item.id = v_item.id');
   });
 
   it('no repite un POST incierto y pasa a reconciliación', async () => {
@@ -162,6 +199,7 @@ function setup(itemOverrides: Record<string, unknown> = {}) {
   const repository = {
     findJob: jest.fn().mockResolvedValue(job()),
     claimJob: jest.fn().mockResolvedValue(true),
+    resumeJob: jest.fn().mockResolvedValue(true),
     claimNextItem: jest.fn().mockResolvedValue(claimedItem(itemOverrides)),
     markPostStarted: jest.fn().mockResolvedValue(undefined),
     finishItem: jest.fn().mockResolvedValue(undefined),

@@ -225,19 +225,26 @@ language plpgsql security definer set search_path = ''
 as $$
 declare v_item public.tiendanube_migration_items%rowtype;
 begin
-  select * into v_item from public.tiendanube_migration_items
-   where job_id = p_job_id
-     and (status = 'RECONCILING' or (status = 'PENDING' and post_started_at is null))
-   order by case when status = 'RECONCILING' then 0 else 1 end, created_at
+  select migration_item.* into v_item
+    from public.tiendanube_migration_items as migration_item
+   where migration_item.job_id = p_job_id
+     and (
+       migration_item.status = 'RECONCILING' or
+       (migration_item.status = 'PENDING' and migration_item.post_started_at is null)
+     )
+   order by case when migration_item.status = 'RECONCILING' then 0 else 1 end,
+            migration_item.created_at, migration_item.id
    for update skip locked limit 1;
   if not found then return; end if;
 
-  update public.tiendanube_migration_items
-     set status = 'PROCESSING', attempts = attempts + 1, updated_at = now()
-   where id = v_item.id;
-  update public.tiendanube_migration_jobs
+  update public.tiendanube_migration_items as migration_item
+     set status = 'PROCESSING',
+         attempts = migration_item.attempts + 1,
+         updated_at = now()
+   where migration_item.id = v_item.id;
+  update public.tiendanube_migration_jobs as migration_job
      set current_source_key = v_item.source_key, updated_at = now()
-   where id = p_job_id;
+   where migration_job.id = p_job_id;
   return query select v_item.id, v_item.source_key, v_item.title, v_item.mla_ids,
     v_item.family_id, v_item.mlau_ids, v_item.attempts + 1,
     v_item.status = 'RECONCILING';

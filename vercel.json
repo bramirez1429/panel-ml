@@ -36,7 +36,7 @@
         {
           "type": "queue/v2beta",
           "topic": "tiendanube-global-migration",
-          "retryAfterSeconds": 60,
+          "retryAfterSeconds": 180,
           "initialDelaySeconds": 0
         }
       ]

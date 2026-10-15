@@ -108,6 +108,15 @@ export class SupabaseTiendanubeMigrationRepository {
     return data;
   }
 
+  async resumeJob(jobId: string): Promise<boolean> {
+    const { data, error } = await this.client().rpc(
+      'resume_tiendanube_migration_job',
+      { p_job_id: jobId },
+    );
+    if (error || typeof data !== 'boolean') this.fail();
+    return data;
+  }
+
   async recordDiscoveryPage(input: {
     jobId: string;
     nextScrollId: string | null;

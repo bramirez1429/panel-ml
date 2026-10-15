@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -22,8 +23,10 @@ import type {
   TiendanubeMigrationJobResponse,
   ClaimedTiendanubeMigrationItem,
 } from './tiendanube-migration.types';
+import type { TiendanubeMigrationQueueMode } from './tiendanube-migration.queue';
 
 const RECONCILIATION_DELAYS = [60, 180, 600] as const;
+type ProcessResult = { hasMore: boolean; delaySeconds?: number; terminal?: boolean };
 
 @Injectable()
 export class TiendanubeMigrationService {
@@ -71,6 +74,22 @@ export class TiendanubeMigrationService {
     return toJobResponse(await this.ownedJob(userId, jobId));
   }
 
+  async resume(
+    userId: string,
+    jobId: string,
+  ): Promise<TiendanubeMigrationJobResponse> {
+    const job = await this.ownedJob(userId, jobId);
+    if (job.status !== 'PAUSED') {
+      throw new ConflictException('El trabajo no está pausado');
+    }
+    if (!(await this.repository.resumeJob(jobId))) {
+      throw new ConflictException('El trabajo fue reanudado por otra solicitud');
+    }
+    const resumed = await this.repository.findJob(jobId);
+    if (!resumed) throw new NotFoundException('Migración de Tiendanube no encontrada');
+    return toJobResponse(resumed);
+  }
+
   async getItems(
     userId: string,
     jobId: string,
@@ -103,12 +122,15 @@ export class TiendanubeMigrationService {
 
   async processNext(
     jobId: string,
-  ): Promise<{ hasMore: boolean; delaySeconds?: number }> {
-    if (
-      !(await this.repository.findJob(jobId)) ||
-      !(await this.repository.claimJob(jobId))
-    ) {
-      return { hasMore: false };
+    options: { mode?: TiendanubeMigrationQueueMode } = {},
+  ): Promise<ProcessResult> {
+    const observedJob = await this.repository.findJob(jobId);
+    if (!observedJob) return { hasMore: false };
+    if (!(await this.repository.claimJob(jobId))) {
+      if (observedJob.status === 'PAUSED' || observedJob.status === 'COMPLETED' || observedJob.status === 'COMPLETED_WITH_REJECTIONS') {
+        return { hasMore: false };
+      }
+      return { hasMore: true, delaySeconds: retryDelayFor(observedJob) };
     }
     const job = await this.repository.findJob(jobId);
     if (!job) return { hasMore: false };
@@ -119,11 +141,17 @@ export class TiendanubeMigrationService {
       await this.repository.completeEmptyJob(jobId);
       return { hasMore: false };
     }
-    if (item.isReconciliation) return this.reconcile(job, item);
-    return this.replicate(job, item);
+    const result = item.isReconciliation
+      ? await this.reconcile(job, item)
+      : await this.replicate(job, item);
+    if (options.mode === 'SINGLE_ITEM' && result.terminal) {
+      await this.repository.pauseJob(jobId, 'Ejecución controlada de un producto finalizada');
+      return { hasMore: false, terminal: true };
+    }
+    return result;
   }
 
-  private async processDiscovery(job: TiendanubeMigrationJob) {
+  private async processDiscovery(job: TiendanubeMigrationJob): Promise<ProcessResult> {
     try {
       const connection = await this.tokenService.getStoredConnection(
         job.user_id,
@@ -162,7 +190,7 @@ export class TiendanubeMigrationService {
   private async replicate(
     job: TiendanubeMigrationJob,
     item: ClaimedTiendanubeMigrationItem,
-  ): Promise<{ hasMore: boolean; delaySeconds?: number }> {
+  ): Promise<ProcessResult> {
     let postStarted = false;
     try {
       const result = await this.replication.replicateForMigration(
@@ -192,7 +220,7 @@ export class TiendanubeMigrationService {
           outcome: result.action === 'created' ? 'CREATED' : 'ALREADY_EXISTS',
         });
       }
-      return { hasMore: hasRemainingAfterTerminal(job) };
+      return { hasMore: hasRemainingAfterTerminal(job), terminal: true };
     } catch (error) {
       if (postStarted)
         return this.deferReconciliation(job, item, safeMessage(error));
@@ -203,7 +231,7 @@ export class TiendanubeMigrationService {
   private async reconcile(
     job: TiendanubeMigrationJob,
     item: ClaimedTiendanubeMigrationItem,
-  ): Promise<{ hasMore: boolean; delaySeconds?: number }> {
+  ): Promise<ProcessResult> {
     try {
       const result = await this.replication.reconcileMigration(
         job.user_id,
@@ -221,7 +249,7 @@ export class TiendanubeMigrationService {
         tiendanubeProductId: result.tiendanubeProductId,
         outcome: result.action === 'created' ? 'CREATED' : 'ALREADY_EXISTS',
       });
-      return { hasMore: hasRemainingAfterTerminal(job) };
+      return { hasMore: hasRemainingAfterTerminal(job), terminal: true };
     } catch (error) {
       return this.deferReconciliation(job, item, safeMessage(error));
     }
@@ -242,7 +270,7 @@ export class TiendanubeMigrationService {
     const delaySeconds =
       RECONCILIATION_DELAYS[Math.max(item.attempts - 1, 0)] ?? 600;
     await this.repository.waitForReconciliation(item.id, delaySeconds, message);
-    return { hasMore: true, delaySeconds };
+    return { hasMore: true, delaySeconds, terminal: false };
   }
 
   private async handlePrePostError(
@@ -258,18 +286,18 @@ export class TiendanubeMigrationService {
         errorCode: decision.code,
         errorMessage: decision.message,
       });
-      return { hasMore: hasRemainingAfterTerminal(job) };
+    return { hasMore: hasRemainingAfterTerminal(job), terminal: true };
     }
     if (decision.kind === 'PAUSE') {
       await this.repository.pauseJob(job.id, decision.message);
-      return { hasMore: false };
+      return { hasMore: false, terminal: false };
     }
     await this.repository.retryItem(
       item.id,
       decision.delaySeconds,
       decision.message,
     );
-    return { hasMore: true, delaySeconds: decision.delaySeconds };
+    return { hasMore: true, delaySeconds: decision.delaySeconds, terminal: false };
   }
 
   private async ownedJob(
@@ -303,6 +331,16 @@ export class TiendanubeMigrationService {
       throw new UnauthorizedException('Primero conectá Tiendanube');
     return { sellerId: ml.seller_id, storeId: tn.storeId };
   }
+}
+
+function retryDelayFor(job: TiendanubeMigrationJob): number {
+  const now = Date.now();
+  const candidates = [job.locked_until, job.next_run_at]
+    .filter((value): value is string => value !== null)
+    .map((value) => Date.parse(value))
+    .filter((value) => Number.isFinite(value) && value > now);
+  if (candidates.length === 0) return 5;
+  return Math.max(1, Math.ceil((Math.min(...candidates) - now) / 1000));
 }
 
 function hasRemainingAfterTerminal(job: TiendanubeMigrationJob): boolean {

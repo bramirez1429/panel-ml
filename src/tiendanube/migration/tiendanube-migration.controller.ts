@@ -61,6 +61,19 @@ export class TiendanubeMigrationController {
     );
   }
 
+  @Post(':id/resume')
+  @Header('Cache-Control', 'no-store')
+  async resume(
+    @CurrentUser() user: SafeUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: unknown,
+  ) {
+    const mode = parseResumeMode(body);
+    const job = await this.migrationService.resume(user.id, id);
+    await this.queue.enqueue({ jobId: id, mode });
+    return job;
+  }
+
   @Get(':id')
   @Header('Cache-Control', 'no-store')
   get(@CurrentUser() user: SafeUser, @Param('id', ParseUUIDPipe) id: string) {
@@ -98,4 +111,15 @@ function parseTestLimit(value: unknown): 1 | 5 | 10 | null {
   if (limit === undefined) return null;
   if (limit === 1 || limit === 5 || limit === 10) return limit;
   throw new BadRequestException('testLimit debe ser 1, 5 o 10');
+}
+
+function parseResumeMode(value: unknown): 'CONTINUE' | 'SINGLE_ITEM' {
+  if (value === undefined || value === null || value === '') return 'CONTINUE';
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new BadRequestException('Body de reanudación inválido');
+  }
+  const singleProduct = (value as { singleProduct?: unknown }).singleProduct;
+  if (singleProduct === undefined || singleProduct === false) return 'CONTINUE';
+  if (singleProduct === true) return 'SINGLE_ITEM';
+  throw new BadRequestException('singleProduct debe ser booleano');
 }
