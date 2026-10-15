@@ -79,7 +79,7 @@ export type TiendanubeReplicationOptions = Readonly<{
 export type TiendanubeUpdateProductDto = Readonly<{
   name: TiendanubeLocalizedValueDto;
   description?: TiendanubeLocalizedValueDto;
-  visibility: 'visible';
+  visibility: 'visible' | 'hidden';
   attributes: readonly TiendanubeLocalizedValueDto[];
   brand?: string;
   categories?: readonly number[];
