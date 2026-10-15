@@ -26,7 +26,11 @@ import type {
 import type { TiendanubeMigrationQueueMode } from './tiendanube-migration.queue';
 
 const RECONCILIATION_DELAYS = [60, 180, 600] as const;
-type ProcessResult = { hasMore: boolean; delaySeconds?: number; terminal?: boolean };
+type ProcessResult = {
+  hasMore: boolean;
+  delaySeconds?: number;
+  terminal?: boolean;
+};
 
 @Injectable()
 export class TiendanubeMigrationService {
@@ -41,7 +45,7 @@ export class TiendanubeMigrationService {
   async start(
     userId: string,
     testLimit: 1 | 5 | 10 | null = null,
-  ): Promise<TiendanubeMigrationJobResponse> {
+  ): Promise<{ job: TiendanubeMigrationJobResponse; executionToken: string }> {
     const [mlConnection, tnConnection] = await Promise.all([
       this.tokenService.getStoredConnection(userId),
       this.connectionRepository.findOwnedCredentialsByUserId(userId),
@@ -56,7 +60,7 @@ export class TiendanubeMigrationService {
       storeId: tnConnection.storeId,
       testLimit,
     });
-    return toJobResponse(job);
+    return { job: toJobResponse(job), executionToken: job.execution_token };
   }
 
   async getActive(
@@ -77,17 +81,21 @@ export class TiendanubeMigrationService {
   async resume(
     userId: string,
     jobId: string,
-  ): Promise<TiendanubeMigrationJobResponse> {
+  ): Promise<{ job: TiendanubeMigrationJobResponse; executionToken: string }> {
     const job = await this.ownedJob(userId, jobId);
     if (job.status !== 'PAUSED') {
       throw new ConflictException('El trabajo no está pausado');
     }
-    if (!(await this.repository.resumeJob(jobId))) {
-      throw new ConflictException('El trabajo fue reanudado por otra solicitud');
+    const executionToken = await this.repository.resumeJob(jobId);
+    if (!executionToken) {
+      throw new ConflictException(
+        'El trabajo fue reanudado por otra solicitud',
+      );
     }
     const resumed = await this.repository.findJob(jobId);
-    if (!resumed) throw new NotFoundException('Migración de Tiendanube no encontrada');
-    return toJobResponse(resumed);
+    if (!resumed)
+      throw new NotFoundException('Migración de Tiendanube no encontrada');
+    return { job: toJobResponse(resumed), executionToken };
   }
 
   async getItems(
@@ -122,21 +130,36 @@ export class TiendanubeMigrationService {
 
   async processNext(
     jobId: string,
-    options: { mode?: TiendanubeMigrationQueueMode } = {},
+    options: {
+      mode?: TiendanubeMigrationQueueMode;
+      executionToken?: string;
+    } = {},
   ): Promise<ProcessResult> {
     const observedJob = await this.repository.findJob(jobId);
     if (!observedJob) return { hasMore: false };
-    if (!(await this.repository.claimJob(jobId))) {
-      if (observedJob.status === 'PAUSED' || observedJob.status === 'COMPLETED' || observedJob.status === 'COMPLETED_WITH_REJECTIONS') {
+    const executionToken = options.executionToken;
+    if (!executionToken || isStaleQueueMessage(observedJob, options)) {
+      return { hasMore: false };
+    }
+    if (!(await this.repository.claimJob(jobId, executionToken))) {
+      if (
+        observedJob.status === 'PAUSED' ||
+        observedJob.status === 'COMPLETED' ||
+        observedJob.status === 'COMPLETED_WITH_REJECTIONS'
+      ) {
         return { hasMore: false };
       }
       return { hasMore: true, delaySeconds: retryDelayFor(observedJob) };
     }
     const job = await this.repository.findJob(jobId);
     if (!job) return { hasMore: false };
+    if (isStaleQueueMessage(job, options)) return { hasMore: false };
     if (job.status === 'DISCOVERING') return this.processDiscovery(job);
 
-    const item = await this.repository.claimNextItem(jobId);
+    const item = await this.repository.claimNextItem(
+      jobId,
+      executionToken,
+    );
     if (!item) {
       await this.repository.completeEmptyJob(jobId);
       return { hasMore: false };
@@ -145,13 +168,18 @@ export class TiendanubeMigrationService {
       ? await this.reconcile(job, item)
       : await this.replicate(job, item);
     if (options.mode === 'SINGLE_ITEM' && result.terminal) {
-      await this.repository.pauseJob(jobId, 'Ejecución controlada de un producto finalizada');
+      await this.repository.pauseJob(
+        jobId,
+        'Ejecución controlada de un producto finalizada',
+      );
       return { hasMore: false, terminal: true };
     }
     return result;
   }
 
-  private async processDiscovery(job: TiendanubeMigrationJob): Promise<ProcessResult> {
+  private async processDiscovery(
+    job: TiendanubeMigrationJob,
+  ): Promise<ProcessResult> {
     try {
       const connection = await this.tokenService.getStoredConnection(
         job.user_id,
@@ -257,10 +285,10 @@ export class TiendanubeMigrationService {
 
   private async deferReconciliation(
     job: TiendanubeMigrationJob,
-    item: { id: string; attempts: number },
+    item: { id: string; attempts: number; cycleAttempts: number },
     message: string,
   ) {
-    if (item.attempts >= RECONCILIATION_DELAYS.length + 1) {
+    if (item.cycleAttempts >= RECONCILIATION_DELAYS.length + 1) {
       await this.repository.pauseJob(
         job.id,
         `No se pudo reconciliar ${item.id}: ${message}`,
@@ -268,17 +296,17 @@ export class TiendanubeMigrationService {
       return { hasMore: false };
     }
     const delaySeconds =
-      RECONCILIATION_DELAYS[Math.max(item.attempts - 1, 0)] ?? 600;
+      RECONCILIATION_DELAYS[Math.max(item.cycleAttempts - 1, 0)] ?? 600;
     await this.repository.waitForReconciliation(item.id, delaySeconds, message);
     return { hasMore: true, delaySeconds, terminal: false };
   }
 
   private async handlePrePostError(
     job: TiendanubeMigrationJob,
-    item: { id: string; attempts: number },
+    item: { id: string; attempts: number; cycleAttempts: number },
     error: unknown,
   ) {
-    const decision = decideMigrationError(error, item.attempts);
+    const decision = decideMigrationError(error, item.cycleAttempts);
     if (decision.kind === 'REJECT') {
       await this.repository.finishItem({
         itemId: item.id,
@@ -286,7 +314,7 @@ export class TiendanubeMigrationService {
         errorCode: decision.code,
         errorMessage: decision.message,
       });
-    return { hasMore: hasRemainingAfterTerminal(job), terminal: true };
+      return { hasMore: hasRemainingAfterTerminal(job), terminal: true };
     }
     if (decision.kind === 'PAUSE') {
       await this.repository.pauseJob(job.id, decision.message);
@@ -297,7 +325,11 @@ export class TiendanubeMigrationService {
       decision.delaySeconds,
       decision.message,
     );
-    return { hasMore: true, delaySeconds: decision.delaySeconds, terminal: false };
+    return {
+      hasMore: true,
+      delaySeconds: decision.delaySeconds,
+      terminal: false,
+    };
   }
 
   private async ownedJob(
@@ -331,6 +363,13 @@ export class TiendanubeMigrationService {
       throw new UnauthorizedException('Primero conectá Tiendanube');
     return { sellerId: ml.seller_id, storeId: tn.storeId };
   }
+}
+
+function isStaleQueueMessage(
+  job: TiendanubeMigrationJob,
+  options: { mode?: TiendanubeMigrationQueueMode; executionToken?: string },
+): boolean {
+  return !options.executionToken || options.executionToken !== job.execution_token;
 }
 
 function retryDelayFor(job: TiendanubeMigrationJob): number {

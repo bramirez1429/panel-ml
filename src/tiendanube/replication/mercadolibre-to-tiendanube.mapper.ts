@@ -1,5 +1,3 @@
-import { BadGatewayException } from '@nestjs/common';
-
 import type {
   ReplicableProduct,
   ReplicableProductAttribute,
@@ -14,21 +12,25 @@ const MAX_ATTRIBUTES = 3;
 const INVALID_PRODUCT_MESSAGE =
   'No se pudo construir el producto para Tiendanube';
 
+/** Error local y determinista: no representa una respuesta 502 de una API. */
+export class TiendanubeProductValidationError extends Error {
+  constructor(readonly code: string) {
+    super(`${INVALID_PRODUCT_MESSAGE}: ${code}`);
+    this.name = TiendanubeProductValidationError.name;
+  }
+}
+
 export class MercadoLibreToTiendanubeMapper {
   static map(value: unknown): TiendanubeCreateProductDto {
-    try {
-      return mapProduct(parseProduct(value));
-    } catch {
-      invalidProduct();
-    }
+    return mapProduct(parseProduct(value));
   }
 }
 
 function parseProduct(value: unknown): ReplicableProduct {
-  if (!isJsonObject(value)) invalidProduct();
+  if (!isJsonObject(value)) invalidProduct('PRODUCT_NOT_OBJECT');
 
   const title = nonEmptyString(value.title);
-  if (!title) invalidProduct();
+  if (!title) invalidProduct('TITLE_REQUIRED');
 
   const description = parseDescription(value.description);
   const images = parseImages(value.images);
@@ -56,19 +58,19 @@ function parseProduct(value: unknown): ReplicableProduct {
 
 function parseDescription(value: unknown): string | null {
   if (value === null) return null;
-  if (typeof value !== 'string') invalidProduct();
+  if (typeof value !== 'string') invalidProduct('DESCRIPTION_INVALID');
   return value.trim() || null;
 }
 
 function parseImages(value: unknown): readonly string[] {
-  if (!Array.isArray(value)) invalidProduct();
+  if (!Array.isArray(value)) invalidProduct('IMAGES_INVALID');
 
   const uniqueImages: string[] = [];
   const seen = new Set<string>();
 
   for (const image of value) {
     const normalized = nonEmptyString(image);
-    if (!normalized) invalidProduct();
+    if (!normalized) invalidProduct('IMAGE_SOURCE_INVALID');
     if (seen.has(normalized)) continue;
 
     seen.add(normalized);
@@ -82,7 +84,7 @@ function parseAttributes(
   value: unknown,
 ): readonly ReplicableProductAttribute[] {
   if (!Array.isArray(value) || value.length > MAX_ATTRIBUTES) {
-    invalidProduct();
+    invalidProduct('ATTRIBUTES_INVALID');
   }
 
   const attributes: ReplicableProductAttribute[] = [];
@@ -90,14 +92,14 @@ function parseAttributes(
   const names = new Set<string>();
 
   for (const candidate of value) {
-    if (!isJsonObject(candidate)) invalidProduct();
+    if (!isJsonObject(candidate)) invalidProduct('ATTRIBUTE_INVALID');
 
     const id = nonEmptyString(candidate.id);
     const name = nonEmptyString(candidate.name);
-    if (!id || !name) invalidProduct();
+    if (!id || !name) invalidProduct('ATTRIBUTE_ID_OR_NAME_INVALID');
 
     const normalizedName = name.toLowerCase();
-    if (ids.has(id) || names.has(normalizedName)) invalidProduct();
+    if (ids.has(id) || names.has(normalizedName)) invalidProduct('ATTRIBUTE_DUPLICATED');
 
     ids.add(id);
     names.add(normalizedName);
@@ -112,7 +114,8 @@ function parseVariants(
   attributes: readonly ReplicableProductAttribute[],
   images: readonly string[],
 ): readonly ReplicableProductVariant[] {
-  if (!Array.isArray(value) || value.length === 0) invalidProduct();
+  if (!Array.isArray(value) || value.length === 0)
+    invalidProduct('VARIANTS_REQUIRED');
 
   const variants: ReplicableProductVariant[] = [];
   const combinations = new Set<string>();
@@ -123,7 +126,7 @@ function parseVariants(
     const combination = JSON.stringify(
       orderedValues.map(({ value: variantValue }) => variantValue),
     );
-    if (combinations.has(combination)) invalidProduct();
+    if (combinations.has(combination)) invalidProduct('VARIANT_COMBINATION_DUPLICATED');
 
     combinations.add(combination);
     variants.push({ ...variant, values: orderedValues });
@@ -137,22 +140,23 @@ function parseVariant(
   attributes: readonly ReplicableProductAttribute[],
   images: readonly string[],
 ): ReplicableProductVariant {
-  if (!isJsonObject(value)) invalidProduct();
+  if (!isJsonObject(value)) invalidProduct('VARIANT_INVALID');
 
   const price = value.price;
   const stock = value.stock;
   if (typeof price !== 'number' || !Number.isFinite(price) || price <= 0) {
-    invalidProduct();
+    invalidProduct('VARIANT_PRICE_INVALID');
   }
   if (typeof stock !== 'number' || !Number.isSafeInteger(stock) || stock < 0) {
-    invalidProduct();
+    invalidProduct('VARIANT_STOCK_INVALID');
   }
 
   const sku = parseSku(value.sku);
   const imageSrc = parseOptionalText(value.imageSrc);
-  if (imageSrc && !images.includes(imageSrc)) invalidProduct();
+  if (imageSrc && !images.includes(imageSrc)) invalidProduct('VARIANT_IMAGE_INVALID');
   const values = parseVariantValues(value.values);
-  if (values.length !== attributes.length) invalidProduct();
+  if (values.length !== attributes.length)
+    invalidProduct('VARIANT_VALUES_COUNT_INVALID');
 
   return {
     price,
@@ -181,7 +185,7 @@ function parseVariantDimensions(value: Record<string, unknown>): {
     const raw = value[dimension];
     if (raw === undefined || raw === null) continue;
     if (typeof raw !== 'number' || !Number.isFinite(raw) || raw < 0) {
-      invalidProduct();
+      invalidProduct('VARIANT_DIMENSION_INVALID');
     }
     result[dimension] = raw;
   }
@@ -190,26 +194,26 @@ function parseVariantDimensions(value: Record<string, unknown>): {
 
 function parseSku(value: unknown): string | null {
   if (value === null) return null;
-  if (typeof value !== 'string') invalidProduct();
+  if (typeof value !== 'string') invalidProduct('SKU_INVALID');
   return value.trim() || null;
 }
 
 function parseOptionalText(value: unknown): string | null {
   if (value === undefined || value === null) return null;
-  if (typeof value !== 'string') invalidProduct();
+  if (typeof value !== 'string') invalidProduct('OPTIONAL_TEXT_INVALID');
   return value.trim() || null;
 }
 
 function parseCategoryIds(value: unknown): readonly number[] | undefined {
   if (value === undefined || value === null) return undefined;
-  if (!Array.isArray(value)) invalidProduct();
+  if (!Array.isArray(value)) invalidProduct('CATEGORIES_INVALID');
   const ids = value.map((candidate) => {
     if (
       typeof candidate !== 'number' ||
       !Number.isSafeInteger(candidate) ||
       candidate <= 0
     ) {
-      invalidProduct();
+      invalidProduct('CATEGORY_ID_INVALID');
     }
     return candidate;
   });
@@ -218,10 +222,10 @@ function parseCategoryIds(value: unknown): readonly number[] | undefined {
 
 function parseTags(value: unknown): readonly string[] | undefined {
   if (value === undefined || value === null) return undefined;
-  if (!Array.isArray(value)) invalidProduct();
+  if (!Array.isArray(value)) invalidProduct('TAGS_INVALID');
   const tags = value.map((candidate) => {
     const tag = nonEmptyString(candidate);
-    if (!tag) invalidProduct();
+    if (!tag) invalidProduct('TAG_INVALID');
     return tag;
   });
   return [...new Set(tags)];
@@ -230,14 +234,15 @@ function parseTags(value: unknown): readonly string[] | undefined {
 function parseVariantValues(
   value: unknown,
 ): readonly ReplicableProductVariantValue[] {
-  if (!Array.isArray(value)) invalidProduct();
+  if (!Array.isArray(value)) invalidProduct('VARIANT_VALUES_INVALID');
 
   return value.map((candidate) => {
-    if (!isJsonObject(candidate)) invalidProduct();
+    if (!isJsonObject(candidate)) invalidProduct('VARIANT_VALUE_INVALID');
 
     const attributeId = nonEmptyString(candidate.attributeId);
     const variantValue = nonEmptyString(candidate.value);
-    if (!attributeId || !variantValue) invalidProduct();
+    if (!attributeId || !variantValue)
+      invalidProduct('VARIANT_VALUE_REQUIRED');
 
     return { attributeId, value: variantValue };
   });
@@ -250,13 +255,14 @@ function orderValues(
   const byAttributeId = new Map<string, ReplicableProductVariantValue>();
 
   for (const value of values) {
-    if (byAttributeId.has(value.attributeId)) invalidProduct();
+    if (byAttributeId.has(value.attributeId))
+      invalidProduct('VARIANT_ATTRIBUTE_DUPLICATED');
     byAttributeId.set(value.attributeId, value);
   }
 
   return attributes.map((attribute) => {
     const value = byAttributeId.get(attribute.id);
-    if (!value) invalidProduct();
+    if (!value) invalidProduct('VARIANT_ATTRIBUTE_VALUE_MISSING');
     return value;
   });
 }
@@ -341,6 +347,6 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function invalidProduct(): never {
-  throw new BadGatewayException(INVALID_PRODUCT_MESSAGE);
+function invalidProduct(code = 'INVALID_PRODUCT_DATA'): never {
+  throw new TiendanubeProductValidationError(code);
 }

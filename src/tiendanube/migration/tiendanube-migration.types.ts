@@ -28,6 +28,7 @@ export type TiendanubeMigrationJob = Readonly<{
   locked_until: string | null;
   next_run_at: string | null;
   error_message: string | null;
+  execution_token: string;
   created_at: string;
   updated_at: string;
   finished_at: string | null;
@@ -47,6 +48,8 @@ export type TiendanubeMigrationItem = Readonly<{
   error_code: string | null;
   error_message: string | null;
   attempts: number;
+  retry_cycle: number;
+  cycle_attempts: number;
   post_started_at: string | null;
   created_at: string;
   updated_at: string;
@@ -60,6 +63,7 @@ export type ClaimedTiendanubeMigrationItem = Readonly<{
   familyId: string | null;
   mlauIds: readonly string[];
   attempts: number;
+  cycleAttempts: number;
   isReconciliation: boolean;
 }>;
 

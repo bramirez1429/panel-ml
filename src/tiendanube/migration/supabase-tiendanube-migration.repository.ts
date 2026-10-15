@@ -1,7 +1,6 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import type { Json } from '../../database/database.types';
 import { SupabaseService } from '../../database/supabase.service';
 import type {
   ClaimedTiendanubeMigrationItem,
@@ -9,7 +8,6 @@ import type {
   TiendanubeMigrationItem,
   TiendanubeMigrationItemStatus,
   TiendanubeMigrationJob,
-  TiendanubeMigrationJobStatus,
   TiendanubeMigrationOutcome,
 } from './tiendanube-migration.types';
 
@@ -27,6 +25,7 @@ type ClaimRow = {
   family_id: string | null;
   mlau_ids: string[];
   attempts: number;
+  cycle_attempts: number;
   is_reconciliation: boolean;
 };
 type MigrationDatabase = {
@@ -95,11 +94,12 @@ export class SupabaseTiendanubeMigrationRepository {
     return data;
   }
 
-  async claimJob(jobId: string): Promise<boolean> {
+  async claimJob(jobId: string, executionToken: string): Promise<boolean> {
     const { data, error } = await this.client().rpc(
-      'claim_tiendanube_migration_job',
+      'claim_tiendanube_migration_job_v2',
       {
         p_job_id: jobId,
+        p_execution_token: executionToken,
         p_now: new Date().toISOString(),
         p_lease_seconds: 120,
       },
@@ -108,12 +108,12 @@ export class SupabaseTiendanubeMigrationRepository {
     return data;
   }
 
-  async resumeJob(jobId: string): Promise<boolean> {
+  async resumeJob(jobId: string): Promise<string | null> {
     const { data, error } = await this.client().rpc(
-      'resume_tiendanube_migration_job',
+      'resume_tiendanube_migration_run',
       { p_job_id: jobId },
     );
-    if (error || typeof data !== 'boolean') this.fail();
+    if (error || (data !== null && typeof data !== 'string')) this.fail();
     return data;
   }
 
@@ -133,16 +133,17 @@ export class SupabaseTiendanubeMigrationRepository {
         mla_ids: item.mlaIds,
         family_id: item.familyId,
         mlau_ids: item.mlauIds,
-      })) as unknown as Json,
+      })),
     });
   }
 
   async claimNextItem(
     jobId: string,
+    executionToken: string,
   ): Promise<ClaimedTiendanubeMigrationItem | null> {
     const { data, error } = await this.client().rpc(
-      'claim_next_tiendanube_migration_item',
-      { p_job_id: jobId },
+      'claim_next_tiendanube_migration_item_v2',
+      { p_job_id: jobId, p_execution_token: executionToken },
     );
     if (error || !Array.isArray(data)) this.fail();
     if (data.length === 0) return null;
@@ -156,6 +157,7 @@ export class SupabaseTiendanubeMigrationRepository {
       familyId: row.family_id,
       mlauIds: row.mlau_ids,
       attempts: row.attempts,
+      cycleAttempts: row.cycle_attempts,
       isReconciliation: row.is_reconciliation,
     };
   }

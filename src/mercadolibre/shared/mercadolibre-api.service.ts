@@ -253,7 +253,7 @@ export class MercadolibreApiService {
 
     if (data === INVALID_JSON) {
       if (!response.ok) {
-        throwMercadolibreApiError(response.status, kind);
+        throwWithRetryAfter(response.status, kind, undefined, response.headers);
       }
       throw new BadGatewayException(
         'Mercado Libre devolvi\u00f3 una respuesta inv\u00e1lida',
@@ -261,7 +261,7 @@ export class MercadolibreApiService {
     }
 
     if (!response.ok) {
-      throwMercadolibreApiError(response.status, kind, data);
+      throwWithRetryAfter(response.status, kind, data, response.headers);
     }
 
     return {
@@ -332,6 +332,31 @@ export class MercadolibreApiService {
 
     this.logger.log({ itemId, status });
   }
+}
+
+function throwWithRetryAfter(
+  status: number,
+  kind: MercadoLibreRequestKind | undefined,
+  data: unknown,
+  headers: Headers,
+): never {
+  try {
+    throwMercadolibreApiError(status, kind, data);
+  } catch (error) {
+    const retryAfterSeconds = parseRetryAfter(headers.get('retry-after'));
+    if (retryAfterSeconds && error && typeof error === 'object') {
+      Object.assign(error, { retryAfterSeconds });
+    }
+    throw error;
+  }
+}
+
+function parseRetryAfter(value: string | null): number | undefined {
+  if (!value) return undefined;
+  if (/^\d+$/u.test(value.trim())) return Number(value);
+  const date = Date.parse(value);
+  if (!Number.isFinite(date)) return undefined;
+  return Math.max(1, Math.ceil((date - Date.now()) / 1000));
 }
 
 /** Lee JSON sin ocultar errores de parseo. */

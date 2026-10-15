@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 
 import { MercadolibreTokenService } from '../../mercadolibre/auth/mercadolibre-token.service';
+import { MERCADOLIBRE_MIGRATION_READ_TIMEOUT_MS } from '../../mercadolibre/shared/mercadolibre.config';
 import { TiendanubeConnectionRepository } from '../connections/tiendanube-connection.repository';
 import { TiendanubeApiService } from '../shared/tiendanube-api.service';
 import { MercadoLibreReplicationSourceResolver } from './mercadolibre-replication-source-resolver';
@@ -107,6 +108,7 @@ export class TiendanubeSourceReplicationService {
       sourceKey,
       mlConnection.seller_id,
       token,
+      migrationReadOptions(),
     );
     const productId = await this.productResolver.resolve(
       tnConnection,
@@ -171,6 +173,7 @@ export class TiendanubeSourceReplicationService {
       sourceKey,
       mlConnection.seller_id,
       token,
+      migration ? migrationReadOptions() : undefined,
     );
     const payload = options
       ? applyReplicationOptions(source.product, options)
@@ -282,6 +285,10 @@ export class TiendanubeSourceReplicationService {
       tiendanubeProductId: createdId,
     };
   }
+}
+
+function migrationReadOptions() {
+  return { timeoutMs: MERCADOLIBRE_MIGRATION_READ_TIMEOUT_MS };
 }
 
 function applyReplicationOptions(

@@ -9,6 +9,7 @@ import { DescriptionService } from '../../mercadolibre/direct-publications/descr
 import type { MercadoLibrePublication } from '../../mercadolibre/publications/publication.types';
 import { PublicationSourceService } from '../../mercadolibre/publications/sync/publication-source.service';
 import { UserProductFamilyService } from '../../mercadolibre/user-products/user-product-family.service';
+import type { MercadolibreApiRequestOptions } from '../../mercadolibre/shared/mercadolibre-api.service';
 import type { ReplicableProduct } from './tiendanube-replication.types';
 import { normalizeFamilyProduct } from './mercadolibre-family-normalizer';
 import { normalizeLegacyProduct } from './mercadolibre-legacy-normalizer';
@@ -28,14 +29,20 @@ export class MercadoLibreReplicationNormalizerService {
     sourceKey: string,
     sellerId: number,
     accessToken: string,
+    options?: MercadolibreApiRequestOptions,
   ): Promise<ReplicableProduct> {
     const itemMatch = /^item:(MLA\d+)$/u.exec(sourceKey);
     if (itemMatch)
-      return this.normalizeItem(itemMatch[1], sellerId, accessToken);
+      return this.normalizeItem(itemMatch[1], sellerId, accessToken, options);
 
     const familyMatch = /^family:([1-9]\d*)$/u.exec(sourceKey);
     if (familyMatch)
-      return this.normalizeFamily(familyMatch[1], sellerId, accessToken);
+      return this.normalizeFamily(
+        familyMatch[1],
+        sellerId,
+        accessToken,
+        options,
+      );
 
     throw new NotFoundException('sourceKey de Mercado Libre inválido');
   }
@@ -44,15 +51,18 @@ export class MercadoLibreReplicationNormalizerService {
     itemId: string,
     sellerId: number,
     accessToken: string,
+    options?: MercadolibreApiRequestOptions,
   ): Promise<ReplicableProduct> {
     const item = await this.publicationSource.getItemWithAllAttributes(
       itemId,
       accessToken,
+      ...(options ? [options] : []),
     );
     this.assertSeller(item, sellerId);
     const description = await this.descriptionService.getPlainTextByItemId(
       itemId,
       accessToken,
+      ...(options ? [options] : []),
     );
     return normalizeLegacyProduct(item, description);
   }
@@ -61,12 +71,14 @@ export class MercadoLibreReplicationNormalizerService {
     familyId: string,
     sellerId: number,
     accessToken: string,
+    options?: MercadolibreApiRequestOptions,
   ): Promise<ReplicableProduct> {
     const cache = this.familyService.createCache();
     const family = await this.familyService.getFamily(
       familyId,
       accessToken,
       cache,
+      ...(options ? [options] : []),
     );
 
     if (family.userId !== sellerId)
@@ -74,24 +86,21 @@ export class MercadoLibreReplicationNormalizerService {
         'La familia no pertenece al seller conectado',
       );
 
-    for (
-      let attempt = 0;
-      attempt < FAMILY_READ_ATTEMPTS;
-      attempt += 1
-    ) {
+    for (let attempt = 0; attempt < FAMILY_READ_ATTEMPTS; attempt += 1) {
       try {
-        const itemIds =
-          await this.publicationSource.getItemIdsForUserProducts(
-            sellerId,
-            family.userProductIds,
-            accessToken,
-          );
+        const itemIds = await this.publicationSource.getItemIdsForUserProducts(
+          sellerId,
+          family.userProductIds,
+          accessToken,
+          ...(options ? [options] : []),
+        );
 
         const items = await Promise.all(
           itemIds.map((itemId) =>
             this.publicationSource.getItemWithAllAttributes(
               itemId,
               accessToken,
+              ...(options ? [options] : []),
             ),
           ),
         );
@@ -106,6 +115,7 @@ export class MercadoLibreReplicationNormalizerService {
               this.descriptionService.getPlainTextByItemId(
                 requireItemId(item.id),
                 accessToken,
+                ...(options ? [options] : []),
               ),
             ),
           ),
@@ -115,6 +125,7 @@ export class MercadoLibreReplicationNormalizerService {
                 userProductId,
                 accessToken,
                 cache,
+                ...(options ? [options] : []),
               ),
             ),
           ),
@@ -129,19 +140,13 @@ export class MercadoLibreReplicationNormalizerService {
           })),
         });
       } catch (error) {
-        const lastAttempt =
-          attempt === FAMILY_READ_ATTEMPTS - 1;
+        const lastAttempt = attempt === FAMILY_READ_ATTEMPTS - 1;
 
-        if (
-          !isTransientFamilyOffersError(error) ||
-          lastAttempt
-        ) {
+        if (!isTransientFamilyOffersError(error) || lastAttempt) {
           throw error;
         }
 
-        await waitForFamilyIndex(
-          FAMILY_READ_BASE_DELAY_MS * (attempt + 1),
-        );
+        await waitForFamilyIndex(FAMILY_READ_BASE_DELAY_MS * (attempt + 1));
       }
     }
 
@@ -158,19 +163,14 @@ export class MercadoLibreReplicationNormalizerService {
   }
 }
 
-function isTransientFamilyOffersError(
-  error: unknown,
-): boolean {
+function isTransientFamilyOffersError(error: unknown): boolean {
   return (
     error instanceof ConflictException &&
-    error.message ===
-      'La familia no tiene ofertas con precio y stock válidos'
+    error.message === 'La familia no tiene ofertas con precio y stock válidos'
   );
 }
 
-function waitForFamilyIndex(
-  milliseconds: number,
-): Promise<void> {
+function waitForFamilyIndex(milliseconds: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, milliseconds);
   });

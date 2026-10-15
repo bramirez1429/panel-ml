@@ -9,6 +9,7 @@ export type TiendanubeMigrationQueueMode = 'CONTINUE' | 'SINGLE_ITEM';
 export type TiendanubeMigrationQueueMessage = Readonly<{
   jobId: string;
   mode?: TiendanubeMigrationQueueMode;
+  executionToken: string;
 }>;
 
 @Injectable()
@@ -29,6 +30,7 @@ export class TiendanubeMigrationQueue {
   async consume(message: TiendanubeMigrationQueueMessage): Promise<void> {
     const result = await this.migrationService.processNext(message.jobId, {
       mode: message.mode ?? 'CONTINUE',
+      executionToken: message.executionToken,
     });
     if (result.hasMore) {
       await this.enqueue(message, result.delaySeconds ?? 1);

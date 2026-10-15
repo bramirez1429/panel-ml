@@ -29,12 +29,15 @@ export class TiendanubeMigrationController {
   @Post('start')
   @Header('Cache-Control', 'no-store')
   async start(@CurrentUser() user: SafeUser, @Body() body: unknown) {
-    const job = await this.migrationService.start(
+    const started = await this.migrationService.start(
       user.id,
       parseTestLimit(body),
     );
-    await this.queue.enqueue({ jobId: job.id });
-    return job;
+    await this.queue.enqueue({
+      jobId: started.job.id,
+      executionToken: started.executionToken,
+    });
+    return started.job;
   }
 
   @Get('active')
@@ -69,9 +72,13 @@ export class TiendanubeMigrationController {
     @Body() body: unknown,
   ) {
     const mode = parseResumeMode(body);
-    const job = await this.migrationService.resume(user.id, id);
-    await this.queue.enqueue({ jobId: id, mode });
-    return job;
+    const resumed = await this.migrationService.resume(user.id, id);
+    await this.queue.enqueue({
+      jobId: id,
+      mode,
+      executionToken: resumed.executionToken,
+    });
+    return resumed.job;
   }
 
   @Get(':id')
