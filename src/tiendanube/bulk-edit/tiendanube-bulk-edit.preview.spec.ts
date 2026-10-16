@@ -13,6 +13,10 @@ describe('TiendanubeBulkEditService preview pagination', () => {
     const result = await service.preview('user-1', { categoryId: '5', changes: { price: '12' } });
     expect(api.get).toHaveBeenCalledTimes(2);
     expect(result.variantCount).toBe(3);
+    expect(result.snapshotId).toBe('snapshot');
+    expect(result.expiresAt).toBe('2030-01-01T00:00:00.000Z');
+    expect(result.products).toHaveLength(3);
+    expect('patch' in api).toBe(false);
     expect(repository.saveSnapshot).toHaveBeenCalledWith(expect.objectContaining({ user_id: 'user-1', store_id: '1', variants: expect.any(Array) }));
   });
 

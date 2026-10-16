@@ -42,7 +42,7 @@ export type BulkEditJob = Readonly<{
 
 export type BulkEditItem = Readonly<{
   id: string; job_id: string; product_id: string; product_name: string; variant_id: string;
-  sku: string | null; requested_changes: BulkEditChanges; status: BulkEditItemStatus;
+  sku: string | null; option_values: readonly string[]; requested_changes: BulkEditChanges; status: BulkEditItemStatus;
   attempts: number; error_code: string | null; error_message: string | null;
   updated_at: string;
 }>;

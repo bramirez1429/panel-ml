@@ -55,14 +55,12 @@ Respuesta `200`:
 ```json
 [
   {
-    "productId": "815",
     "productName": "Remera clásica",
+    "productId": "815",
     "variantId": "9001",
     "sku": "REM-AZ-M",
-    "attempts": 1,
-    "code": "TIENDANUBE_VARIANT_REJECTED",
-    "reason": "Tiendanube rechazó la actualización de la variante",
-    "updatedAt": "2026-10-16T13:00:03.000Z"
+    "variant": "Azul / M",
+    "error": "Tiendanube rechazó la actualización de la variante"
   }
 ]
 ```
