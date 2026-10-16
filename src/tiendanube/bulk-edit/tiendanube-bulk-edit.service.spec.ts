@@ -22,6 +22,21 @@ describe('TiendanubeBulkEditService worker', () => {
     expect(repository.finishItems).toHaveBeenCalledWith('job-1', 'token', [], [expect.objectContaining({ id: 'item-1', code: 'TIENDANUBE_UNCERTAIN_RESULT' })]);
   });
 
+  it('actualiza las variantes incluidas sin enviar visibilidad ni categorías', async () => {
+    const includedItems = [
+      { ...item, id: 'visible-item', product_id: '10', variant_id: '20' },
+      { ...item, id: 'unlisted-item', product_id: '11', variant_id: '21' },
+      { ...item, id: 'hidden-item', product_id: '12', variant_id: '22' },
+    ];
+    const repository = { findJob: jest.fn().mockResolvedValue(job), claimJob: jest.fn().mockResolvedValue(true), claimItems: jest.fn().mockResolvedValue(includedItems), finishItems: jest.fn(), refresh: jest.fn().mockResolvedValue({ ...job, status: 'COMPLETED' }) };
+    const api = { patch: jest.fn().mockResolvedValue([{ id: 10, variants: [{ id: 20, success: true }] }, { id: 11, variants: [{ id: 21, success: true }] }, { id: 12, variants: [{ id: 22, success: true }] }]) };
+    const connections = { findOwnedCredentialsByUserId: jest.fn().mockResolvedValue({ storeId: '1', accessToken: 'token' }) };
+    const service = new TiendanubeBulkEditService(connections as never, api as never, {} as never, repository as never, {} as never);
+    await service.processNext('job-1', 'token');
+    expect(api.patch).toHaveBeenCalledWith('1', '/products/stock-price', [{ id: 10, variants: [{ id: 20, price: 100.5, promotional_price: 90, inventory_levels: [{ stock: 3, location_id: 'loc' }] }] }, { id: 11, variants: [{ id: 21, price: 100.5, promotional_price: 90, inventory_levels: [{ stock: 3, location_id: 'loc' }] }] }, { id: 12, variants: [{ id: 22, price: 100.5, promotional_price: 90, inventory_levels: [{ stock: 3, location_id: 'loc' }] }] }], 'token');
+    expect(repository.finishItems).toHaveBeenCalledWith('job-1', 'token', ['visible-item', 'unlisted-item', 'hidden-item'], []);
+  });
+
   it('entrega el contrato de failures usando option_values', async () => {
     const failedItem = { ...item, option_values: ['Azul', 'M'], error_message: 'Precio promocional inválido' };
     const repository = { findJob: jest.fn().mockResolvedValue(job), failures: jest.fn().mockResolvedValue([failedItem]) };

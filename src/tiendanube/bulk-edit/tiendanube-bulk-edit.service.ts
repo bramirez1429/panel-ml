@@ -24,7 +24,7 @@ export class TiendanubeBulkEditService {
   private async loadVariants(userId:string,categoryId:string){const c=await this.connection(userId);return this.loadVariantsFor(c.storeId,c.accessToken,categoryId);}
   private async loadVariantsFor(storeId:string,token:string,categoryId:string):Promise<readonly BulkEditVariant[]>{
     if(!/^\d+$/u.test(categoryId))throw new BadRequestException('categoryId inválido');
-    const startedAt=Date.now(), query=(page:number)=>`/products?category_id=${encodeURIComponent(categoryId)}&page=${page}&per_page=${PRODUCTS_PER_PAGE}`;
+    const startedAt=Date.now(), query=(page:number)=>`/products?category_id=${encodeURIComponent(categoryId)}&visibility=visible,unlisted,hidden&page=${page}&per_page=${PRODUCTS_PER_PAGE}`;
     const first=await this.api.getWithMeta<unknown>(storeId,query(1),token);
     if(!Array.isArray(first.data))throw new BadGatewayException('Tiendanube devolvió productos inválidos');
     const total=totalCount(first.headers),pages=total===null?null:Math.ceil(total/PRODUCTS_PER_PAGE),products=new Map<string,Record<string,unknown>>();addProducts(products,first.data);
