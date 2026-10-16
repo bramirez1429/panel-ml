@@ -26,11 +26,10 @@ describe('StockBulkPreviewService', () => {
         ),
     };
     const scanner = {
-      scan: jest.fn(
+      scanActiveAndPaused: jest.fn(
         (
           _sellerId: number,
           _accessToken: string,
-          _cursor: string | undefined,
           consume: (items: readonly unknown[]) => boolean,
         ) => {
           consume([
@@ -120,7 +119,7 @@ describe('StockBulkPreviewService', () => {
       userProduct: 1,
       legacy: 1,
     });
-    expect(scanner.scan).toHaveBeenCalledTimes(1);
+    expect(scanner.scanActiveAndPaused).toHaveBeenCalledTimes(1);
     expect(api.getWithMeta).toHaveBeenCalledWith(
       '/user-products/MLAU1/stock',
       'access-token',
@@ -167,11 +166,10 @@ describe('StockBulkPreviewService', () => {
       getValidAccessToken: jest.fn().mockResolvedValue('access-token'),
     };
     const scanner = {
-      scan: jest.fn(
+      scanActiveAndPaused: jest.fn(
         (
           _sellerId: number,
           _accessToken: string,
-          _cursor: string | undefined,
           consume: (items: readonly unknown[]) => boolean,
         ) => {
           consume(catalog);

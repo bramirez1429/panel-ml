@@ -75,6 +75,7 @@ export class ItemUpdateService {
       throw new BadRequestException('La publicación no es versión clásica');
     }
 
+    this.assertPriceOrStockEditable(item, changes);
     this.validateClassicUpdate(item, changes);
 
     const body: Record<string, unknown> = {
@@ -134,6 +135,7 @@ export class ItemUpdateService {
       );
     }
 
+    this.assertPriceOrStockEditable(item, changes);
     this.validateVariantPricingUpdate(changes);
 
     return this.apiService.put<MlItem>(
@@ -168,6 +170,23 @@ export class ItemUpdateService {
     ) {
       throw new BadRequestException(
         'El stock debe ser un número entero mayor o igual a 0',
+      );
+    }
+  }
+
+  private assertPriceOrStockEditable(
+    item: MlItem,
+    changes: ClassicItemUpdate | VariantPricingItemUpdate,
+  ): void {
+    if (
+      changes.price === undefined &&
+      !('available_quantity' in changes && changes.available_quantity !== undefined)
+    ) {
+      return;
+    }
+    if (item.status !== 'active' && item.status !== 'paused') {
+      throw new BadRequestException(
+        'No se puede actualizar precio o stock de una publicación cerrada, eliminada o bloqueada',
       );
     }
   }

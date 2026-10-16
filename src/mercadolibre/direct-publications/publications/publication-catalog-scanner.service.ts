@@ -17,14 +17,56 @@ export class PublicationCatalogScannerService {
     startingScrollId: string | undefined,
     consumePage: (items: readonly MlItem[]) => boolean,
   ): Promise<{ reachedEnd: boolean; nextScrollId: string | null }> {
+    return this.scanStatus(
+      sellerId,
+      accessToken,
+      startingScrollId,
+      undefined,
+      consumePage,
+    );
+  }
+
+  /** Recorre explícitamente publicaciones activas y pausadas sin mezclar scrolls. */
+  async scanActiveAndPaused(
+    sellerId: number,
+    accessToken: string,
+    consumePage: (items: readonly MlItem[]) => boolean,
+  ): Promise<void> {
+    for (const status of ['active', 'paused'] as const) {
+      const result = await this.scanStatus(
+        sellerId,
+        accessToken,
+        undefined,
+        status,
+        consumePage,
+      );
+      if (!result.reachedEnd) return;
+    }
+  }
+
+  private async scanStatus(
+    sellerId: number,
+    accessToken: string,
+    startingScrollId: string | undefined,
+    status: 'active' | 'paused' | undefined,
+    consumePage: (items: readonly MlItem[]) => boolean,
+  ): Promise<{ reachedEnd: boolean; nextScrollId: string | null }> {
     let scrollId = startingScrollId;
 
     while (true) {
-      const page = await this.publicationSource.fetchNextScanPage(
-        sellerId,
-        accessToken,
-        scrollId,
-      );
+      const page =
+        status === undefined
+          ? await this.publicationSource.fetchNextScanPage(
+              sellerId,
+              accessToken,
+              scrollId,
+            )
+          : await this.publicationSource.fetchNextScanPage(
+              sellerId,
+              accessToken,
+              scrollId,
+              status,
+            );
       if (page.itemIds.length === 0) {
         return { reachedEnd: true, nextScrollId: null };
       }

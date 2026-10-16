@@ -46,12 +46,14 @@ export class PublicationSourceService {
     sellerId: number,
     accessToken: string,
     scrollId?: string,
+    status?: 'active' | 'paused',
   ): Promise<PublicationScanPage> {
     const query = new URLSearchParams({
       search_type: 'scan',
       limit: String(PUBLICATION_SCAN_SIZE),
     });
     if (scrollId) query.set('scroll_id', scrollId);
+    if (status) query.set('status', status);
 
     const data = await this.apiService.get<unknown>(
       `/users/${sellerId}/items/search?${query.toString()}`,

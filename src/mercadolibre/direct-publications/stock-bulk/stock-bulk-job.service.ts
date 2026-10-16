@@ -77,6 +77,10 @@ export class StockBulkJobService {
       successfulItems: job.successful_items,
       failedItems: job.failed_items,
       skippedItems: job.skipped_items,
+      activeItems: items.filter((item) => item.old_status === 'active').length,
+      pausedItems: items.filter((item) => item.old_status === 'paused').length,
+      updatedItems: items.filter((item) => item.status === 'SUCCESS').length,
+      omittedItems: items.filter((item) => item.status === 'SKIPPED').length,
       percent:
         job.total_items === 0
           ? 100

@@ -29,10 +29,9 @@ export class StockBulkPreviewService {
       connection,
     );
     const matches: StockBulkTarget[] = [];
-    await this.scanner.scan(
+    await this.scanner.scanActiveAndPaused(
       connection.seller_id,
       accessToken,
-      undefined,
       (items) => {
         matches.push(...this.targetsService.collect(items, request));
         return false;
