@@ -40,6 +40,7 @@ import { TiendanubeMigrationService } from './migration/tiendanube-migration.ser
 import { TiendanubeBulkEditController } from './bulk-edit/tiendanube-bulk-edit.controller';
 import { TiendanubeBulkEditService } from './bulk-edit/tiendanube-bulk-edit.service';
 import { TiendanubeBulkEditRepository } from './bulk-edit/tiendanube-bulk-edit.repository';
+import { TiendanubeBulkEditQueue } from './bulk-edit/tiendanube-bulk-edit.queue';
 
 @Module({
   imports: [
@@ -83,6 +84,7 @@ import { TiendanubeBulkEditRepository } from './bulk-edit/tiendanube-bulk-edit.r
     TiendanubeMigrationQueue,
     TiendanubeBulkEditService,
     TiendanubeBulkEditRepository,
+    TiendanubeBulkEditQueue,
     {
       provide: TiendanubeConnectionRepository,
       useClass: SupabaseTiendanubeConnectionRepository,

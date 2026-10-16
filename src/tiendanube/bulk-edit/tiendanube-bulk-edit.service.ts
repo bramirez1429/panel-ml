@@ -1,122 +1,35 @@
-import { BadGatewayException, BadRequestException, ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, ConflictException, ForbiddenException, forwardRef, HttpException, Inject, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { TiendanubeCategoriesService } from '../categories/tiendanube-categories.service';
 import { TiendanubeConnectionRepository } from '../connections/tiendanube-connection.repository';
 import { TiendanubeApiService } from '../shared/tiendanube-api.service';
+import { TiendanubeBulkEditQueue } from './tiendanube-bulk-edit.queue';
 import { TiendanubeBulkEditRepository } from './tiendanube-bulk-edit.repository';
-import type { BulkEditChanges, BulkEditVariant } from './tiendanube-bulk-edit.types';
+import type { BulkEditChanges, BulkEditItem, BulkEditJob, BulkEditVariant } from './tiendanube-bulk-edit.types';
 
 @Injectable()
 export class TiendanubeBulkEditService {
-  constructor(private readonly connections: TiendanubeConnectionRepository, private readonly api: TiendanubeApiService, private readonly categories: TiendanubeCategoriesService, private readonly repository: TiendanubeBulkEditRepository) {}
-
+  constructor(private readonly connections: TiendanubeConnectionRepository, private readonly api: TiendanubeApiService, private readonly categories: TiendanubeCategoriesService, private readonly repository: TiendanubeBulkEditRepository, @Inject(forwardRef(() => TiendanubeBulkEditQueue)) private readonly queue: TiendanubeBulkEditQueue) {}
   categoriesByUser(userId: string) { return this.categories.listByUserId(userId); }
-
-  async summary(userId: string, categoryId: string) {
-    const variants = await this.loadVariants(userId, categoryId);
-    return summaryResponse(categoryId, variants);
-  }
-
-  async preview(userId: string, input: { categoryId: string; changes: BulkEditChanges }) {
-    validateChanges(input.changes);
-    const connection = await this.connection(userId);
-    const variants = await this.loadVariantsFor(connection.storeId, connection.accessToken, input.categoryId);
-    const incompatible = variants.flatMap((variant) => incompatibleVariant(variant, input.changes));
-    const snapshot = await this.repository.saveSnapshot({ user_id: userId, store_id: connection.storeId, category_id: input.categoryId, changes: input.changes, variants });
-    const summary = summaryResponse(input.categoryId, variants);
-    return {
-      id: snapshot.id,
-      categoryId: input.categoryId,
-      productCount: summary.productCount,
-      variantCount: summary.variantCount,
-      products: summary.products,
-      locations: summary.locations,
-      changes: input.changes,
-      preservedFields: preservedFields(input.changes),
-      incompatibilities: incompatible,
-      generatedAt: new Date().toISOString(),
-      expiresAt: snapshot.expires_at,
-    };
-  }
-
-  async createJob(userId: string, snapshotId: string): Promise<string> {
-    const connection = await this.connection(userId);
-    const snapshot = await this.repository.getSnapshot(snapshotId, userId, connection.storeId);
-    if (!snapshot || Date.parse(snapshot.expires_at) <= Date.now()) throw new ConflictException('La vista previa venció o no pertenece a la tienda');
-    return this.repository.createJob(snapshot);
-  }
-
-  async activeJob(userId: string) {
-    const connection = await this.connection(userId);
-    const job = await this.repository.findActive(userId, connection.storeId);
-    if (!job) return null;
-    return {
-      id: job.id,
-      status: job.status,
-      categoryId: job.category_id,
-      totalProducts: job.total_products,
-      totalVariants: job.total_variants,
-      completedVariants: job.completed_variants,
-      failedVariants: job.failed_variants,
-      pendingVariants: Math.max(0, job.total_variants - job.completed_variants - job.failed_variants),
-      startedAt: job.started_at,
-      finishedAt: job.finished_at,
-      createdAt: job.created_at,
-      updatedAt: job.updated_at,
-    };
-  }
-
-  private async loadVariants(userId: string, categoryId: string) { const connection = await this.connection(userId); return this.loadVariantsFor(connection.storeId, connection.accessToken, categoryId); }
-  private async connection(userId: string) { const connection = await this.connections.findOwnedCredentialsByUserId(userId); if (!connection?.accessToken.trim()) throw new UnauthorizedException('Primero conectá Tiendanube'); return connection; }
-
-  private async loadVariantsFor(storeId: string, token: string, categoryId: string): Promise<readonly BulkEditVariant[]> {
-    if (!/^\d+$/u.test(categoryId)) throw new BadRequestException('categoryId inválido');
-    const products = new Map<string, Record<string, unknown>>();
-    for (let page = 1; page <= 10_000; page += 1) {
-      const response = await this.api.get<unknown>(storeId, `/products?category_id=${encodeURIComponent(categoryId)}&page=${page}&per_page=200`, token);
-      if (!Array.isArray(response)) throw new BadGatewayException('Tiendanube devolvió productos inválidos');
-      for (const product of response) if (isObject(product) && id(product.id)) products.set(String(product.id), product);
-      if (response.length < 200) break;
-    }
-    return [...products.values()].flatMap(productVariants);
-  }
+  async summary(userId: string, categoryId: string) { return summaryResponse(categoryId, await this.loadVariants(userId, categoryId)); }
+  async preview(userId:string, input:{categoryId:string;changes:BulkEditChanges}) { validateChanges(input.changes); const connection=await this.connection(userId); const variants=await this.loadVariantsFor(connection.storeId,connection.accessToken,input.categoryId); const snapshot=await this.repository.saveSnapshot({user_id:userId,store_id:connection.storeId,category_id:input.categoryId,changes:input.changes,variants}); const summary=summaryResponse(input.categoryId,variants); return {id:snapshot.id,...summary,changes:input.changes,preservedFields:(['price','promotionalPrice','stock'] as const).filter(k=>input.changes[k]===undefined),incompatibilities:variants.flatMap(v=>incompatible(v,input.changes)),generatedAt:new Date().toISOString(),expiresAt:snapshot.expires_at}; }
+  async createJob(userId:string,snapshotId:string) { const connection=await this.connection(userId); const snapshot=await this.repository.getSnapshot(snapshotId,userId,connection.storeId); if(!snapshot||Date.parse(snapshot.expires_at)<=Date.now())throw new ConflictException('La vista previa venció o no pertenece a la tienda'); if(snapshot.variants.some(v=>incompatible(v,snapshot.changes).length))throw new ConflictException('La vista previa contiene incompatibilidades'); const job=await this.repository.createJob(snapshot); await this.queue.enqueue({jobId:job.id,executionToken:job.execution_token}); return {id:job.id,status:job.status}; }
+  async activeJob(userId:string) { const connection=await this.connection(userId); const job=await this.repository.findActive(userId,connection.storeId); return job?this.publicJob(job):null; }
+  async getJob(userId:string,jobId:string) { return this.publicJob(await this.ownedJob(userId,jobId)); }
+  async failures(userId:string,jobId:string) { await this.ownedJob(userId,jobId); return (await this.repository.failures(jobId)).map(i=>({productId:i.product_id,productName:i.product_name,variantId:i.variant_id,sku:i.sku,attempts:i.attempts,code:i.error_code,reason:i.error_message,updatedAt:i.updated_at})); }
+  async retryFailures(userId:string,jobId:string) { const job=await this.ownedJob(userId,jobId); if(job.status!=='COMPLETED_WITH_ERRORS')throw new ConflictException('El trabajo no terminó con errores reintentables'); const result=await this.repository.retryFailures(jobId); if(result.executionToken)await this.queue.enqueue({jobId,executionToken:result.executionToken}); return {id:jobId,status:result.count?'QUEUED':job.status,retriedVariants:result.count}; }
+  async processNext(jobId:string,token:string):Promise<{hasMore:boolean;delaySeconds?:number}> { const observed=await this.repository.findJob(jobId); if(!observed||observed.execution_token!==token||terminal(observed))return {hasMore:false}; if(!(await this.repository.claimJob(jobId,token)))return {hasMore:true,delaySeconds:15}; const items=await this.repository.claimItems(jobId,token); if(!items.length){const job=await this.repository.refresh(jobId,token);return {hasMore:!terminal(job)};} const c=await this.connection(observed.user_id); try { const response=await this.api.patch<unknown>(c.storeId,'/products/stock-price',payload(items,observed.requested_changes),c.accessToken); const results=responseResults(response), success:string[]=[]; const failures:{id:string;code:string;message:string}[]=[]; for(const item of items){const answer=results.get(item.variant_id); if(answer===true)success.push(item.id); else if(answer===false)failures.push({id:item.id,code:'TIENDANUBE_VARIANT_REJECTED',message:'Tiendanube rechazó la actualización de la variante'}); else if(await this.verify(c.storeId,c.accessToken,item,observed.requested_changes))success.push(item.id); else failures.push({id:item.id,code:'TIENDANUBE_UNCERTAIN_RESULT',message:'Tiendanube no confirmó el resultado y la verificación no encontró los cambios solicitados'});} await this.repository.finishItems(jobId,token,success,failures); } catch(error) { const status=error instanceof HttpException?error.getStatus():0; if(status>=400&&status<500&&status!==408&&status!==429) await this.repository.finishItems(jobId,token,[],items.map(i=>({id:i.id,code:'TIENDANUBE_REQUEST_REJECTED',message:error instanceof Error?error.message:'Tiendanube rechazó la solicitud'}))); else { await this.repository.retryItems(jobId,token,items.map(i=>i.id),error instanceof Error?error.message:'Fallo general de Tiendanube'); return {hasMore:true,delaySeconds:30}; } } const job=await this.repository.refresh(jobId,token); return {hasMore:!terminal(job)}; }
+  private async ownedJob(userId:string,jobId:string):Promise<BulkEditJob>{const [job,c]=await Promise.all([this.repository.findJob(jobId),this.connection(userId)]);if(!job)throw new NotFoundException('Trabajo de edición masiva no encontrado');if(job.user_id!==userId||job.store_id!==c.storeId)throw new ForbiddenException('El trabajo pertenece a otra tienda');return job;}
+  private publicJob(j:BulkEditJob){return {id:j.id,status:j.status,categoryId:j.category_id,totalProducts:j.total_products,totalVariants:j.total_variants,completedVariants:j.completed_variants,failedVariants:j.failed_variants,pendingVariants:Math.max(0,j.total_variants-j.completed_variants-j.failed_variants),startedAt:j.started_at,finishedAt:j.finished_at,error:j.error_message,createdAt:j.created_at,updatedAt:j.updated_at};}
+  private async connection(userId:string){const c=await this.connections.findOwnedCredentialsByUserId(userId);if(!c?.accessToken.trim())throw new UnauthorizedException('Primero conectá Tiendanube');return c;}
+  private async loadVariants(userId:string,categoryId:string){const c=await this.connection(userId);return this.loadVariantsFor(c.storeId,c.accessToken,categoryId);}
+  private async loadVariantsFor(storeId:string,token:string,categoryId:string):Promise<readonly BulkEditVariant[]>{if(!/^\d+$/u.test(categoryId))throw new BadRequestException('categoryId inválido');const products=new Map<string,Record<string,unknown>>();for(let page=1;page<=10000;page++){const r=await this.api.get<unknown>(storeId,`/products?category_id=${encodeURIComponent(categoryId)}&page=${page}&per_page=200`,token);if(!Array.isArray(r))throw new BadGatewayException('Tiendanube devolvió productos inválidos');for(const p of r)if(object(p)&&id(p.id))products.set(String(p.id),p);if(r.length<200)break;}return [...products.values()].flatMap(productVariants);}
+  private async verify(store:string,token:string,item:BulkEditItem,changes:BulkEditChanges){const p=await this.api.get<any>(store,`/products/${item.product_id}`,token);const v=Array.isArray(p?.variants)?p.variants.find((x:any)=>String(x.id)===item.variant_id):null;if(!v)return false;if(changes.price!==undefined&&Number(v.price)!==Number(changes.price))return false;if(changes.promotionalPrice!==undefined&&Number(v.promotional_price)!==Number(changes.promotionalPrice))return false;if(changes.stock!==undefined){const levels=Array.isArray(v.inventory_levels)?v.inventory_levels:[];const level=changes.locationId?levels.find((x:any)=>String(x.location_id)===changes.locationId):levels[0];if((level?Number(level.stock):Number(v.stock))!==changes.stock)return false;}return true;}
 }
-
-function validateChanges(changes: BulkEditChanges): void {
-  if (changes.price === undefined && changes.promotionalPrice === undefined && changes.stock === undefined) throw new BadRequestException('Indicá al menos un campo para editar');
-  for (const price of [changes.price, changes.promotionalPrice]) if (price !== undefined && (!/^\d+(\.\d{1,2})?$/u.test(price) || Number(price) <= 0)) throw new BadRequestException('Los precios deben ser positivos con hasta dos decimales');
-  if (changes.stock !== undefined && (!Number.isSafeInteger(changes.stock) || changes.stock < 0)) throw new BadRequestException('stock debe ser un entero no negativo');
-}
-function incompatibleVariant(v: BulkEditVariant, changes: BulkEditChanges) { if (changes.promotionalPrice !== undefined && Number(changes.promotionalPrice) >= Number(changes.price ?? v.price)) return [{ variantId: v.variantId, reason: 'El precio promocional debe ser menor al normal' }]; if (changes.stock !== undefined && v.inventoryLevels.length > 1 && !changes.locationId) return [{ variantId: v.variantId, reason: 'La tienda tiene múltiples ubicaciones; seleccioná una' }]; return []; }
-function productVariants(product: Record<string, unknown>): BulkEditVariant[] { const variants = product.variants; if (!Array.isArray(variants)) return []; const productId = String(product.id); const productName = text(product.name) ?? productId; return variants.flatMap((raw) => { if (!isObject(raw) || !id(raw.id) || text(raw.price) === null) return []; const levels = Array.isArray(raw.inventory_levels) ? raw.inventory_levels.flatMap((level) => isObject(level) && id(level.location_id) && typeof level.stock === 'number' ? [{ locationId: String(level.location_id), stock: level.stock }] : []) : []; return [{ productId, productName, variantId: String(raw.id), sku: text(raw.sku), optionValues: Array.isArray(raw.values) ? raw.values.flatMap((v) => text(isObject(v) ? v.es : v) ?? []) : [], price: text(raw.price)!, promotionalPrice: text(raw.promotional_price), stock: typeof raw.stock === 'number' ? raw.stock : null, inventoryLevels: levels, url: text(product.url) }]; }); }
-function id(value: unknown): value is string | number { return (typeof value === 'string' && /^\d+$/u.test(value)) || (typeof value === 'number' && Number.isSafeInteger(value)); }
-function text(value: unknown): string | null { if (typeof value === 'string' && value.trim()) return value.trim(); if (typeof value === 'number' && Number.isFinite(value)) return String(value); if (isObject(value)) return text(value.es) ?? Object.values(value).map(text).find((v): v is string => v !== null) ?? null; return null; }
-function isObject(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value); }
-
-function summaryResponse(categoryId: string, variants: readonly BulkEditVariant[]) {
-  const byProduct = new Map<string, { id: string; name: string; variants: ReturnType<typeof publicVariant>[] }>();
-  const locations = new Map<string, { id: string }>();
-  for (const variant of variants) {
-    const product = byProduct.get(variant.productId) ?? { id: variant.productId, name: variant.productName, variants: [] };
-    product.variants.push(publicVariant(variant));
-    byProduct.set(variant.productId, product);
-    for (const level of variant.inventoryLevels) locations.set(level.locationId, { id: level.locationId });
-  }
-  return { categoryId, productCount: byProduct.size, variantCount: variants.length, products: [...byProduct.values()], locations: [...locations.values()] };
-}
-
-function publicVariant(variant: BulkEditVariant) {
-  const [size, color] = variant.optionValues;
-  return {
-    id: variant.variantId,
-    sku: variant.sku,
-    size: size ?? null,
-    color: color ?? null,
-    price: variant.price,
-    promotionalPrice: variant.promotionalPrice,
-    stock: variant.stock,
-  };
-}
-
-function preservedFields(changes: BulkEditChanges): readonly ('price' | 'promotionalPrice' | 'stock')[] {
-  return (['price', 'promotionalPrice', 'stock'] as const).filter((field) => changes[field] === undefined);
-}
+function terminal(j:BulkEditJob){return ['COMPLETED','COMPLETED_WITH_ERRORS','PAUSED'].includes(j.status);}
+function payload(items:readonly BulkEditItem[],c:BulkEditChanges){const grouped=new Map<string,any[]>();for(const i of items){const v:any={id:Number(i.variant_id)};if(c.price!==undefined)v.price=Number(c.price);if(c.promotionalPrice!==undefined)v.promotional_price=Number(c.promotionalPrice);if(c.stock!==undefined)v.inventory_levels=[{stock:c.stock,...(c.locationId?{location_id:c.locationId}:{})}];grouped.set(i.product_id,[...(grouped.get(i.product_id)??[]),v]);}return [...grouped].map(([id,variants])=>({id:Number(id),variants}));}
+function responseResults(v:unknown){const out=new Map<string,boolean>();if(Array.isArray(v))for(const p of v)if(object(p)&&Array.isArray(p.variants))for(const x of p.variants)if(object(x)&&id(x.id)&&typeof x.success==='boolean')out.set(String(x.id),x.success);return out;}
+function validateChanges(c:BulkEditChanges){if(c.price===undefined&&c.promotionalPrice===undefined&&c.stock===undefined)throw new BadRequestException('Indicá al menos un campo para editar');for(const p of [c.price,c.promotionalPrice])if(p!==undefined&&(!/^\d+(\.\d{1,2})?$/u.test(p)||Number(p)<=0))throw new BadRequestException('Los precios deben ser positivos con hasta dos decimales');if(c.stock!==undefined&&(!Number.isSafeInteger(c.stock)||c.stock<0))throw new BadRequestException('stock debe ser un entero no negativo');}
+function incompatible(v:BulkEditVariant,c:BulkEditChanges){if(c.promotionalPrice!==undefined&&Number(c.promotionalPrice)>=Number(c.price??v.price))return[{variantId:v.variantId,reason:'El precio promocional debe ser menor al normal'}];if(c.stock!==undefined&&v.inventoryLevels.length>1&&!c.locationId)return[{variantId:v.variantId,reason:'La tienda tiene múltiples ubicaciones; seleccioná una'}];return[];}
+function productVariants(p:Record<string,unknown>):BulkEditVariant[]{if(!Array.isArray(p.variants))return[];const productId=String(p.id),productName=text(p.name)??productId;return p.variants.flatMap(raw=>{if(!object(raw)||!id(raw.id)||text(raw.price)===null)return[];const inventoryLevels=Array.isArray(raw.inventory_levels)?raw.inventory_levels.flatMap(l=>object(l)&&id(l.location_id)&&typeof l.stock==='number'?[{locationId:String(l.location_id),stock:l.stock}]:[]):[];return[{productId,productName,variantId:String(raw.id),sku:text(raw.sku),optionValues:Array.isArray(raw.values)?raw.values.flatMap(x=>text(object(x)?x.es:x)??[]):[],price:text(raw.price)!,promotionalPrice:text(raw.promotional_price),stock:typeof raw.stock==='number'?raw.stock:null,inventoryLevels,url:text(p.url)}];});}
+function summaryResponse(categoryId:string,variants:readonly BulkEditVariant[]){const by=new Map<string,any>(),locations=new Map<string,{id:string}>();for(const v of variants){const p=by.get(v.productId)??{id:v.productId,name:v.productName,variants:[]};p.variants.push({id:v.variantId,sku:v.sku,size:v.optionValues[0]??null,color:v.optionValues[1]??null,price:v.price,promotionalPrice:v.promotionalPrice,stock:v.stock});by.set(v.productId,p);for(const l of v.inventoryLevels)locations.set(l.locationId,{id:l.locationId});}return{categoryId,productCount:by.size,variantCount:variants.length,products:[...by.values()],locations:[...locations.values()]};}
+function id(v:unknown):v is string|number{return(typeof v==='string'&&/^\d+$/u.test(v))||(typeof v==='number'&&Number.isSafeInteger(v));}function text(v:unknown):string|null{if(typeof v==='string'&&v.trim())return v.trim();if(typeof v==='number'&&Number.isFinite(v))return String(v);if(object(v))return text(v.es)??Object.values(v).map(text).find((x):x is string=>x!==null)??null;return null;}function object(v:unknown):v is Record<string,any>{return typeof v==='object'&&v!==null&&!Array.isArray(v);}
