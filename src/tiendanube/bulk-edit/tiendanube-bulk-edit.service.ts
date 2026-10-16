@@ -13,7 +13,7 @@ export class TiendanubeBulkEditService {
 
   async summary(userId: string, categoryId: string) {
     const variants = await this.loadVariants(userId, categoryId);
-    return { categoryId, totalProducts: new Set(variants.map((v) => v.productId)).size, totalVariants: variants.length, variants };
+    return summaryResponse(categoryId, variants);
   }
 
   async preview(userId: string, input: { categoryId: string; changes: BulkEditChanges }) {
@@ -22,7 +22,20 @@ export class TiendanubeBulkEditService {
     const variants = await this.loadVariantsFor(connection.storeId, connection.accessToken, input.categoryId);
     const incompatible = variants.flatMap((variant) => incompatibleVariant(variant, input.changes));
     const snapshot = await this.repository.saveSnapshot({ user_id: userId, store_id: connection.storeId, category_id: input.categoryId, changes: input.changes, variants });
-    return { snapshotId: snapshot.id, categoryId: input.categoryId, totalProducts: new Set(variants.map((v) => v.productId)).size, totalVariants: variants.length, changes: input.changes, incompatible, generatedAt: new Date().toISOString(), expiresAt: snapshot.expires_at };
+    const summary = summaryResponse(input.categoryId, variants);
+    return {
+      id: snapshot.id,
+      categoryId: input.categoryId,
+      productCount: summary.productCount,
+      variantCount: summary.variantCount,
+      products: summary.products,
+      locations: summary.locations,
+      changes: input.changes,
+      preservedFields: preservedFields(input.changes),
+      incompatibilities: incompatible,
+      generatedAt: new Date().toISOString(),
+      expiresAt: snapshot.expires_at,
+    };
   }
 
   async createJob(userId: string, snapshotId: string): Promise<string> {
@@ -78,3 +91,32 @@ function productVariants(product: Record<string, unknown>): BulkEditVariant[] { 
 function id(value: unknown): value is string | number { return (typeof value === 'string' && /^\d+$/u.test(value)) || (typeof value === 'number' && Number.isSafeInteger(value)); }
 function text(value: unknown): string | null { if (typeof value === 'string' && value.trim()) return value.trim(); if (typeof value === 'number' && Number.isFinite(value)) return String(value); if (isObject(value)) return text(value.es) ?? Object.values(value).map(text).find((v): v is string => v !== null) ?? null; return null; }
 function isObject(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value); }
+
+function summaryResponse(categoryId: string, variants: readonly BulkEditVariant[]) {
+  const byProduct = new Map<string, { id: string; name: string; variants: ReturnType<typeof publicVariant>[] }>();
+  const locations = new Map<string, { id: string }>();
+  for (const variant of variants) {
+    const product = byProduct.get(variant.productId) ?? { id: variant.productId, name: variant.productName, variants: [] };
+    product.variants.push(publicVariant(variant));
+    byProduct.set(variant.productId, product);
+    for (const level of variant.inventoryLevels) locations.set(level.locationId, { id: level.locationId });
+  }
+  return { categoryId, productCount: byProduct.size, variantCount: variants.length, products: [...byProduct.values()], locations: [...locations.values()] };
+}
+
+function publicVariant(variant: BulkEditVariant) {
+  const [size, color] = variant.optionValues;
+  return {
+    id: variant.variantId,
+    sku: variant.sku,
+    size: size ?? null,
+    color: color ?? null,
+    price: variant.price,
+    promotionalPrice: variant.promotionalPrice,
+    stock: variant.stock,
+  };
+}
+
+function preservedFields(changes: BulkEditChanges): readonly ('price' | 'promotionalPrice' | 'stock')[] {
+  return (['price', 'promotionalPrice', 'stock'] as const).filter((field) => changes[field] === undefined);
+}
