@@ -37,6 +37,9 @@ import { TiendanubeMigrationDiscoveryService } from './migration/tiendanube-migr
 import { TiendanubeMigrationQueue } from './migration/tiendanube-migration.queue';
 import { SupabaseTiendanubeMigrationRepository } from './migration/supabase-tiendanube-migration.repository';
 import { TiendanubeMigrationService } from './migration/tiendanube-migration.service';
+import { TiendanubeBulkEditController } from './bulk-edit/tiendanube-bulk-edit.controller';
+import { TiendanubeBulkEditService } from './bulk-edit/tiendanube-bulk-edit.service';
+import { TiendanubeBulkEditRepository } from './bulk-edit/tiendanube-bulk-edit.repository';
 
 @Module({
   imports: [
@@ -54,6 +57,7 @@ import { TiendanubeMigrationService } from './migration/tiendanube-migration.ser
     TiendanubeReplicationUpsertController,
     TiendanubeCategoriesController,
     TiendanubeMigrationController,
+    TiendanubeBulkEditController,
   ],
   providers: [
     SupabaseService,
@@ -77,6 +81,8 @@ import { TiendanubeMigrationService } from './migration/tiendanube-migration.ser
     TiendanubeMigrationDiscoveryService,
     TiendanubeMigrationService,
     TiendanubeMigrationQueue,
+    TiendanubeBulkEditService,
+    TiendanubeBulkEditRepository,
     {
       provide: TiendanubeConnectionRepository,
       useClass: SupabaseTiendanubeConnectionRepository,
