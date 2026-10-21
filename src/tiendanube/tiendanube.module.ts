@@ -99,6 +99,7 @@ import { TiendanubeBulkEditQueue } from './bulk-edit/tiendanube-bulk-edit.queue'
     TiendanubeConnectionRepository,
     TiendanubeProductLinkRepository,
     TiendanubeMigrationDiscoveryService,
+    MercadoLibreReplicationNormalizerService,
   ],
 })
 export class TiendanubeModule {}
