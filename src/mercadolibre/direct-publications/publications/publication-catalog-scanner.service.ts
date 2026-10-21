@@ -26,6 +26,15 @@ export class PublicationCatalogScannerService {
     );
   }
 
+  /** Recorre todas las publicaciones activas; no incluye pausadas. */
+  async scanActive(
+    sellerId: number,
+    accessToken: string,
+    consumePage: (items: readonly MlItem[]) => boolean,
+  ): Promise<void> {
+    await this.scanStatus(sellerId, accessToken, undefined, 'active', consumePage);
+  }
+
   /** Recorre explícitamente publicaciones activas y pausadas sin mezclar scrolls. */
   async scanActiveAndPaused(
     sellerId: number,
