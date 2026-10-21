@@ -1,5 +1,8 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
+import { SupabaseService } from '../database/supabase.service';
+import { TiendaNegocioOAuthService } from './auth/tiendanegocio-oauth.service';
+import { TiendaNegocioConnectionRepository } from './connections/tiendanegocio-connection.repository';
 import { MercadolibreModule } from '../mercadolibre/mercadolibre.module';
 import { TiendanubeModule } from '../tiendanube/tiendanube.module';
 import { TiendaNegocioCatalogService } from './catalog/tiendanegocio-catalog.service';
@@ -9,7 +12,13 @@ import { TiendaNegocioController } from './tiendanegocio.controller';
 @Module({
   imports: [AuthModule, MercadolibreModule, TiendanubeModule],
   controllers: [TiendaNegocioController],
-  providers: [TiendaNegocioCatalogService, TiendaNegocioApiService],
+  providers: [
+    SupabaseService,
+    TiendaNegocioCatalogService,
+    TiendaNegocioApiService,
+    TiendaNegocioConnectionRepository,
+    TiendaNegocioOAuthService,
+  ],
   exports: [TiendaNegocioApiService],
 })
 export class TiendaNegocioModule {}
