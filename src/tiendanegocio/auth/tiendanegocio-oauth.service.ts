@@ -19,6 +19,14 @@ export class TiendaNegocioOAuthService {
     private readonly connections: TiendaNegocioConnectionRepository,
   ) {}
 
+  /** Solo muestra si el backend tiene las tres variables necesarias. */
+  isConfigured(): boolean {
+    const id = this.config.get<string>('TIENDANEGOCIO_APP_ID')?.trim();
+    const secret = this.config.get<string>('TIENDANEGOCIO_APP_SECRET')?.trim();
+    const handle = this.config.get<string>('TIENDANEGOCIO_APP_HANDLE')?.trim();
+    return Boolean(id && secret && handle && APP_HANDLE_PATTERN.test(handle));
+  }
+
   getInstallationUrl(): string {
     const handle = this.required('TIENDANEGOCIO_APP_HANDLE');
     if (!APP_HANDLE_PATTERN.test(handle)) {
