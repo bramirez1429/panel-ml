@@ -24,6 +24,16 @@ export type StockBulkPreviewRequest = Readonly<{
   sizes: readonly StockBulkSizeRequest[];
 }>;
 
+export type StockBulkCatalogRequest = Readonly<{
+  productType: StockBulkProductType;
+}>;
+
+export type StockBulkSelectionPreviewRequest = Readonly<{
+  productType: StockBulkProductType;
+  identifiers: readonly string[];
+  quantity: number;
+}>;
+
 export type StockBulkTarget = Readonly<{
   identifier: string;
   title: string | null;
@@ -145,6 +155,28 @@ export function parseStockBulkPreviewRequest(
   });
 
   return { productType: value.productType, sizes };
+}
+
+export function parseStockBulkCatalogRequest(value: unknown): StockBulkCatalogRequest {
+  if (!isRecord(value) || !isProductType(value.productType)) {
+    throw new BadRequestException('Producto inválido para stock masivo');
+  }
+  return { productType: value.productType };
+}
+
+export function parseStockBulkSelectionPreviewRequest(
+  value: unknown,
+): StockBulkSelectionPreviewRequest {
+  const { productType } = parseStockBulkCatalogRequest(value);
+  if (!isRecord(value) || !isQuantity(value.quantity) ||
+    !Array.isArray(value.identifiers) ||
+    value.identifiers.length < 1 || value.identifiers.length > MAX_TARGETS ||
+    !value.identifiers.every((identifier) => typeof identifier === 'string' && identifier.trim().length > 0) ||
+    new Set(value.identifiers).size !== value.identifiers.length
+  ) {
+    throw new BadRequestException('Seleccioná entre 1 y 1000 variantes únicas y un stock válido');
+  }
+  return { productType, identifiers: value.identifiers, quantity: value.quantity };
 }
 
 export function parseStockBulkJobRequest(value: unknown): StockBulkTarget[] {
