@@ -7,6 +7,7 @@ import { MercadolibreModule } from '../mercadolibre/mercadolibre.module';
 import { TiendanubeModule } from '../tiendanube/tiendanube.module';
 import { TiendaNegocioCatalogService } from './catalog/tiendanegocio-catalog.service';
 import { TiendaNegocioPreviewService } from './products/tiendanegocio-preview.service';
+import { TiendaNegocioImageService } from './images/tiendanegocio-image.service';
 import { TiendaNegocioApiService } from './shared/tiendanegocio-api.service';
 import { TiendaNegocioController } from './tiendanegocio.controller';
 
@@ -18,6 +19,7 @@ import { TiendaNegocioController } from './tiendanegocio.controller';
     TiendaNegocioCatalogService,
     TiendaNegocioApiService,
     TiendaNegocioPreviewService,
+    TiendaNegocioImageService,
     TiendaNegocioConnectionRepository,
     TiendaNegocioOAuthService,
   ],
