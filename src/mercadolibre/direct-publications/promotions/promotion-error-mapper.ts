@@ -111,7 +111,9 @@ function statusForCode(code: PromotionErrorCode): number {
   if (
     code === 'PROMOTION_NOT_APPLICABLE' ||
     code === 'PROMOTION_NOT_AVAILABLE_FOR_ALL_ITEMS' ||
-    code === 'PROMOTION_CHANGED_DURING_OPERATION'
+    code === 'PROMOTION_CHANGED_DURING_OPERATION' ||
+    code === 'PROMOTION_PAUSED_NOT_SUPPORTED' ||
+    code === 'PROMOTION_ITEM_STATUS_NOT_EDITABLE'
   )
     return HttpStatus.CONFLICT;
   return HttpStatus.BAD_GATEWAY;
@@ -119,6 +121,10 @@ function statusForCode(code: PromotionErrorCode): number {
 
 function messageForCode(code: PromotionErrorCode): string {
   const messages: Record<PromotionErrorCode, string> = {
+    PROMOTION_PAUSED_NOT_SUPPORTED:
+      'Mercado Libre no permite aplicar esta promoción a publicaciones pausadas',
+    PROMOTION_ITEM_STATUS_NOT_EDITABLE:
+      'El estado de la publicación no permite modificar esta promoción',
     PROMOTION_NOT_FOUND: 'La promoción o publicación ya no existe',
     PROMOTION_NOT_APPLICABLE: 'La promoción ya no es aplicable',
     PROMOTION_NOT_AVAILABLE_FOR_ALL_ITEMS:

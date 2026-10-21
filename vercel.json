@@ -30,6 +30,19 @@
           "initialDelaySeconds": 0
         }
       ]
+    },
+    "api/queues/tiendanube-global-migration.ts": {
+      "experimentalTriggers": [
+        {
+          "type": "queue/v2beta",
+          "topic": "tiendanube-global-migration",
+          "retryAfterSeconds": 180,
+          "initialDelaySeconds": 0
+        }
+      ]
+    },
+    "api/queues/tiendanube-bulk-edit.ts": {
+      "experimentalTriggers": [{ "type": "queue/v2beta", "topic": "tiendanube-bulk-edit", "retryAfterSeconds": 180, "initialDelaySeconds": 0 }]
     }
   }
 }

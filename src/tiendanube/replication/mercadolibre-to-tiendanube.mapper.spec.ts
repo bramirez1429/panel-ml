@@ -1,6 +1,7 @@
-import { BadGatewayException } from '@nestjs/common';
-
-import { MercadoLibreToTiendanubeMapper } from './mercadolibre-to-tiendanube.mapper';
+import {
+  MercadoLibreToTiendanubeMapper,
+  TiendanubeProductValidationError,
+} from './mercadolibre-to-tiendanube.mapper';
 import type { ReplicableProduct } from './tiendanube-replication.types';
 
 const COLOR_TALLE_PRODUCT: ReplicableProduct = {
@@ -291,10 +292,11 @@ describe('MercadoLibreToTiendanubeMapper', () => {
       caught = error;
     }
 
-    expect(caught).toBeInstanceOf(BadGatewayException);
+    expect(caught).toBeInstanceOf(TiendanubeProductValidationError);
     expect(caught).toMatchObject({
-      status: 502,
-      message: 'No se pudo construir el producto para Tiendanube',
+      code: 'VARIANT_PRICE_INVALID',
+      message:
+        'No se pudo construir el producto para Tiendanube: VARIANT_PRICE_INVALID',
     });
     expect(JSON.stringify(caught)).not.toContain(privateValue);
   });
@@ -302,6 +304,6 @@ describe('MercadoLibreToTiendanubeMapper', () => {
 
 function expectControlledFailure(value: unknown): void {
   expect(() => MercadoLibreToTiendanubeMapper.map(value)).toThrow(
-    BadGatewayException,
+    TiendanubeProductValidationError,
   );
 }

@@ -25,7 +25,7 @@ const PRIVATE_FIELDS = new Set([
   'refreshtoken',
 ]);
 
-type TiendanubeHttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
+type TiendanubeHttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 type TiendanubeRequest = Readonly<{
   method: TiendanubeHttpMethod;
@@ -96,6 +96,19 @@ export class TiendanubeApiService {
   ): Promise<T | undefined> {
     return this.requestJson<T>(storeId, path, {
       method: 'PUT',
+      accessToken,
+      body,
+    });
+  }
+
+  patch<T>(
+    storeId: string | number,
+    path: string,
+    body: unknown,
+    accessToken?: string,
+  ): Promise<T | undefined> {
+    return this.requestJson<T>(storeId, path, {
+      method: 'PATCH',
       accessToken,
       body,
     });

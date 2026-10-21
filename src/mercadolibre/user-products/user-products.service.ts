@@ -1,6 +1,7 @@
 import { BadGatewayException, Injectable } from '@nestjs/common';
 import {
   MercadolibreApiService,
+  type MercadolibreApiRequestOptions,
   sanitizeMercadoLibreData,
 } from '../shared/mercadolibre-api.service';
 import { isJsonObject, isNonEmptyString } from '../shared/mercadolibre.types';
@@ -15,6 +16,7 @@ export class UserProductsService {
   async getUserProduct(
     userProductId: string,
     accessToken: string,
+    options?: MercadolibreApiRequestOptions,
   ): Promise<MercadoLibreUserProduct> {
     const id = normalizeUserProductId(userProductId);
     if (!id) throw new BadGatewayException('User Product inválido');
@@ -22,6 +24,8 @@ export class UserProductsService {
     const data = await this.apiService.get<unknown>(
       `/user-products/${encodeURIComponent(id)}`,
       accessToken,
+      undefined,
+      options,
     );
     if (!isJsonObject(data) || data.id !== id) {
       throw new BadGatewayException('Respuesta de User Product inválida');

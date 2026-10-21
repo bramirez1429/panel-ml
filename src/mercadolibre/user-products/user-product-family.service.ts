@@ -1,5 +1,8 @@
 import { BadGatewayException, Injectable } from '@nestjs/common';
-import { MercadolibreApiService } from '../shared/mercadolibre-api.service';
+import {
+  MercadolibreApiService,
+  type MercadolibreApiRequestOptions,
+} from '../shared/mercadolibre-api.service';
 import {
   isJsonObject,
   isNonEmptyString,
@@ -37,13 +40,18 @@ export class UserProductFamilyService {
     userProductId: string,
     accessToken: string,
     cache: UserProductFamilyCache,
+    options?: MercadolibreApiRequestOptions,
   ): Promise<MercadoLibreUserProduct> {
     const id = normalizeUserProductId(userProductId);
     if (!id) throw new BadGatewayException('User Product inválido');
     const cached = cache.userProducts.get(id);
     if (cached) return cached;
 
-    const request = this.userProductsService.getUserProduct(id, accessToken);
+    const request = this.userProductsService.getUserProduct(
+      id,
+      accessToken,
+      options,
+    );
     cache.userProducts.set(id, request);
     return request;
   }
@@ -53,6 +61,7 @@ export class UserProductFamilyService {
     familyId: string,
     accessToken: string,
     cache: UserProductFamilyCache,
+    options?: MercadolibreApiRequestOptions,
   ): Promise<UserProductFamily> {
     const id = normalizeFamilyId(familyId);
     if (!id) throw new BadGatewayException('family_id inválido');
@@ -60,7 +69,7 @@ export class UserProductFamilyService {
     const cached = cache.families.get(id);
     if (cached) return cached;
 
-    const request = this.fetchFamily(id, accessToken);
+    const request = this.fetchFamily(id, accessToken, options);
     cache.families.set(id, request);
     const family = await request;
     for (const userProductId of family.userProductIds) {
@@ -74,10 +83,16 @@ export class UserProductFamilyService {
     userProductId: string,
     accessToken: string,
     cache: UserProductFamilyCache,
+    options?: MercadolibreApiRequestOptions,
   ): Promise<ResolvedUserProductFamily> {
     const id = normalizeUserProductId(userProductId);
     if (!id) throw new BadGatewayException('User Product inválido');
-    const userProductPromise = this.getUserProduct(id, accessToken, cache);
+    const userProductPromise = this.getUserProduct(
+      id,
+      accessToken,
+      cache,
+      options,
+    );
     const knownFamily = cache.familyByUserProduct.get(id);
     const userProduct = await userProductPromise;
     const family = knownFamily
@@ -86,6 +101,7 @@ export class UserProductFamilyService {
           requireFamilyId(userProduct.family_id),
           accessToken,
           cache,
+          options,
         );
 
     if (!family.userProductIds.includes(userProduct.id)) {
@@ -106,10 +122,13 @@ export class UserProductFamilyService {
   private async fetchFamily(
     familyId: string,
     accessToken: string,
+    options?: MercadolibreApiRequestOptions,
   ): Promise<UserProductFamily> {
     const data = await this.apiService.get<unknown>(
       `/sites/${SITE_ID}/user-products-families/${encodeURIComponent(familyId)}`,
       accessToken,
+      undefined,
+      options,
     );
     if (!isJsonObject(data)) throw invalidFamilyResponse();
 

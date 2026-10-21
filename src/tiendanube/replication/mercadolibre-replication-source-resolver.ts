@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import { MercadoLibreToTiendanubeMapper } from './mercadolibre-to-tiendanube.mapper';
 import { MercadoLibreReplicationNormalizerService } from './mercadolibre-replication-normalizer.service';
+import type { MercadolibreApiRequestOptions } from '../../mercadolibre/shared/mercadolibre-api.service';
 import type { TiendanubeCreateProductDto } from './tiendanube-replication.types';
 
 type SourceResult = Readonly<{
@@ -20,11 +21,13 @@ export class MercadoLibreReplicationSourceResolver {
     sourceKey: string,
     sellerId: number,
     accessToken: string,
+    options?: MercadolibreApiRequestOptions,
   ): Promise<SourceResult> {
     const normalized = await this.normalizer.normalize(
       sourceKey,
       sellerId,
       accessToken,
+      options,
     );
     return {
       sourceKey,

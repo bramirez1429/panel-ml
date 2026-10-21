@@ -157,6 +157,27 @@ export class SupabaseTiendanubeProductLinkRepository extends TiendanubeProductLi
     }
   }
 
+  async completeReconciledBySource(input: {
+    userId: string;
+    storeId: string;
+    sourceKey: string;
+    tiendanubeProductId: string;
+  }): Promise<void> {
+    try {
+      const { data, error } = await this.supabaseService
+        .getClient()
+        .rpc('complete_reconciled_tiendanube_product_link_by_source', {
+          p_user_id: input.userId,
+          p_store_id: input.storeId,
+          p_ml_source_key: input.sourceKey,
+          p_tiendanube_product_id: input.tiendanubeProductId,
+        });
+      if (error || data !== true) this.sourceLinkError();
+    } catch {
+      this.sourceLinkError();
+    }
+  }
+
   async saveSourceLink(input: {
     userId: string;
     storeId: string;

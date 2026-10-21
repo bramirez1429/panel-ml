@@ -32,6 +32,15 @@ import { TiendanubeCategoriesController } from './categories/tiendanube-categori
 import { TiendanubeCategoriesService } from './categories/tiendanube-categories.service';
 import { WorkspaceModule } from '../workspaces/workspace.module';
 import { TiendanubeReplicationPreviewService } from './replication/tiendanube-replication-preview.service';
+import { TiendanubeMigrationController } from './migration/tiendanube-migration.controller';
+import { TiendanubeMigrationDiscoveryService } from './migration/tiendanube-migration-discovery.service';
+import { TiendanubeMigrationQueue } from './migration/tiendanube-migration.queue';
+import { SupabaseTiendanubeMigrationRepository } from './migration/supabase-tiendanube-migration.repository';
+import { TiendanubeMigrationService } from './migration/tiendanube-migration.service';
+import { TiendanubeBulkEditController } from './bulk-edit/tiendanube-bulk-edit.controller';
+import { TiendanubeBulkEditService } from './bulk-edit/tiendanube-bulk-edit.service';
+import { TiendanubeBulkEditRepository } from './bulk-edit/tiendanube-bulk-edit.repository';
+import { TiendanubeBulkEditQueue } from './bulk-edit/tiendanube-bulk-edit.queue';
 
 @Module({
   imports: [
@@ -48,6 +57,8 @@ import { TiendanubeReplicationPreviewService } from './replication/tiendanube-re
     TiendanubeReplicationController,
     TiendanubeReplicationUpsertController,
     TiendanubeCategoriesController,
+    TiendanubeMigrationController,
+    TiendanubeBulkEditController,
   ],
   providers: [
     SupabaseService,
@@ -67,6 +78,13 @@ import { TiendanubeReplicationPreviewService } from './replication/tiendanube-re
     TiendanubeExistingProductSyncService,
     TiendanubeSourceReplicationService,
     TiendanubeReplicationPreviewService,
+    SupabaseTiendanubeMigrationRepository,
+    TiendanubeMigrationDiscoveryService,
+    TiendanubeMigrationService,
+    TiendanubeMigrationQueue,
+    TiendanubeBulkEditService,
+    TiendanubeBulkEditRepository,
+    TiendanubeBulkEditQueue,
     {
       provide: TiendanubeConnectionRepository,
       useClass: SupabaseTiendanubeConnectionRepository,

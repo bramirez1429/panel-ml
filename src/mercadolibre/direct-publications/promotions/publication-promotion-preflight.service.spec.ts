@@ -74,6 +74,28 @@ describe('PublicationPromotionPreflightService', () => {
       });
     },
   );
+
+  it('reporta una publicación pausada como incompatible sin aplicarla', async () => {
+    const promotions = promotionMock(() => [candidate()]);
+    const service = new PublicationPromotionPreflightService(
+      promotions as unknown as PromotionsService,
+    );
+    const paused: ResolvedPromotionSource = {
+      ...source(1),
+      items: [
+        {
+          ...source(1).items[0]!,
+          item: { id: 'MLA1', status: 'paused', price: 100 },
+        },
+      ],
+    };
+    await expect(service.preview('user', paused, REQUEST)).resolves.toMatchObject({
+      applicableItems: 0,
+      unavailableItems: 1,
+      items: [{ itemId: 'MLA1', applicable: false, unavailableReason: 'PROMOTION_PAUSED_NOT_SUPPORTED' }],
+    });
+    expect(promotions.getPromotionsStrict).not.toHaveBeenCalled();
+  });
 });
 
 function source(count: number): ResolvedPromotionSource {
@@ -81,7 +103,7 @@ function source(count: number): ResolvedPromotionSource {
     sourceKey: 'family:123',
     accessToken: 'token',
     items: Array.from({ length: count }, (_, index) => ({
-      item: { id: `MLA${index + 1}`, family_id: 123, price: 100 },
+      item: { id: `MLA${index + 1}`, family_id: 123, price: 100, status: 'active' },
       publication: {
         type: 'NEW' as const,
         familyId: '123',

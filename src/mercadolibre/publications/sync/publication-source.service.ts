@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import {
   MercadolibreApiService,
+  type MercadolibreApiRequestOptions,
   sanitizeMercadoLibreData,
 } from '../../shared/mercadolibre-api.service';
 import {
@@ -45,12 +46,14 @@ export class PublicationSourceService {
     sellerId: number,
     accessToken: string,
     scrollId?: string,
+    status?: 'active' | 'paused',
   ): Promise<PublicationScanPage> {
     const query = new URLSearchParams({
       search_type: 'scan',
       limit: String(PUBLICATION_SCAN_SIZE),
     });
     if (scrollId) query.set('scroll_id', scrollId);
+    if (status) query.set('status', status);
 
     const data = await this.apiService.get<unknown>(
       `/users/${sellerId}/items/search?${query.toString()}`,
@@ -65,10 +68,7 @@ export class PublicationSourceService {
   }
 
   /** Obtiene el total real de publicaciones sin recorrer el catÃ¡logo. */
-  async getItemsTotal(
-    sellerId: number,
-    accessToken: string,
-  ): Promise<number> {
+  async getItemsTotal(sellerId: number, accessToken: string): Promise<number> {
     const query = new URLSearchParams({
       search_type: 'scan',
       limit: '1',
@@ -182,7 +182,11 @@ export class PublicationSourceService {
       publications: [...parsed.publications, ...recovered.publications],
       errors: [...parsed.errors, ...recovered.errors],
     };
-    this.logBulkResult(parsed, recovered.publications.length, result.errors.length);
+    this.logBulkResult(
+      parsed,
+      recovered.publications.length,
+      result.errors.length,
+    );
     return result;
   }
 
@@ -262,8 +266,9 @@ export class PublicationSourceService {
   async getItemWithAllAttributes(
     itemId: string,
     accessToken: string,
+    options?: MercadolibreApiRequestOptions,
   ): Promise<MercadoLibrePublication> {
-    return this.getValidatedItem(itemId, accessToken, true);
+    return this.getValidatedItem(itemId, accessToken, true, options);
   }
 
   /** Comparte validación y saneamiento entre las lecturas individuales. */
@@ -271,6 +276,7 @@ export class PublicationSourceService {
     itemId: string,
     accessToken: string,
     includeAllAttributes: boolean,
+    options?: MercadolibreApiRequestOptions,
   ): Promise<MercadoLibrePublication> {
     if (!/^MLA\d+$/.test(itemId)) {
       throw new BadRequestException('itemId debe comenzar con MLA');
@@ -280,6 +286,7 @@ export class PublicationSourceService {
       `/items/${encodeURIComponent(itemId)}${suffix}`,
       accessToken,
       'itemLookup',
+      options,
     );
     if (!isJsonObject(data) || data.id !== itemId) {
       throw new BadGatewayException('Respuesta de publicación inválida');
@@ -292,6 +299,7 @@ export class PublicationSourceService {
     sellerId: number,
     userProductIds: string[],
     accessToken: string,
+    options?: MercadolibreApiRequestOptions,
   ): Promise<string[]> {
     const ids = normalizeUserProductIds(userProductIds);
     if (ids.length === 0) return [];
@@ -309,7 +317,7 @@ export class PublicationSourceService {
       );
       const results = await Promise.all(
         current.map((batch) =>
-          this.searchItemsByUserProducts(sellerId, batch, accessToken),
+          this.searchItemsByUserProducts(sellerId, batch, accessToken, options),
         ),
       );
       for (const itemId of results.flat()) itemIds.add(itemId);
@@ -322,6 +330,7 @@ export class PublicationSourceService {
     sellerId: number,
     userProductIds: string[],
     accessToken: string,
+    options?: MercadolibreApiRequestOptions,
   ): Promise<string[]> {
     const itemIds = new Set<string>();
     let offset = 0;
@@ -334,6 +343,8 @@ export class PublicationSourceService {
       const data = await this.apiService.get<unknown>(
         `/users/${sellerId}/items/search?${query.toString()}`,
         accessToken,
+        undefined,
+        options,
       );
       const pageIds = parseSearchIds(data);
       const total = parseSearchTotal(data);

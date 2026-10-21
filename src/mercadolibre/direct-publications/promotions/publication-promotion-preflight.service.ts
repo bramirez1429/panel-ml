@@ -30,6 +30,21 @@ export class PublicationPromotionPreflightService {
       source.items,
       PREFLIGHT_CONCURRENCY,
       async ({ item }) => {
+        const statusReason = promotionStatusReason(item.status);
+        if (statusReason) {
+          return {
+            itemId: item.id,
+            price:
+              typeof item.price === 'number' && Number.isFinite(item.price)
+                ? item.price
+                : null,
+            activePromotion: null,
+            candidates: [],
+            requestedCandidate: null,
+            applicable: false,
+            unavailableReason: statusReason,
+          };
+        }
         const promotions = await this.promotionsService.getPromotionsStrict(
           userId,
           item.id,
@@ -78,6 +93,15 @@ export class PublicationPromotionPreflightService {
       items,
     };
   }
+}
+
+function promotionStatusReason(
+  status: string | undefined,
+): 'PROMOTION_PAUSED_NOT_SUPPORTED' | 'PROMOTION_ITEM_STATUS_NOT_EDITABLE' | null {
+  if (status === 'active') return null;
+  return status === 'paused'
+    ? 'PROMOTION_PAUSED_NOT_SUPPORTED'
+    : 'PROMOTION_ITEM_STATUS_NOT_EDITABLE';
 }
 
 function canRemovePromotion(promotion: {

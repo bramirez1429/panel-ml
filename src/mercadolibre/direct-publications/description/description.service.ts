@@ -6,7 +6,10 @@ import {
 } from '@nestjs/common';
 
 import { MercadolibreTokenService } from '../../auth/mercadolibre-token.service';
-import { MercadolibreApiService } from '../../shared/mercadolibre-api.service';
+import {
+  MercadolibreApiService,
+  type MercadolibreApiRequestOptions,
+} from '../../shared/mercadolibre-api.service';
 import { isJsonObject } from '../../shared/mercadolibre.types';
 
 import { ItemsService } from '../items/items.service';
@@ -88,13 +91,18 @@ export class DescriptionService {
   async getPlainTextByItemId(
     itemId: string,
     accessToken: string,
+    options?: MercadolibreApiRequestOptions,
   ): Promise<string | null> {
     if (!/^MLA\d+$/.test(itemId)) {
       throw new BadRequestException('itemId debe comenzar con MLA');
     }
 
     try {
-      const description = await this.getDescription(itemId, accessToken);
+      const description = await this.getDescription(
+        itemId,
+        accessToken,
+        options,
+      );
       if (!isJsonObject(description)) {
         throw new BadGatewayException(
           'Mercado Libre devolvió una descripción inválida',
@@ -160,12 +168,17 @@ export class DescriptionService {
   private getDescription(
     itemId: string,
     accessToken: string,
+    options?: MercadolibreApiRequestOptions,
   ): Promise<MlDescription> {
-    return this.apiService.get<MlDescription>(
-      `/items/${encodeURIComponent(itemId)}/description`,
-      accessToken,
-      'description',
-    );
+    const path = `/items/${encodeURIComponent(itemId)}/description`;
+    return options
+      ? this.apiService.get<MlDescription>(
+          path,
+          accessToken,
+          'description',
+          options,
+        )
+      : this.apiService.get<MlDescription>(path, accessToken, 'description');
   }
 
   private createDescription(
