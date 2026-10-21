@@ -17,6 +17,8 @@ import { StockBulkPreviewService } from './stock-bulk-preview.service';
 import {
   parseStockBulkJobRequest,
   parseStockBulkPreviewRequest,
+  parseStockBulkCatalogRequest,
+  parseStockBulkSelectionPreviewRequest,
 } from './stock-bulk.types';
 
 @Controller('mercadolibre/direct/stock-bulk')
@@ -27,6 +29,19 @@ export class StockBulkController {
     private readonly jobService: StockBulkJobService,
     private readonly dispatcher: StockBulkDispatcher,
   ) {}
+
+  @Post('catalog')
+  catalog(@CurrentUser() user: SafeUser, @Body() body: unknown) {
+    return this.previewService.catalog(user.id, parseStockBulkCatalogRequest(body));
+  }
+
+  @Post('selection-preview')
+  selectionPreview(@CurrentUser() user: SafeUser, @Body() body: unknown) {
+    return this.previewService.selectionPreview(
+      user.id,
+      parseStockBulkSelectionPreviewRequest(body),
+    );
+  }
 
   @Post('preview')
   preview(@CurrentUser() user: SafeUser, @Body() body: unknown) {
