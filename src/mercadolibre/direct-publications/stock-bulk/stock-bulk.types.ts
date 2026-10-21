@@ -40,6 +40,8 @@ export type StockBulkTarget = Readonly<{
   color: string | null;
   size: string;
   itemId: string;
+  /** Todos los MLA que representan este mismo inventario. */
+  relatedItemIds?: readonly string[];
   userProductId: string | null;
   variationId: string | null;
   familyId: string | null;
