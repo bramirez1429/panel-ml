@@ -53,6 +53,20 @@ describe('Stock masivo: catálogo y selección por categoría', () => {
           { id: 'SIZE', value_name: '42' },
           { id: 'COLOR', value_name: 'Negro' },
         ],
+      }, {
+        id: 'MLA21',
+        title: 'Buzo Mujer oferta alternativa',
+        domain_id: 'MLA-SWEATSHIRTS_AND_HOODIES',
+        status: 'active',
+        price: 52000,
+        family_id: 999,
+        user_product_id: 'MLAU20',
+        available_quantity: 3,
+        attributes: [
+          { id: 'GENDER', value_name: 'Mujer' },
+          { id: 'SIZE', value_name: '42' },
+          { id: 'COLOR', value_name: 'Negro' },
+        ],
       }]);
       return { reachedEnd: true, nextScrollId: null };
     }),
@@ -85,6 +99,8 @@ describe('Stock masivo: catálogo y selección por categoría', () => {
       ['Negro', '40'], ['Crema', '44'], ['Negro', '42'],
     ]);
     expect(result.results.map(({ currentQuantity }) => currentQuantity)).toEqual([0, 5, 3]);
+    expect(result.results.find(({ identifier }) => identifier === 'MLAU20')?.relatedItemIds)
+      .toEqual(['MLA20', 'MLA21']);
     expect(result.results.every(({ needsChange }) => !needsChange)).toBe(true);
     expect(result.summary).toMatchObject({ totalFound: 3, legacy: 2, userProduct: 1 });
   });
