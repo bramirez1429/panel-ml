@@ -37,7 +37,7 @@ export class StockBulkPreviewService {
         return false;
       },
     );
-    const results = await this.previewStockService.resolve(accessToken, deduplicate(matches));
+    const results = await this.previewStockService.resolve(accessToken, deduplicateCatalog(matches));
     return { productType: request.productType, results, summary: summarize(results) };
   }
 
@@ -96,6 +96,21 @@ function deduplicate(targets: readonly StockBulkTarget[]): StockBulkTarget[] {
   return [
     ...new Map(targets.map((target) => [target.identifier, target])).values(),
   ];
+}
+
+/** Mantiene los MLA asociados sin repetir la misma actualización de stock. */
+function deduplicateCatalog(targets: readonly StockBulkTarget[]): StockBulkTarget[] {
+  const unique = new Map<string, StockBulkTarget>();
+  for (const target of targets) {
+    const previous = unique.get(target.identifier);
+    unique.set(target.identifier, {
+      ...(previous ?? target),
+      relatedItemIds: [
+        ...new Set([...(previous?.relatedItemIds ?? []), target.itemId]),
+      ],
+    });
+  }
+  return [...unique.values()];
 }
 
 function summarize(results: readonly StockBulkTarget[]) {
