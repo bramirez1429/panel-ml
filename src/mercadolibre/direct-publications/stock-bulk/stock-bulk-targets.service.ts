@@ -70,6 +70,48 @@ export class StockBulkTargetsService {
     return deduplicate(targets);
   }
 
+  /** Catálogo completo, sin exigir un talle o cantidad antes de buscar. */
+  collectCatalog(
+    items: readonly MlItem[],
+    productType: StockBulkPreviewRequest['productType'],
+  ): StockBulkTarget[] {
+    const targets: StockBulkTarget[] = [];
+    for (const item of items) {
+      if (item.status !== 'active' || !matchesProductType(item, productType)) continue;
+      if (PublicationsMapper.getModel(item) === 'VARIANT_PRICING') {
+        const size = attributeValue(item.attributes, SIZE_IDS) ?? 'Único';
+        targets.push(this.userProduct(item, {
+          size,
+          quantity: quantity(item.available_quantity),
+        }));
+        continue;
+      }
+
+      const variations = legacyVariations(item.variations);
+      if (variations.length === 0) {
+        const size = attributeValue(item.attributes, SIZE_IDS) ?? 'Único';
+        targets.push(this.legacy(item, null, {
+          size,
+          quantity: quantity(item.available_quantity),
+        }));
+        continue;
+      }
+      for (const variation of variations) {
+        const attributes = [
+          ...(variation.attribute_combinations ?? []),
+          ...(variation.attributes ?? []),
+          ...(item.attributes ?? []),
+        ];
+        const size = attributeValue(attributes, SIZE_IDS) ?? 'Único';
+        targets.push(this.legacy(item, variation, {
+          size,
+          quantity: quantity(variation.available_quantity ?? item.available_quantity),
+        }));
+      }
+    }
+    return targets;
+  }
+
   private userProduct(
     item: MlItem,
     request: { size: string; quantity: number },
@@ -113,6 +155,7 @@ export class StockBulkTargetsService {
       ? [
           ...(variation.attribute_combinations ?? []),
           ...(variation.attributes ?? []),
+          ...(item.attributes ?? []),
         ]
       : item.attributes;
     const currentQuantity = quantity(
