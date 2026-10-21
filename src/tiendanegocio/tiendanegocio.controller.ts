@@ -44,12 +44,20 @@ export class TiendaNegocioController {
   @Get('estado')
   @Header('Cache-Control', 'no-store')
   async status(@CurrentUser() user: SafeUser) {
-    const connection = await this.connections.get(user.id);
+    const authorizationConfigured = this.oauth.isConfigured();
+    // La UI puede mostrarse antes de crear las tablas SQL y las credenciales:
+    // no necesitamos consultar la base cuando todavía falta configurar OAuth.
+    const connection = authorizationConfigured
+      ? await this.connections.get(user.id)
+      : null;
     return {
       connected: connection !== null,
       storeId: connection?.store_id ?? null,
+      authorizationConfigured,
       migrationEnabled: false,
-      stage: connection ? 'MIGRATION_SETUP_REQUIRED' : 'OAUTH_SETUP_REQUIRED',
+      stage: connection
+        ? 'MIGRATION_SETUP_REQUIRED'
+        : authorizationConfigured ? 'AUTHORIZATION_PENDING' : 'OAUTH_SETUP_REQUIRED',
       documentation: 'https://docs.developers.tiendanegocio.com/docs/app',
     };
   }
