@@ -7,6 +7,7 @@ import { AccessTokenGuard } from '../auth/presentation/access-token.guard';
 import { CurrentUser } from '../auth/presentation/current-user.decorator';
 import { TiendaNegocioOAuthService } from './auth/tiendanegocio-oauth.service';
 import { TiendaNegocioCatalogService } from './catalog/tiendanegocio-catalog.service';
+import { TiendaNegocioPreviewService } from './products/tiendanegocio-preview.service';
 import { TiendaNegocioConnectionRepository } from './connections/tiendanegocio-connection.repository';
 
 @Controller('tienda-negocio/sincronizacion')
@@ -14,6 +15,7 @@ import { TiendaNegocioConnectionRepository } from './connections/tiendanegocio-c
 export class TiendaNegocioController {
   constructor(
     private readonly catalog: TiendaNegocioCatalogService,
+    private readonly preview: TiendaNegocioPreviewService,
     private readonly connections: TiendaNegocioConnectionRepository,
     private readonly oauth: TiendaNegocioOAuthService,
   ) {}
@@ -25,6 +27,18 @@ export class TiendaNegocioController {
       throw new BadRequestException('Cursor de Mercado Libre inválido');
     }
     return this.catalog.getPage(user.id, cursor ?? null);
+  }
+
+  @Get('vista-previa')
+  @Header('Cache-Control', 'no-store')
+  previewSource(
+    @CurrentUser() user: SafeUser,
+    @Query('sourceKey') sourceKey?: string,
+  ) {
+    if (!sourceKey || sourceKey.length > 150) {
+      throw new BadRequestException('Publicación inválida');
+    }
+    return this.preview.preview(user.id, sourceKey);
   }
 
   @Get('estado')
