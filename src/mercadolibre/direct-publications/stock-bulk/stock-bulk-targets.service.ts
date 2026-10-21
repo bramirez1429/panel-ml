@@ -109,7 +109,7 @@ export class StockBulkTargetsService {
         }));
       }
     }
-    return deduplicate(targets);
+    return targets;
   }
 
   private userProduct(
