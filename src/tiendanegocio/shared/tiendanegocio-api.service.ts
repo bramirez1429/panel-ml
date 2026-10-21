@@ -7,7 +7,7 @@ import {
 
 const API_BASE_URL = 'https://developers.tiendanegocio.com/v1';
 const REQUEST_TIMEOUT_MS = 20_000;
-const USER_AGENT = 'SAEL Panel (soporte@tiendanegocio.com)';
+const USER_AGENT = 'SAEL Panel (https://saeltendencia.online)';
 
 /** Cliente oficial de Tienda Negocio: token siempre privado, sin rutas externas. */
 @Injectable()
