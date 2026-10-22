@@ -11,7 +11,7 @@ describe('OAuth de Tienda Negocio', () => {
       TIENDANEGOCIO_APP_SECRET: 'private-value',
       TIENDANEGOCIO_APP_HANDLE: 'saelecommerce',
     })[key as 'TIENDANEGOCIO_APP_ID' | 'TIENDANEGOCIO_APP_SECRET' | 'TIENDANEGOCIO_APP_HANDLE'],
-  } as ConfigService;
+  } as unknown as ConfigService;
   const service = new TiendaNegocioOAuthService(
     config,
     { save } as unknown as TiendaNegocioConnectionRepository,
