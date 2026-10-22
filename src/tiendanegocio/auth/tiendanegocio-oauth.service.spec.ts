@@ -1,4 +1,4 @@
-import { BadGatewayException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import type { TiendaNegocioConnectionRepository } from '../connections/tiendanegocio-connection.repository';
 import { TiendaNegocioOAuthService } from './tiendanegocio-oauth.service';
@@ -52,5 +52,36 @@ describe('OAuth de Tienda Negocio', () => {
       .rejects.toBeInstanceOf(BadGatewayException);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(save).not.toHaveBeenCalled();
+  });
+
+  it.each([400, 422])('clasifica %i como código inválido, vencido o consumido', async (status) => {
+    globalThis.fetch = jest.fn().mockResolvedValue(new Response(null, { status }));
+    await expect(service.exchange('user-1', 'single-use-code')).rejects.toBeInstanceOf(BadRequestException);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it.each([401, 403, 500, 502, 503])('clasifica %i como fallo del proveedor o de credenciales', async (status) => {
+    globalThis.fetch = jest.fn().mockResolvedValue(new Response(null, { status }));
+    await expect(service.exchange('user-1', 'single-use-code')).rejects.toBeInstanceOf(BadGatewayException);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('no persiste si la respuesta exitosa no tiene JSON válido', async () => {
+    globalThis.fetch = jest.fn().mockResolvedValue(new Response('not-json', { status: 200 }));
+    await expect(service.exchange('user-1', 'single-use-code')).rejects.toBeInstanceOf(BadGatewayException);
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('mantiene el 503 de Supabase si persiste el token falla', async () => {
+    const failing = new ServiceUnavailableException('persistencia no disponible');
+    const repository = { save: jest.fn().mockRejectedValue(failing) } as unknown as TiendaNegocioConnectionRepository;
+    const failingService = new TiendaNegocioOAuthService(config, repository);
+    globalThis.fetch = jest.fn().mockResolvedValue(new Response(
+      JSON.stringify({ access_token: 'token-example-12345', client_id: 789 }),
+      { status: 200 },
+    ));
+    await expect(failingService.exchange('user-1', 'single-use-code')).rejects.toBe(failing);
   });
 });

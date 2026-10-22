@@ -2,6 +2,7 @@ import {
   BadGatewayException,
   BadRequestException,
   Injectable,
+  Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -18,6 +19,8 @@ const STORE_ID_PATTERN = /^[1-9]\d*$/;
 
 @Injectable()
 export class TiendaNegocioOAuthService {
+  private readonly logger = new Logger(TiendaNegocioOAuthService.name);
+
   constructor(
     private readonly config: ConfigService,
     private readonly connections: TiendaNegocioConnectionRepository,
@@ -64,10 +67,12 @@ export class TiendaNegocioOAuthService {
           signal: AbortSignal.timeout(12_000),
           cache: 'no-store',
         });
-      } catch {
+      } catch (error) {
+        this.logFailure('network_error', { error });
         throw new BadGatewayException('Error de red autorizando Tienda Negocio');
       }
       if (index === 0 && (response.status === 404 || response.status === 405)) {
+        this.logFailure('endpoint_unavailable', { status: response.status });
         continue;
       }
       break;
@@ -76,9 +81,16 @@ export class TiendaNegocioOAuthService {
       throw new BadGatewayException('No se pudo contactar a Tienda Negocio');
     }
     if (!response.ok) {
-      throw new BadGatewayException('No se pudo autorizar la aplicación en Tienda Negocio');
+      this.logFailure('token_exchange_rejected', { status: response.status });
+      throw this.exchangeFailure(response.status);
     }
-    const result: unknown = await response.json();
+    let result: unknown;
+    try {
+      result = await response.json();
+    } catch (error) {
+      this.logFailure('invalid_token_response', { error });
+      throw new BadGatewayException('Respuesta OAuth inválida de Tienda Negocio');
+    }
     if (!isRecord(result) || typeof result.access_token !== 'string' ||
       result.access_token.length < 12) {
       throw new BadGatewayException('Respuesta OAuth incompleta de Tienda Negocio');
@@ -87,13 +99,44 @@ export class TiendaNegocioOAuthService {
     if (!STORE_ID_PATTERN.test(storeId)) {
       throw new BadGatewayException('No se recibió el ID de tienda autorizado');
     }
-    await this.connections.save({
-      user_id: userId,
-      store_id: storeId,
-      access_token: result.access_token,
-      scope: typeof result.scope === 'string' ? result.scope : '',
-    });
+    try {
+      await this.connections.save({
+        user_id: userId,
+        store_id: storeId,
+        access_token: result.access_token,
+        scope: typeof result.scope === 'string' ? result.scope : '',
+      });
+    } catch (error) {
+      this.logFailure('connection_persistence_failed', { error });
+      throw error;
+    }
+    this.logger.log(JSON.stringify({ event: 'tiendanegocio_oauth_exchange_succeeded' }));
     return { storeId };
+  }
+
+  private exchangeFailure(status: number): BadGatewayException | BadRequestException {
+    if (status === 400 || status === 422) {
+      return new BadRequestException('Código OAuth inválido, vencido o ya utilizado');
+    }
+    if (status === 401 || status === 403) {
+      return new BadGatewayException('Tienda Negocio rechazó las credenciales de la aplicación');
+    }
+    if (status === 404 || status === 405) {
+      return new BadGatewayException('Endpoint OAuth de Tienda Negocio no disponible');
+    }
+    return new BadGatewayException('No se pudo autorizar la aplicación en Tienda Negocio');
+  }
+
+  private logFailure(
+    event: string,
+    context: { status?: number; error?: unknown },
+  ): void {
+    const errorName = context.error instanceof Error ? context.error.name : undefined;
+    this.logger.warn(JSON.stringify({
+      event: `tiendanegocio_oauth_${event}`,
+      ...(context.status ? { status: context.status } : {}),
+      ...(errorName ? { errorName } : {}),
+    }));
   }
 
   private required(key: string): string {
