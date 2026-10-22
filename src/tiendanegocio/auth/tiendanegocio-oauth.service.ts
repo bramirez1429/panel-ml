@@ -7,7 +7,11 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { TiendaNegocioConnectionRepository } from '../connections/tiendanegocio-connection.repository';
 
-const TOKEN_ENDPOINT = 'https://developers.tiendanegocio.com/v1/oauth/app/token';
+// La documentación oficial enumera dos hosts para el canje de OAuth.
+const TOKEN_ENDPOINTS = [
+  'https://developers.tiendanegocio.com/v1/oauth/app/token',
+  'https://api.tiendanegocio.com/referrer/api/v1/oauth/app/token',
+] as const;
 const INSTALL_URL = 'https://panel.tiendanegocio.com/';
 const APP_HANDLE_PATTERN = /^[a-z0-9][a-z0-9-]{1,80}$/;
 const STORE_ID_PATTERN = /^[1-9]\d*$/;
@@ -39,22 +43,37 @@ export class TiendaNegocioOAuthService {
     if (!code?.trim() || code.length > 4096) {
       throw new BadRequestException('Código de autorización inválido');
     }
-    let response: Response;
-    try {
-      response = await fetch(TOKEN_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({
-          client_id: this.required('TIENDANEGOCIO_APP_ID'),
-          client_secret: this.required('TIENDANEGOCIO_APP_SECRET'),
-          grant_type: 'authorization_code',
-          code: code.trim(),
-        }),
-        signal: AbortSignal.timeout(12_000),
-        cache: 'no-store',
-      });
-    } catch {
-      throw new BadGatewayException('Error de red autorizando Tienda Negocio');
+    // Solo probar la segunda ruta si la primera no existe.
+    // Nunca repetir el canje ante 400/401/403 ni tras un timeout:
+    // el código OAuth es de un solo uso y expira en 1 minuto.
+    let response: Response | null = null;
+    for (const [index, endpoint] of TOKEN_ENDPOINTS.entries()) {
+      try {
+        response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: JSON.stringify({
+            client_id: this.required('TIENDANEGOCIO_APP_ID'),
+            client_secret: this.required('TIENDANEGOCIO_APP_SECRET'),
+            grant_type: 'authorization_code',
+            code: code.trim(),
+          }),
+          signal: AbortSignal.timeout(12_000),
+          cache: 'no-store',
+        });
+      } catch {
+        throw new BadGatewayException('Error de red autorizando Tienda Negocio');
+      }
+      if (index === 0 && (response.status === 404 || response.status === 405)) {
+        continue;
+      }
+      break;
+    }
+    if (!response) {
+      throw new BadGatewayException('No se pudo contactar a Tienda Negocio');
     }
     if (!response.ok) {
       throw new BadGatewayException('No se pudo autorizar la aplicación en Tienda Negocio');
