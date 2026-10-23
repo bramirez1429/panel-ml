@@ -5,6 +5,7 @@ import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { MercadolibreModule } from './mercadolibre/mercadolibre.module';
 import { TiendanubeModule } from './tiendanube/tiendanube.module';
+import { TiendaNegocioModule } from './tiendanegocio/tiendanegocio.module';
 import { SalesModule } from './sales/sales.module';
 
 import { UsersModule } from './users/users.module';
@@ -16,6 +17,7 @@ import { UsersModule } from './users/users.module';
     AuthModule,
     MercadolibreModule,
     TiendanubeModule,
+    TiendaNegocioModule,
     SalesModule,
   ],
   controllers: [AppController],
