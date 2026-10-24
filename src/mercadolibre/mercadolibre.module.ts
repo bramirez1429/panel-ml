@@ -58,8 +58,6 @@ import { SellerCampaignController } from './direct-publications/promotions/selle
 import { SmartPromotionController } from './direct-publications/promotions/smart-promotion.controller';
 import { PromotionManagerController } from './direct-publications/promotions/promotion-manager.controller';
 import { PromotionsCatalogController } from './direct-publications/promotions/promotions-catalog.controller';
-import { PromotionsSnapshotController } from './direct-publications/promotions/promotions-snapshot.controller';
-import { PromotionsSnapshotService } from './direct-publications/promotions/promotions-snapshot.service';
 import { PromotionsCatalogService } from './direct-publications/promotions/promotions-catalog.service';
 import { PromotionsCampaignsService } from './direct-publications/promotions/promotions-campaigns.service';
 import { MercadoLibreSellingFeeService } from './direct-publications/promotions/mercadolibre-selling-fee.service';
@@ -131,7 +129,6 @@ import { PublicationSyncController } from './publications/sync/publication-sync.
     SmartPromotionController,
     PromotionManagerController,
     PromotionsCatalogController,
-    PromotionsSnapshotController,
     SimilarPublicationController,
     ProductRankingController,
     StockBulkController,
@@ -195,7 +192,6 @@ import { PublicationSyncController } from './publications/sync/publication-sync.
     SmartPromotionService,
     PromotionManagerService,
     PromotionsCatalogService,
-    PromotionsSnapshotService,
     PromotionsCampaignsService,
     MercadoLibreSellingFeeService,
     PromotionOptionsService,
