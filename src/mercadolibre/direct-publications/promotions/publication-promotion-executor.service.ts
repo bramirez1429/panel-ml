@@ -61,12 +61,7 @@ export class PublicationPromotionExecutorService {
         context.request,
       );
       if (existingParticipation) {
-        return {
-          itemId,
-          success: true,
-          stage: 'COMPLETED',
-          promotionStatus: existingParticipation.status,
-        };
+        return this.confirmMatchingParticipation(itemId, existingParticipation, context.request);
       }
       const candidate = findRequestedCandidate(
         current.candidates,
@@ -106,12 +101,7 @@ export class PublicationPromotionExecutorService {
         context.request,
       );
       if (concurrentParticipation) {
-        return {
-          itemId,
-          success: true,
-          stage: 'COMPLETED',
-          promotionStatus: concurrentParticipation.status,
-        };
+        return this.confirmMatchingParticipation(itemId, concurrentParticipation, context.request);
       }
       if (!findRequestedCandidate(current.candidates, context.request)) {
         throw promotionError(
@@ -120,15 +110,18 @@ export class PublicationPromotionExecutorService {
         );
       }
       stage = 'APPLICATION';
-      const reconciledStatus = await this.applySafely(context);
-      const diagnosticStatus =
-        reconciledStatus ?? (await this.readParticipation(context));
-      return {
-        itemId,
-        success: true,
-        stage: 'COMPLETED',
-        ...(diagnosticStatus ? { promotionStatus: diagnosticStatus } : {}),
-      };
+      await this.applySafely(context);
+      stage = 'APPLICATION_VERIFICATION';
+      const stateAfter = await this.waitUntil(context.userId, itemId, context.accessToken, (state) => {
+        const participation = findConfirmedParticipation(state, context.request);
+        if (!participation) return false;
+        if (!('dealPrice' in context.request)) return true;
+        return typeof participation.promotion.price === 'number'
+          && equalPrice(participation.promotion.price, context.request.dealPrice);
+      });
+      const participation = findConfirmedParticipation(stateAfter, context.request);
+      if (!participation) throw promotionError('PROMOTION_VERIFICATION_FAILED', 'No se confirmó la promoción.');
+      return this.confirmMatchingParticipation(itemId, participation, context.request);
     } catch (error) {
       const providerMessage = promotionProviderMessage(error);
       const providerStatus = promotionProviderStatus(error);
@@ -141,6 +134,24 @@ export class PublicationPromotionExecutorService {
         ...(providerStatus ? { providerStatus } : {}),
       };
     }
+  }
+
+  private confirmMatchingParticipation(
+    itemId: string,
+    participation: Readonly<{ promotion: ManagedActivePromotion; status: 'pending' | 'started' }>,
+    request: PromotionExecutionContext['request'],
+  ): PromotionItemResult {
+    const price = participation.promotion.price;
+    if ('dealPrice' in request && (typeof price !== 'number' || !equalPrice(price, request.dealPrice))) {
+      throw promotionError(
+        'PROMOTION_CHANGED_DURING_OPERATION',
+        'La promoción existe, pero su precio no coincide con el solicitado. Actualizá los datos antes de continuar.',
+      );
+    }
+    return { itemId, success: true, stage: 'COMPLETED',
+      promotionStatus: participation.status,
+      ...(typeof price === 'number' ? { confirmedPrice: price,
+        buyerPrice: participation.promotion.total_price_for_boosted_offer ?? price } : {}) };
   }
 
   async updatePrice(context: PromotionExecutionContext & { request: PromotionPriceUpdateRequest }): Promise<PromotionItemResult> {
