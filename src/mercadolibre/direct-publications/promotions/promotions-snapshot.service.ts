@@ -157,6 +157,7 @@ export function productGroupOf(
 ): PromotionProductGroup | null {
   const value = (title + ' ' + (familyName ?? ''))
     .normalize('NFD').replace(/\p{M}+/gu, '').toUpperCase();
+  if (/\b(ZAPATO|ZAPATOS|CALZADO|CARTERA|PANTALON|JEAN)\b/u.test(value)) return null;
   const garment = /\b(BUZO|BUZOS|SUDADERA|HOODIE|SWEATSHIRT)\b/u.test(value)
     ? 'SWEATSHIRT'
     : /\b(REMERA|REMERAS|CAMISETA|TSHIRT|T-SHIRT|PACK)\b/u.test(value)
