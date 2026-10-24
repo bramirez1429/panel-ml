@@ -53,6 +53,11 @@ export class PromotionsCatalogService {
       userId,
       connection,
     );
+    if (query.lightweight && !query.promotionStatus && !query.promotionType) {
+      return this.getLightweightCatalog(
+        connection.seller_id, accessToken, query, offset, target,
+      );
+    }
     const collected = await this.collectPage(
       userId,
       connection.seller_id,
@@ -91,6 +96,15 @@ export class PromotionsCatalogService {
         ? [candidate]
         : [];
     });
+    if (query.lightweight && !query.promotionStatus && !query.promotionType) {
+      const publications = candidates.map((candidate) => this.toLightweightRow(candidate));
+      return {
+        done: search.done,
+        nextCursor: search.nextCursor,
+        count: publications.length,
+        publications,
+      };
+    }
     const matches = await this.loadPromotionMatches(
       userId,
       search.accessToken,
@@ -103,6 +117,70 @@ export class PromotionsCatalogService {
       nextCursor: search.nextCursor,
       count: publications.length,
       publications,
+    };
+  }
+
+  /**
+   * Paginate eligible products without resolving promotions for every MLA.
+   * The expanded row loads its promotions separately from /:itemId/opciones.
+   */
+  private async getLightweightCatalog(
+    sellerId: number,
+    accessToken: string,
+    query: PromotionCatalogQuery,
+    offset: number,
+    target: number,
+  ) {
+    const publications: PromotionCatalogRow[] = [];
+    const seenItems = new Set<string>();
+    let matchedCount = 0;
+    let scrollId: string | undefined;
+
+    while (matchedCount < target) {
+      const scan = await this.publicationSource.fetchNextScanPage(
+        sellerId, accessToken, scrollId,
+      );
+      if (scan.itemIds.length === 0) break;
+
+      const items = await this.itemsService.getMany(scan.itemIds, accessToken);
+      const candidates = this.cheapCandidates(scan.itemIds, items, seenItems, query);
+      for (const candidate of candidates) {
+        matchedCount += 1;
+        if (matchedCount > offset) publications.push(this.toLightweightRow(candidate));
+        if (matchedCount >= target) {
+          return {
+            done: false,
+            nextCursor: encodePromotionsCursor(offset + publications.length),
+            count: publications.length,
+            publications,
+          };
+        }
+      }
+
+      if (!scan.scrollId) break;
+      scrollId = scan.scrollId;
+    }
+    return { done: true, nextCursor: null, count: publications.length, publications };
+  }
+
+  private toLightweightRow(candidate: PromotionCatalogMatch['candidate']): PromotionCatalogRow {
+    return {
+      itemId: candidate.itemId,
+      familyId: candidate.familyId,
+      title: candidate.title,
+      thumbnail: candidate.thumbnail,
+      sku: candidate.sku,
+      variantColor: candidate.variantColor ?? null,
+      variantSize: candidate.variantSize ?? null,
+      stock: candidate.stock,
+      freeShipping: candidate.freeShipping,
+      installmentLabel: candidate.installmentLabel,
+      productGroup: candidate.productGroup,
+      price: candidate.price,
+      currentPromotion: null,
+      hasActivePromotion: null,
+      availablePromotionsCount: null,
+      promotionStatus: null,
     };
   }
 
@@ -221,6 +299,8 @@ export class PromotionsCatalogService {
       title: match.candidate.title,
       thumbnail: match.candidate.thumbnail,
       sku: match.candidate.sku,
+      variantColor: match.candidate.variantColor ?? null,
+      variantSize: match.candidate.variantSize ?? null,
       stock: match.candidate.stock,
       freeShipping: match.candidate.freeShipping,
       installmentLabel: match.candidate.installmentLabel,

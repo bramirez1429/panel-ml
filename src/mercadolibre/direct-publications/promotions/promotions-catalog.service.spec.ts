@@ -15,6 +15,54 @@ const USER_ID = '11111111-1111-4111-8111-111111111111';
 const TOKEN = 'token';
 
 describe('PromotionsCatalogService', () => {
+  it('lightweight carga el catálogo sin GET de promociones MLA y pagina conservando el cursor', async () => {
+    const catalog = ['MLA1', 'MLA2', 'MLA3'].map((id) =>
+      item(id, id, 'MLA-WOMEN_TSHIRTS'),
+    );
+    const { service, promotions } = createService(
+      [catalog.map(({ id }) => id)], catalog,
+    );
+
+    const first = await service.getCatalog(USER_ID, { limit: 2, lightweight: true });
+    expect(first.publications.map(({ itemId }) => itemId)).toEqual(['MLA1', 'MLA2']);
+    expect(first.publications[0]).toMatchObject({
+      currentPromotion: null,
+      promotionStatus: null,
+      hasActivePromotion: null,
+      availablePromotionsCount: null,
+    });
+    expect(first.nextCursor).toBe('promotions:2');
+    expect(promotions.getPromotions).not.toHaveBeenCalled();
+
+    const second = await service.getCatalog(USER_ID, {
+      limit: 2, cursor: 'promotions:2', lightweight: true,
+    });
+    expect(second.publications.map(({ itemId }) => itemId)).toEqual(['MLA3']);
+    expect(second.done).toBe(true);
+    expect(promotions.getPromotions).not.toHaveBeenCalled();
+  });
+
+  it('lightweight con búsqueda evita consultar promociones MLA', async () => {
+    const catalog = [item('MLA1', 'Remera Mujer', 'MLA-WOMEN_TSHIRTS')];
+    const { service, promotions } = createService([], catalog);
+    const result = await service.getCatalog(USER_ID, {
+      limit: 20, search: 'remera mujer', lightweight: true,
+    });
+    expect(result.publications.map(({ itemId }) => itemId)).toEqual(['MLA1']);
+    expect(promotions.getPromotions).not.toHaveBeenCalled();
+  });
+
+  it('los filtros de promoción conservan el cálculo completo incluso con lightweight', async () => {
+    const catalog = [item('MLA1', 'Remera', 'MLA-WOMEN_TSHIRTS')];
+    const { service, promotions } = createService([['MLA1']], catalog,
+      new Map([['MLA1', groups({ status: 'candidate', type: 'DEAL' })]]));
+    const result = await service.getCatalog(USER_ID, {
+      limit: 20, lightweight: true, promotionStatus: 'AVAILABLE',
+    });
+    expect(result.publications[0]?.promotionStatus).toBe('AVAILABLE');
+    expect(promotions.getPromotions).toHaveBeenCalledTimes(1);
+  });
+
   it('incluye sólo los cuatro grupos fijos y conserva cada MLA de una familia', async () => {
     const catalog = [
       item('MLA1', 'Remera', 'MLA-WOMEN_TSHIRTS'),
