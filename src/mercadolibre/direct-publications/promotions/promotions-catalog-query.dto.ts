@@ -1,6 +1,5 @@
 import { Transform, type TransformFnParams } from 'class-transformer';
 import {
-  IsBoolean,
   IsEnum,
   IsInt,
   IsNotEmpty,
@@ -54,11 +53,6 @@ export class PromotionsCatalogQueryDto implements PromotionCatalogQuery {
   @IsString()
   @IsNotEmpty()
   promotionType?: string;
-
-  @IsOptional()
-  @Transform(({ value }: TransformFnParams) => parseBoolean(value as unknown))
-  @IsBoolean()
-  lightweight?: boolean;
 }
 
 function parseLimit(value: unknown): unknown {
@@ -69,10 +63,4 @@ function parseLimit(value: unknown): unknown {
 
 function trimString(value: unknown): unknown {
   return typeof value === 'string' ? value.trim() : value;
-}
-
-function parseBoolean(value: unknown): unknown {
-  if (value === 'true') return true;
-  if (value === 'false') return false;
-  return value;
 }

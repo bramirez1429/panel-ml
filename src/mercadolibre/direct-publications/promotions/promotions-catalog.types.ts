@@ -11,8 +11,6 @@ export type PromotionCatalogQuery = Readonly<{
   productGroup?: PromotionProductGroup;
   promotionStatus?: PromotionCatalogStatus;
   promotionType?: string;
-  /** Avoid per-item promotion calls when only publication metadata is required. */
-  lightweight?: boolean;
 }>;
 
 export type NormalizedPromotion = Readonly<{
@@ -69,8 +67,6 @@ export type PromotionCatalogCandidate = Readonly<{
   title: string;
   thumbnail: string | null;
   sku: string | null;
-  variantColor?: string | null;
-  variantSize?: string | null;
   stock: number | null;
   freeShipping: boolean | null;
   installmentLabel: string | null;
@@ -107,15 +103,13 @@ export type PromotionCatalogRow = Readonly<{
   title: string;
   thumbnail: string | null;
   sku: string | null;
-  variantColor?: string | null;
-  variantSize?: string | null;
   stock: number | null;
   freeShipping: boolean | null;
   installmentLabel: string | null;
   productGroup: PromotionProductGroup;
   price: number;
   currentPromotion: NormalizedPromotion | null;
-  hasActivePromotion: boolean | null;
-  availablePromotionsCount: number | null;
-  promotionStatus: PromotionCatalogStatus | null;
+  hasActivePromotion: boolean;
+  availablePromotionsCount: number;
+  promotionStatus: PromotionCatalogStatus;
 }>;
