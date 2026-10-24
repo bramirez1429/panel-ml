@@ -221,6 +221,8 @@ export class PromotionsCatalogService {
       title: match.candidate.title,
       thumbnail: match.candidate.thumbnail,
       sku: match.candidate.sku,
+      variantColor: match.candidate.variantColor ?? null,
+      variantSize: match.candidate.variantSize ?? null,
       stock: match.candidate.stock,
       freeShipping: match.candidate.freeShipping,
       installmentLabel: match.candidate.installmentLabel,

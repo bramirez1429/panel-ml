@@ -55,7 +55,8 @@
   "git": {
     "deploymentEnabled": {
       "promociones": false,
-      "main": false
+      "main": false,
+      "mejora-de-promociones": false
     }
   }
 }

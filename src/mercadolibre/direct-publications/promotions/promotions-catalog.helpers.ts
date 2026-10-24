@@ -10,6 +10,7 @@ import type {
 } from './promotions-catalog.types';
 import type { MlPromotion, MlPromotions } from './promotions.types';
 import { classifyPromotionProductGroup } from './promotions-product-group';
+import { promotionVariantAttributesOf } from './promotion-variant-attributes';
 import {
   financingCampaignTagOf,
   promotionCampaignItemCommerceOf,
@@ -49,6 +50,7 @@ export function toPromotionCandidate(
     title: item.title.trim(),
     thumbnail: isText(item.thumbnail) ? item.thumbnail.trim() : null,
     ...promotionCampaignItemCommerceOf(item),
+    ...promotionVariantAttributesOf(item),
     productGroup,
     price: item.price,
     categoryId: item.category_id.trim(),
