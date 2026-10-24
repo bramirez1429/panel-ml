@@ -159,7 +159,7 @@ export function productGroupOf(
     .normalize('NFD').replace(/\p{M}+/gu, '').toUpperCase();
   const garment = /\b(BUZO|BUZOS|SUDADERA|HOODIE|SWEATSHIRT)\b/u.test(value)
     ? 'SWEATSHIRT'
-    : /\b(REMERA|REMERAS|CAMISETA|TSHIRT|T-SHIRT)\b/u.test(value)
+    : /\b(REMERA|REMERAS|CAMISETA|TSHIRT|T-SHIRT|PACK)\b/u.test(value)
       ? 'TSHIRT' : null;
   if (!garment) return null;
   const audience = /\b(NINA|NINAS|NENA|NENAS|INFANTIL|KIDS|GIRLS)\b/u.test(value)
