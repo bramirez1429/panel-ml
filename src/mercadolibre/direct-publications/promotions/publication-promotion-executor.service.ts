@@ -1,6 +1,7 @@
 import { HttpException, Injectable, Logger } from '@nestjs/common';
 
 import { PromotionApplicationService } from './promotion-application.service';
+import type { PromotionPriceUpdateRequest } from './publication-promotion-request';
 import {
   findRequestedCandidate,
   findConfirmedParticipation,
@@ -60,12 +61,7 @@ export class PublicationPromotionExecutorService {
         context.request,
       );
       if (existingParticipation) {
-        return {
-          itemId,
-          success: true,
-          stage: 'COMPLETED',
-          promotionStatus: existingParticipation.status,
-        };
+        return this.confirmMatchingParticipation(itemId, existingParticipation, context.request);
       }
       const candidate = findRequestedCandidate(
         current.candidates,
@@ -105,12 +101,7 @@ export class PublicationPromotionExecutorService {
         context.request,
       );
       if (concurrentParticipation) {
-        return {
-          itemId,
-          success: true,
-          stage: 'COMPLETED',
-          promotionStatus: concurrentParticipation.status,
-        };
+        return this.confirmMatchingParticipation(itemId, concurrentParticipation, context.request);
       }
       if (!findRequestedCandidate(current.candidates, context.request)) {
         throw promotionError(
@@ -119,15 +110,18 @@ export class PublicationPromotionExecutorService {
         );
       }
       stage = 'APPLICATION';
-      const reconciledStatus = await this.applySafely(context);
-      const diagnosticStatus =
-        reconciledStatus ?? (await this.readParticipation(context));
-      return {
-        itemId,
-        success: true,
-        stage: 'COMPLETED',
-        ...(diagnosticStatus ? { promotionStatus: diagnosticStatus } : {}),
-      };
+      await this.applySafely(context);
+      stage = 'APPLICATION_VERIFICATION';
+      const stateAfter = await this.waitUntil(context.userId, itemId, context.accessToken, (state) => {
+        const participation = findConfirmedParticipation(state, context.request);
+        if (!participation) return false;
+        if (!('dealPrice' in context.request)) return true;
+        return typeof participation.promotion.price === 'number'
+          && equalPrice(participation.promotion.price, context.request.dealPrice);
+      });
+      const participation = findConfirmedParticipation(stateAfter, context.request);
+      if (!participation) throw promotionError('PROMOTION_VERIFICATION_FAILED', 'No se confirmó la promoción.');
+      return this.confirmMatchingParticipation(itemId, participation, context.request);
     } catch (error) {
       const providerMessage = promotionProviderMessage(error);
       const providerStatus = promotionProviderStatus(error);
@@ -140,6 +134,91 @@ export class PublicationPromotionExecutorService {
         ...(providerStatus ? { providerStatus } : {}),
       };
     }
+  }
+
+  private confirmMatchingParticipation(
+    itemId: string,
+    participation: Readonly<{ promotion: ManagedActivePromotion; status: 'pending' | 'started' }>,
+    request: PromotionExecutionContext['request'],
+  ): PromotionItemResult {
+    const price = participation.promotion.price;
+    if ('dealPrice' in request && (typeof price !== 'number' || !equalPrice(price, request.dealPrice))) {
+      throw promotionError(
+        'PROMOTION_CHANGED_DURING_OPERATION',
+        'La promoción existe, pero su precio no coincide con el solicitado. Actualizá los datos antes de continuar.',
+      );
+    }
+    return { itemId, success: true, stage: 'COMPLETED',
+      promotionStatus: participation.status,
+      ...(typeof price === 'number' ? { confirmedPrice: price,
+        buyerPrice: participation.promotion.total_price_for_boosted_offer ?? price } : {}) };
+  }
+
+  async updatePrice(context: PromotionExecutionContext & { request: PromotionPriceUpdateRequest }): Promise<PromotionItemResult> {
+    const itemId = context.resolvedItem.item.id;
+    const request = context.request;
+    let stage: PromotionExecutionStage = 'CURRENT_STATE';
+    try {
+      const state = await this.current(context.userId, itemId, context.accessToken);
+      const participation = findConfirmedParticipation(state, request);
+      if (!participation) throw promotionError('PROMOTION_NOT_APPLICABLE', 'La publicación no participa en esta promoción. No se modificó ningún precio.');
+      const previousPrice = participation.promotion.price;
+      if (request.type === 'SELLER_CAMPAIGN') {
+        let subtype = participation.promotion.sub_type?.toUpperCase();
+        if (!subtype) {
+          const detail = await this.promotionsService.getPromotionDetail(request.promotionId, request.type, context.accessToken);
+          subtype = detail.sub_type?.toUpperCase();
+        }
+        if (subtype !== 'FLEXIBLE_PERCENTAGE') {
+          throw promotionError('PROMOTION_NOT_APPLICABLE', 'Solo las campañas FLEXIBLE_PERCENTAGE admiten modificar su precio.');
+        }
+        if (participation.status === 'started' && typeof previousPrice === 'number' && request.dealPrice > previousPrice) {
+          throw promotionError('PROMOTION_NOT_APPLICABLE', 'En una campaña del vendedor activa solo se puede bajar el precio promocional.');
+        }
+      }
+      if (typeof previousPrice === 'number' && equalPrice(previousPrice, request.dealPrice)) {
+        return { itemId, success: true, stage: 'COMPLETED', confirmedPrice: previousPrice,
+          buyerPrice: participation.promotion.total_price_for_boosted_offer ?? previousPrice,
+          promotionStatus: participation.status };
+      }
+      stage = 'APPLICATION';
+      try {
+        await this.applicationService.updatePrice(context.userId, context.resolvedItem.publication, request);
+      } catch (error) {
+        if (!isUncertainWrite(error)) throw error;
+        const reconciled = await this.confirmUpdatedPrice(context, request);
+        if (reconciled) return reconciled;
+        throw error; // Do not blindly retry uncertain writes.
+      }
+      stage = 'APPLICATION_VERIFICATION';
+      const confirmed = await this.confirmUpdatedPrice(context, request);
+      if (!confirmed) throw promotionError('PROMOTION_VERIFICATION_FAILED', 'No se confirmó el precio solicitado en Mercado Libre. Revisá el MLA antes de reintentar.');
+      return confirmed;
+    } catch (error) {
+      const providerMessage = promotionProviderMessage(error);
+      const providerStatus = promotionProviderStatus(error);
+      return { itemId, success: false, stage, errorCode: normalizePromotionError(error, fallbackForStage(stage)),
+        ...(providerMessage ? { providerMessage } : {}),
+        ...(providerStatus ? { providerStatus } : {}) };
+    }
+  }
+
+  private async confirmUpdatedPrice(context: PromotionExecutionContext, request: PromotionPriceUpdateRequest): Promise<PromotionItemResult | null> {
+    const itemId = context.resolvedItem.item.id;
+    for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt += 1) {
+      try {
+        const state = await this.current(context.userId, itemId, context.accessToken);
+        const match = findConfirmedParticipation(state, request);
+        const price = match?.promotion.price;
+        if (match && typeof price === 'number' && equalPrice(price, request.dealPrice)) {
+          return { itemId, success: true, stage: 'COMPLETED', confirmedPrice: price,
+            buyerPrice: match.promotion.total_price_for_boosted_offer ?? price,
+            promotionStatus: match.status };
+        }
+      } catch { /* Do not repeat the write when the read is uncertain. */ }
+      if (attempt < MAX_POLL_ATTEMPTS - 1) await delay(POLL_INTERVAL_MS);
+    }
+    return null;
   }
 
   async remove(
@@ -427,3 +506,5 @@ function isUncertainWrite(error: unknown): boolean {
 function isServerError(error: unknown): boolean {
   return error instanceof HttpException && error.getStatus() >= 500;
 }
+
+function equalPrice(a: number, b: number): boolean { return Math.round(a * 100) === Math.round(b * 100); }

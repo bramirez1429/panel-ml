@@ -7,6 +7,7 @@ import { PriceDiscountService } from './price-discount.service';
 import type { PromotionPublication } from './promotion-publication.types';
 import { SellerCampaignService } from './seller-campaign.service';
 import type { PromotionSwitchRequest } from './promotion-manager.types';
+import type { PromotionPriceUpdateRequest } from './publication-promotion-request';
 import { SmartPromotionService } from './smart-promotion.service';
 
 @Injectable()
@@ -17,6 +18,16 @@ export class PromotionApplicationService {
     private readonly sellerCampaignService: SellerCampaignService,
     private readonly smartPromotionService: SmartPromotionService,
   ) {}
+
+  async updatePrice(userId: string, publication: PromotionPublication, request: PromotionPriceUpdateRequest): Promise<void> {
+    if (request.type === 'DEAL') {
+      if (publication.type === 'CLASSIC') await this.dealService.updateClassic(userId, publication.itemId, request);
+      else await this.dealService.updateNew(userId, publication.familyId, publication.itemId, request);
+      return;
+    }
+    if (publication.type === 'CLASSIC') await this.sellerCampaignService.updateClassic(userId, publication.itemId, request);
+    else await this.sellerCampaignService.updateNew(userId, publication.familyId, publication.itemId, request);
+  }
 
   async apply(
     userId: string,

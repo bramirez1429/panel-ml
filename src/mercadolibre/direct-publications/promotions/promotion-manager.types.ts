@@ -41,6 +41,10 @@ export type ManagedActivePromotion = {
   offer_id?: string | null;
   status?: string | null;
   price?: number | null;
+  min_discounted_price?: number | null;
+  max_discounted_price?: number | null;
+  sub_type?: string | null;
+  total_price_for_boosted_offer?: number | null;
   original_price?: number | null;
   start_date?: string | null;
   finish_date?: string | null;

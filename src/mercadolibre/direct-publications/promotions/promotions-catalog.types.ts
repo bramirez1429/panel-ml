@@ -28,6 +28,13 @@ export type NormalizedPromotion = Readonly<{
 export type PromotionOption = NormalizedPromotion &
   Readonly<{
     status: string | null;
+    promotionSubtype: string | null;
+    canUpdatePrice: boolean;
+    priceUpdateRestriction: string | null;
+    currentEditablePrice: number | null;
+    minUpdatePrice: number | null;
+    maxUpdatePrice: number | null;
+    buyerPrice: number | null;
     minPromotionPrice: number | null;
     maxPromotionPrice: number | null;
     suggestedPromotionPrice: number | null;

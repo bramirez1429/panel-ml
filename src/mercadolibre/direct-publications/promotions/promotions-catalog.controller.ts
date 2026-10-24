@@ -23,7 +23,7 @@ import { PromotionBulkJobQueue } from './promotion-bulk-job.queue';
 import { parsePromotionBulkJobRequest } from './promotion-bulk-job.request';
 import { PromotionBulkJobService } from './promotion-bulk-job.service';
 import { parsePromotionRemovalSelection } from './promotion-removal-request';
-import { parsePromotionRequest } from './publication-promotion-request';
+import { parsePromotionPriceUpdateRequest, parsePromotionRequest } from './publication-promotion-request';
 import { PublicationPromotionService } from './publication-promotion.service';
 import { PromotionRemovalService } from './promotion-removal.service';
 import { PromotionSelectionService } from './promotion-selection.service';
@@ -97,6 +97,11 @@ export class PromotionsCatalogController {
       sourceKey,
       parsePromotionRequest(body),
     );
+  }
+
+  @Post('publicacion/:sourceKey/actualizar-precio')
+  updatePublicationPrice(@CurrentUser() user: SafeUser, @Param('sourceKey') sourceKey: string, @Body() body: unknown) {
+    return this.publicationPromotionService.updatePrice(user.id, sourceKey, parsePromotionPriceUpdateRequest(body));
   }
 
   @Delete('publicacion/:sourceKey')
