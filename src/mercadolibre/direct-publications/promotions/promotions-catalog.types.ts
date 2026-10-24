@@ -11,6 +11,8 @@ export type PromotionCatalogQuery = Readonly<{
   productGroup?: PromotionProductGroup;
   promotionStatus?: PromotionCatalogStatus;
   promotionType?: string;
+  /** Avoid per-item promotion calls when only publication metadata is required. */
+  lightweight?: boolean;
 }>;
 
 export type NormalizedPromotion = Readonly<{
@@ -113,7 +115,7 @@ export type PromotionCatalogRow = Readonly<{
   productGroup: PromotionProductGroup;
   price: number;
   currentPromotion: NormalizedPromotion | null;
-  hasActivePromotion: boolean;
-  availablePromotionsCount: number;
-  promotionStatus: PromotionCatalogStatus;
+  hasActivePromotion: boolean | null;
+  availablePromotionsCount: number | null;
+  promotionStatus: PromotionCatalogStatus | null;
 }>;
