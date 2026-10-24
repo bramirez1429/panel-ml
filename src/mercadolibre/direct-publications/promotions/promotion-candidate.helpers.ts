@@ -51,16 +51,12 @@ export function promotionMatchesRequest(
     if (!Number.isFinite(request.dealPrice) || request.dealPrice <= 0)
       return false;
 
-    const candidatePrice = promotion.price;
-
-    if (
-      typeof candidatePrice === 'number' &&
-      Number.isFinite(candidatePrice) &&
-      candidatePrice > 0 &&
-      candidatePrice !== request.dealPrice
-    ) {
-      return false;
-    }
+    // A candidate can have a suggested/current price. That value is NOT
+    // a fixed allowed price; Mercado Libre validates the chosen deal_price.
+    const minimum = promotion.min_discounted_price;
+    const maximum = promotion.max_discounted_price;
+    if (typeof minimum === 'number' && request.dealPrice < minimum) return false;
+    if (typeof maximum === 'number' && request.dealPrice > maximum) return false;
   }
   return (
     request.type !== 'PRICE_DISCOUNT' ||

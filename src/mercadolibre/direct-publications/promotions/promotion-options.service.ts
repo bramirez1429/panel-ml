@@ -177,13 +177,28 @@ export class PromotionOptionsService {
                     )
                 : null;
 
+            let detail: MlPromotion | null = null;
+            const effectiveType = firstText(promotion.type, campaign?.type)?.toUpperCase();
+            if (
+              status !== 'candidate' &&
+              effectiveType === 'SELLER_CAMPAIGN' &&
+              promotionId &&
+              !firstText(promotion.sub_type, campaign?.sub_type, directed?.sub_type)
+            ) {
+              try {
+                detail = await this.promotionsService.getPromotionDetail(
+                  promotionId, effectiveType, accessToken,
+                );
+              } catch {
+                // Unknown capability remains locked; never invent an editable offer.
+              }
+            }
             return {
-              promotion:
-                enrichPromotion(
-                  promotion,
-                  campaign,
-                  directed,
-                ),
+              promotion: enrichPromotion(
+                promotion,
+                detail ?? campaign,
+                directed,
+              ),
               status,
             };
           },
