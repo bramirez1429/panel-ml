@@ -2,6 +2,16 @@ import { BadRequestException } from '@nestjs/common';
 
 import type { PromotionSwitchRequest } from './promotion-manager.types';
 
+export type PromotionPriceUpdateRequest = Extract<PromotionSwitchRequest, { type: 'DEAL' | 'SELLER_CAMPAIGN' }>;
+
+export function parsePromotionPriceUpdateRequest(value: unknown): PromotionPriceUpdateRequest {
+  const request = parsePromotionRequest(value);
+  if (request.type !== 'DEAL' && request.type !== 'SELLER_CAMPAIGN') {
+    throw new BadRequestException('Esta promoción no permite actualizar su precio directamente');
+  }
+  return request;
+}
+
 export function parsePromotionRequest(value: unknown): PromotionSwitchRequest {
   if (!isRecord(value) || !isText(value.type)) return invalidRequest();
   switch (value.type) {

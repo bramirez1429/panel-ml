@@ -467,6 +467,14 @@ function toPromotionOption(
 
     status: entry.status,
 
+    promotionSubtype: textOrNull(promotion.sub_type)?.toUpperCase() ?? null,
+    canUpdatePrice: canUpdatePrice(promotion, entry.status),
+    priceUpdateRestriction: priceUpdateRestriction(promotion, entry.status),
+    currentEditablePrice: finiteNumber(promotion.price),
+    minUpdatePrice: entry.status === 'candidate' ? null : finiteNumber(promotion.min_discounted_price),
+    maxUpdatePrice: entry.status === 'candidate' ? null : finiteNumber(promotion.max_discounted_price),
+    buyerPrice: entry.financial.promotionPrice,
+
     promotionPrice:
       entry.financial
         .promotionPrice,
@@ -628,6 +636,7 @@ function enrichPromotion(
       itemPromotion.type,
       campaign?.type,
     );
+  const promotionSubtype = firstText(itemPromotion.sub_type, campaign?.sub_type);
 
   const dealCandidate =
     isDealCandidate(
@@ -702,6 +711,7 @@ function enrichPromotion(
     ...(promotionType
       ? { type: promotionType }
       : {}),
+    ...(promotionSubtype ? { sub_type: promotionSubtype } : {}),
 
     ...(name
       ? { name }
@@ -957,4 +967,22 @@ function firstText(
   }
 
   return null;
+}
+
+function canUpdatePrice(promotion: MlPromotion, status: 'started' | 'candidate' | 'pending'): boolean {
+  if (status !== 'started' && status !== 'pending') return false;
+  if (promotion.type?.toUpperCase() === 'DEAL') return Boolean(promotion.id);
+  return promotion.type?.toUpperCase() === 'SELLER_CAMPAIGN'
+    && Boolean(promotion.id)
+    && promotion.sub_type?.toUpperCase() === 'FLEXIBLE_PERCENTAGE';
+}
+function priceUpdateRestriction(promotion: MlPromotion, status: 'started' | 'candidate' | 'pending'): string | null {
+  if (canUpdatePrice(promotion, status)) return null;
+  if (status === 'candidate') return 'La publicación todavía no participa de esta campaña.';
+  if (promotion.type?.toUpperCase() === 'SELLER_CAMPAIGN') {
+    return promotion.sub_type
+      ? 'Esta campaña del vendedor no admite modificar el precio por publicación.'
+      : 'Mercado Libre no informó el subtipo de esta campaña.';
+  }
+  return 'Mercado Libre no permite modificar directamente esta promoción.';
 }

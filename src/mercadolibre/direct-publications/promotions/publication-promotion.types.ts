@@ -66,6 +66,8 @@ export type PromotionItemResult = Readonly<{
   providerMessage?: string;
   providerStatus?: number;
   promotionStatus?: 'pending' | 'started';
+  confirmedPrice?: number | null;
+  buyerPrice?: number | null;
 }>;
 
 export type PublicationPromotionResult = Readonly<{

@@ -55,6 +55,15 @@ export class PromotionsService {
     return this.groupPromotions(promotions);
   }
 
+  async getPromotionDetail(promotionId: string, promotionType: string, accessToken: string): Promise<MlPromotion> {
+    const query = new URLSearchParams({ promotion_type: promotionType, app_version: 'v2' });
+    return this.apiService.get<MlPromotion>(
+      `/seller-promotions/promotions/${encodeURIComponent(promotionId)}?${query}`,
+      accessToken,
+      'promotion',
+    );
+  }
+
   async getSellerCampaigns(
     userId: string,
     sellerId: number,

@@ -5,6 +5,7 @@ import { mapWithConcurrency } from '../../publications/sync/publication-sync.hel
 import { normalizedPromotionException } from './promotion-error-mapper';
 import { promotionError } from './promotion-errors';
 import type { PromotionSwitchRequest } from './promotion-manager.types';
+import type { PromotionPriceUpdateRequest } from './publication-promotion-request';
 import { PublicationPromotionExecutorService } from './publication-promotion-executor.service';
 import { PublicationPromotionPreflightService } from './publication-promotion-preflight.service';
 import { PublicationPromotionSourceService } from './publication-promotion-source.service';
@@ -60,6 +61,15 @@ export class PublicationPromotionService {
           resolvedItem,
           request,
         }),
+    );
+    return summarize(results);
+  }
+
+  async updatePrice(userId: string, sourceKey: string, request: PromotionPriceUpdateRequest): Promise<PublicationPromotionResult> {
+    const source = await this.resolve(userId, sourceKey);
+    if (source.items.length !== 1) throw promotionError('PROMOTION_NOT_APPLICABLE', 'Elegí una publicación MLA para modificar su precio.', { sourceKey }, HttpStatus.CONFLICT);
+    const results = await mapWithConcurrency(source.items, 1, (resolvedItem) =>
+      this.executorService.updatePrice({ userId, accessToken: source.accessToken, resolvedItem, request }),
     );
     return summarize(results);
   }
