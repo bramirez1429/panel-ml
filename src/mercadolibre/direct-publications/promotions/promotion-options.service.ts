@@ -728,6 +728,13 @@ function enrichPromotion(
       : {}),
     ...(promotionSubtype ? { sub_type: promotionSubtype } : {}),
 
+    // The listing's campaign price is the editable price; a directed campaign-item
+    // response may contain buyer/boosted prices instead and must not replace it.
+    ...((promotionType === 'DEAL' || promotionType === 'SELLER_CAMPAIGN') &&
+      typeof itemPromotion.price === 'number' && itemPromotion.price > 0
+      ? { price: itemPromotion.price }
+      : {}),
+
     ...(name
       ? { name }
       : {}),
