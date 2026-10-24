@@ -42,7 +42,19 @@
       ]
     },
     "api/queues/tiendanube-bulk-edit.ts": {
-      "experimentalTriggers": [{ "type": "queue/v2beta", "topic": "tiendanube-bulk-edit", "retryAfterSeconds": 180, "initialDelaySeconds": 0 }]
+      "experimentalTriggers": [
+        {
+          "type": "queue/v2beta",
+          "topic": "tiendanube-bulk-edit",
+          "retryAfterSeconds": 180,
+          "initialDelaySeconds": 0
+        }
+      ]
+    }
+  },
+  "git": {
+    "deploymentEnabled": {
+      "promociones": false
     }
   }
 }
