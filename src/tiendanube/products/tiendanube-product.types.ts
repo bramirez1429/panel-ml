@@ -37,6 +37,7 @@ export type TiendanubeCatalogProductVariantResponse = Readonly<{
   sku: string | null;
   stock: number | null;
   stockManagement: boolean;
+  visible?: boolean;
   price: number | null;
   promotionalPrice: number | null;
 }>;
