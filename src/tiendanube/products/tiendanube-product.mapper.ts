@@ -181,6 +181,7 @@ function mapCatalogVariant(
     sku: mapOptionalText(value.sku),
     stock: value.stock_management ? mapNullableNumber(value.stock) : null,
     stockManagement: value.stock_management,
+    ...(value.visible === false ? { visible: false } : {}),
     price: mapNullableNumber(value.price),
     promotionalPrice: mapNullableNumber(value.promotional_price),
   };
