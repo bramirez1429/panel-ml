@@ -13,6 +13,7 @@ export type TiendanubeSizeStockUpdate = Readonly<{
   productId: string;
   variantId: string;
   size: string;
+  color: string | null;
   expectedStock: number | null;
   stock: number;
 }>;
@@ -94,6 +95,11 @@ export class TiendanubeSizeStockService {
         if (!size || canonical(size) !== canonical(line.size)) {
           throw new ConflictException('El talle cambió desde la última búsqueda. Actualizá antes de aplicar.');
         }
+        const color = colorOf(product, variant);
+        if (line.color === null ? color !== null :
+            !color || canonical(color) !== canonical(line.color)) {
+          throw new ConflictException('El color cambió desde la última búsqueda. Actualizá antes de aplicar.');
+        }
         const levels = variant.inventory_levels;
         if (Array.isArray(levels) && levels.length > 1) {
           throw new ConflictException('Hay variantes con varios depósitos. No se modifica stock sin elegir una ubicación.');
@@ -158,6 +164,8 @@ function validateBatch(input: unknown): readonly TiendanubeSizeStockUpdate[] {
     if (!record(row) ||
         !positiveId(row.productId) || !positiveId(row.variantId) ||
         typeof row.size !== 'string' || !row.size.trim() || row.size.length > 80 ||
+        !(row.color === null ||
+          (typeof row.color === 'string' && row.color.trim() && row.color.length <= 80)) ||
         !Number.isSafeInteger(row.stock) || Number(row.stock) < 0 ||
         Number(row.stock) > MAX_STOCK ||
         !(row.expectedStock === null ||
@@ -200,15 +208,20 @@ function visibleProduct(product: JsonRecord): boolean {
   return product.published === true;
 }
 
-function sizeOf(product: JsonRecord, variant: JsonRecord): string | null {
+function optionOf(product: JsonRecord, variant: JsonRecord, allowed: readonly string[]): string | null {
   const names = product.attributes;
   const values = variant.values;
   if (!Array.isArray(names) || !Array.isArray(values)) return null;
-  const sizeIndex = names.findIndex((name: unknown) =>
-    ['TALLE', 'TALLES', 'TALLA', 'TAMANO', 'SIZE', 'SIZES']
-      .includes(canonical(localized(name) ?? '')),
-  );
-  return sizeIndex < 0 ? null : localized(values[sizeIndex]);
+  const index = names.findIndex((name: unknown) => allowed.includes(canonical(localized(name) ?? '')));
+  return index < 0 ? null : localized(values[index]);
+}
+
+function sizeOf(product: JsonRecord, variant: JsonRecord): string | null {
+  return optionOf(product, variant, ['TALLE', 'TALLES', 'TALLA', 'TAMANO', 'SIZE', 'SIZES']);
+}
+
+function colorOf(product: JsonRecord, variant: JsonRecord): string | null {
+  return optionOf(product, variant, ['COLOR', 'COLOUR']);
 }
 
 function currentStock(variant: JsonRecord): number | null {

@@ -13,7 +13,7 @@ export class TiendanubeSizeStockController {
   constructor(private readonly service: TiendanubeSizeStockService) {}
 
   @Get('status')
-  status() { return { ready: true }; }
+  status() { return { ready: true, colorScoped: true }; }
 
   @Post('apply-batch')
   applyBatch(
