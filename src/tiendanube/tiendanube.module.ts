@@ -41,6 +41,8 @@ import { TiendanubeBulkEditController } from './bulk-edit/tiendanube-bulk-edit.c
 import { TiendanubeBulkEditService } from './bulk-edit/tiendanube-bulk-edit.service';
 import { TiendanubeBulkEditRepository } from './bulk-edit/tiendanube-bulk-edit.repository';
 import { TiendanubeBulkEditQueue } from './bulk-edit/tiendanube-bulk-edit.queue';
+import { TiendanubeSizeStockController } from './size-stock/tiendanube-size-stock.controller';
+import { TiendanubeSizeStockService } from './size-stock/tiendanube-size-stock.service';
 
 @Module({
   imports: [
@@ -59,6 +61,7 @@ import { TiendanubeBulkEditQueue } from './bulk-edit/tiendanube-bulk-edit.queue'
     TiendanubeCategoriesController,
     TiendanubeMigrationController,
     TiendanubeBulkEditController,
+    TiendanubeSizeStockController,
   ],
   providers: [
     SupabaseService,
@@ -85,6 +88,7 @@ import { TiendanubeBulkEditQueue } from './bulk-edit/tiendanube-bulk-edit.queue'
     TiendanubeBulkEditService,
     TiendanubeBulkEditRepository,
     TiendanubeBulkEditQueue,
+    TiendanubeSizeStockService,
     {
       provide: TiendanubeConnectionRepository,
       useClass: SupabaseTiendanubeConnectionRepository,
