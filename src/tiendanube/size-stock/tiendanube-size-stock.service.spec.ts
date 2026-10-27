@@ -22,6 +22,7 @@ const update = {
   productId: '1001',
   variantId: '5001',
   size: 'S',
+  color: 'Negro',
   expectedStock: 0,
   stock: 5,
 };
@@ -76,6 +77,7 @@ describe('TiendanubeSizeStockService', () => {
     for (const product of [
       { ...baseProduct, variants: [{ ...baseProduct.variants[0], visible: false }] },
       { ...baseProduct, variants: [{ ...baseProduct.variants[0], values: [{ es: 'Negro' }, { es: 'M' }] }] },
+      { ...baseProduct, variants: [{ ...baseProduct.variants[0], values: [{ es: 'Crema' }, { es: 'S' }] }] },
       { ...baseProduct, variants: [{ ...baseProduct.variants[0], stock: 3 }] },
     ]) {
       const { service, api } = setup(product);
@@ -101,6 +103,8 @@ describe('TiendanubeSizeStockService', () => {
   it('rechaza duplicados, stock inválido y lotes excesivos', async () => {
     const { service, api } = setup();
     await expect(service.applyBatch('user-1', { updates: [update, update] }))
+      .rejects.toThrow(BadRequestException);
+    await expect(service.applyBatch('user-1', { updates: [{ ...update, color: undefined }] }))
       .rejects.toThrow(BadRequestException);
     await expect(service.applyBatch('user-1', { updates: [{ ...update, stock: -1 }] }))
       .rejects.toThrow(BadRequestException);
