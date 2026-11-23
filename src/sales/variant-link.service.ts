@@ -1,8 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { MercadolibreCurveService } from './mercadolibre-curve.service';
 import { SalesCurveService } from './sales-curve.service';
 import { TiendanubeCurveService } from './tiendanube-curve.service';
-import { normalizeColor, normalizeSize } from './variant-normalization';
+import { normalizeColor, normalizeSize, sameSku } from './variant-normalization';
 import { VariantChannelLinksRepository } from './variant-channel-links.repository';
 import type { CreateVariantLinkDto } from './dto/create-variant-link.dto';
 
@@ -34,6 +34,12 @@ export class VariantLinkService {
       );
     }
 
+    if (!sameSku(ml.sku, tn.sku)) {
+      throw new BadRequestException(
+        'Los SKU de Mercado Libre y Tiendanube deben ser iguales y no estar vacíos',
+      );
+    }
+
     const link = await this.links.save({
       userId,
       mlItemId: ml.ml.itemId,
@@ -42,10 +48,10 @@ export class VariantLinkService {
       familyId: ml.ml.familyId,
       tnProductId: tn.tiendaNube.productId,
       tnVariantId: tn.tiendaNube.variantId,
-      sku: ml.sku ?? tn.sku,
+      sku: ml.sku?.trim() ?? null,
       normalizedColor: normalizeColor(ml.color ?? tn.color),
       normalizedSize: normalizeSize(ml.size ?? tn.size),
-      matchSource: 'MANUAL',
+      matchSource: 'SKU',
     });
     this.curve.invalidate(userId);
     return link;
