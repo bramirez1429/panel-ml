@@ -48,6 +48,12 @@ export function normalizeAttribute(value: string | null): string | null {
     .replaceAll(/\s+/gu, ' ');
 }
 
+/** SKU es un identificador: solo quitamos espacios exteriores, sin alterar mayúsculas. */
+export function sameSku(left: string | null, right: string | null): boolean {
+  const sku = left?.trim();
+  return Boolean(sku && sku === right?.trim());
+}
+
 export function normalizeSize(value: string | null): string | null {
   const normalized = normalizeAttribute(value);
   return normalized ? (SIZE_EQUIVALENTS[normalized] ?? normalized) : null;
