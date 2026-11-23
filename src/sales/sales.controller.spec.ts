@@ -1,6 +1,8 @@
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { AccessTokenGuard } from '../auth/presentation/access-token.guard';
 import { RecentSalesService } from './recent-sales.service';
+import { MercadolibreCurveService } from './mercadolibre-curve.service';
+import { TiendanubeCurveService } from './tiendanube-curve.service';
 import { SalesController } from './sales.controller';
 import { SalesSyncService } from './sales-sync.service';
 import { VariantLinkService } from './variant-link.service';
@@ -22,6 +24,8 @@ describe('SalesController', () => {
       {} as VariantLinkService,
       {} as SalesSyncService,
       {} as VariantChannelLinksRepository,
+      {} as MercadolibreCurveService,
+      {} as TiendanubeCurveService,
     );
 
     expect(controller).toBeInstanceOf(SalesController);
