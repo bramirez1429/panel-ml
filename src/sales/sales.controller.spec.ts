@@ -4,6 +4,7 @@ import { RecentSalesService } from './recent-sales.service';
 import { SalesController } from './sales.controller';
 import { SalesSyncService } from './sales-sync.service';
 import { VariantLinkService } from './variant-link.service';
+import { VariantChannelLinksRepository } from './variant-channel-links.repository';
 
 describe('SalesController', () => {
   it('mantiene las lecturas de ventas protegidas por AccessTokenGuard', () => {
@@ -20,6 +21,7 @@ describe('SalesController', () => {
       {} as RecentSalesService,
       {} as VariantLinkService,
       {} as SalesSyncService,
+      {} as VariantChannelLinksRepository,
     );
 
     expect(controller).toBeInstanceOf(SalesController);
