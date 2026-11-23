@@ -83,7 +83,7 @@ export class MercadolibreCurveService {
               matches.push({
                 itemId: variant.ml.itemId,
                 variationId: variant.ml.variationId,
-                title: item.title ?? item.id,
+                title: text(item.title) ?? item.id,
                 color: variant.color,
                 size: variant.size,
                 sku: variant.sku!.trim(),
