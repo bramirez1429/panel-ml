@@ -36,6 +36,7 @@ export class MercadolibreCurveService {
     size: string | null;
     sku: string;
     stock: number | null;
+    imageUrl: string | null;
   }>> {
     return this.tokens.executeWithValidAccessToken(
       userId,
@@ -70,6 +71,7 @@ export class MercadolibreCurveService {
         const matches: Array<{
           itemId: string; variationId: string | null; title: string;
           color: string | null; size: string | null; sku: string; stock: number | null;
+          imageUrl: string | null;
         }> = [];
         const ids = [...itemIds];
         for (let index = 0; index < ids.length; index += 5) {
@@ -88,6 +90,7 @@ export class MercadolibreCurveService {
                 size: variant.size,
                 sku: variant.sku!.trim(),
                 stock: variant.ml.stock,
+                imageUrl: imageForMlVariant(item as MlItem, variant.ml.variationId),
               });
             }
           }
@@ -221,4 +224,46 @@ function colorAndSize(attributes: MlAttribute[]): {
     if (kind === 'size' && value) size = value;
   }
   return { color, size };
+}
+
+/** Prioriza la foto específica de la variación; en su defecto, la principal. */
+export function imageForMlVariant(item: MlItem, variationId: string | null): string | null {
+  const pictures = Array.isArray(item.pictures) ? item.pictures : [];
+  if (variationId) {
+    const variation = Array.isArray(item.variations)
+      ? item.variations.find((entry) =>
+          isObject(entry) && text(entry.id) === variationId,
+        )
+      : null;
+    if (isObject(variation) && Array.isArray(variation.picture_ids)) {
+      for (const id of variation.picture_ids) {
+        const picture = pictures.find((entry) => entry.id === text(id));
+        const url = validProductImageUrl(picture?.secure_url ?? picture?.url);
+        if (url) return url;
+      }
+    }
+  }
+  for (const picture of pictures) {
+    const url = validProductImageUrl(picture.secure_url ?? picture.url);
+    if (url) return url;
+  }
+  return validProductImageUrl(item.thumbnail);
+}
+
+function validProductImageUrl(value: unknown): string | null {
+  const urlText = text(value);
+  if (!urlText) return null;
+  try {
+    const url = new URL(urlText);
+    if (url.protocol === 'https:') return url.toString();
+    // Las imágenes de ML pueden venir en http://http2.mlstatic.com; forzamos HTTPS.
+    if (url.protocol === 'http:' &&
+      (url.hostname === 'mlstatic.com' || url.hostname.endsWith('.mlstatic.com'))) {
+      url.protocol = 'https:';
+      return url.toString();
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }
