@@ -1,5 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { BadGatewayException, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { MercadolibreTokenService } from '../mercadolibre/auth/mercadolibre-token.service';
+import { MercadolibreApiService } from '../mercadolibre/shared/mercadolibre-api.service';
+import type { MlSearchResponse } from '../mercadolibre/direct-publications/publications/publications-search.types';
 import { FamiliesService } from '../mercadolibre/direct-publications/families/families.service';
 import type {
   MlAttribute,
@@ -12,6 +14,7 @@ import {
   isObject,
   nonNegativeStock,
   text,
+  sameSku,
 } from './variant-normalization';
 
 @Injectable()
@@ -20,7 +23,79 @@ export class MercadolibreCurveService {
     private readonly tokens: MercadolibreTokenService,
     private readonly publications: PublicationSourceService,
     private readonly families: FamiliesService,
+    private readonly api: MercadolibreApiService,
   ) {}
+
+
+  /** Búsqueda real por SKU en la cuenta del vendedor, no por título. */
+  async findBySku(userId: string, sku: string): Promise<Array<{
+    itemId: string;
+    variationId: string | null;
+    title: string;
+    color: string | null;
+    size: string | null;
+    sku: string;
+    stock: number | null;
+  }>> {
+    return this.tokens.executeWithValidAccessToken(
+      userId,
+      async ({ connection, accessToken }) => {
+        const itemIds = new Set<string>();
+        for (const filter of ['seller_sku', 'sku']) {
+          let offset = 0;
+          while (true) {
+            const query = new URLSearchParams({
+              [filter]: sku, limit: '100', offset: String(offset),
+            });
+            const response = await this.api.get<MlSearchResponse>(
+              `/users/${connection.seller_id}/items/search?${query.toString()}`,
+              accessToken,
+            );
+            if (!Array.isArray(response.results) ||
+                !response.paging ||
+                !Number.isSafeInteger(response.paging.total)) {
+              throw new BadGatewayException('Mercado Libre devolvió una búsqueda SKU inválida');
+            }
+            response.results.forEach((id) => itemIds.add(id));
+            offset += response.results.length;
+            if (offset >= response.paging.total || response.results.length === 0) break;
+            if (offset >= 1000) {
+              throw new ServiceUnavailableException(
+                'Demasiadas publicaciones para este SKU; no se puede comprobar la unicidad',
+              );
+            }
+          }
+        }
+
+        const matches: Array<{
+          itemId: string; variationId: string | null; title: string;
+          color: string | null; size: string | null; sku: string; stock: number | null;
+        }> = [];
+        const ids = [...itemIds];
+        for (let index = 0; index < ids.length; index += 5) {
+          const batch = await Promise.all(ids.slice(index, index + 5).map(
+            (id) => this.publications.getItemWithAllAttributes(id, accessToken),
+          ));
+          for (const item of batch) {
+            if (String(item.seller_id) !== String(connection.seller_id)) continue;
+            for (const variant of mapClassicItem(item as MlItem)) {
+              if (!variant.ml || !sameSku(variant.sku, sku)) continue;
+              matches.push({
+                itemId: variant.ml.itemId,
+                variationId: variant.ml.variationId,
+                title: text(item.title) ?? String(item.id),
+                color: variant.color,
+                size: variant.size,
+                sku: variant.sku!.trim(),
+                stock: variant.ml.stock,
+              });
+            }
+          }
+        }
+        return matches;
+      },
+    );
+  }
 
   async getBySourceKey(
     userId: string,
