@@ -3,6 +3,7 @@ import {
   normalizeAttribute,
   normalizeColor,
   normalizeSize,
+  sameSku,
 } from './variant-normalization';
 
 describe('variant normalization', () => {
@@ -23,6 +24,13 @@ describe('variant normalization', () => {
     expect(normalizeColor('BLACK')).toBe('negro');
     expect(normalizeColor('Prêto')).toBe('negro');
     expect(normalizeColor('gris')).toBe('gris');
+  });
+
+  it('exige SKU iguales, no vacíos y respeta mayúsculas', () => {
+    expect(sameSku(' ABC-123 ', 'ABC-123')).toBe(true);
+    expect(sameSku('abc-123', 'ABC-123')).toBe(false);
+    expect(sameSku(null, null)).toBe(false);
+    expect(sameSku('  ', ' ')).toBe(false);
   });
 
   it('reconoce nombres de atributos en ambos canales', () => {
