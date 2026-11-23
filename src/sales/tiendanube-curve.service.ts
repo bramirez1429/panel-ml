@@ -29,6 +29,7 @@ export class TiendanubeCurveService {
     sku: string;
     stock: number | null;
     status: string;
+    imageUrl: string | null;
   }>> {
     const connection = await this.connections.findCredentialsByUserId(userId);
     if (!connection) {
@@ -37,7 +38,7 @@ export class TiendanubeCurveService {
     const matches: Array<{
       productId: string; variantId: string; name: string;
       color: string | null; size: string | null; sku: string;
-      stock: number | null; status: string;
+      stock: number | null; status: string; imageUrl: string | null;
     }> = [];
 
     for (let page = 1; page <= 10; page += 1) {
@@ -70,6 +71,7 @@ export class TiendanubeCurveService {
             sku: variant.sku!.trim(),
             stock: variant.tiendaNube.stock,
             status,
+            imageUrl: imageForTnVariant(product, variant.tiendaNube.variantId),
           });
         }
       }
@@ -138,4 +140,50 @@ export function mapTiendanubeProduct(
       },
     ];
   });
+}
+
+/** La variante puede indicar image_id; si no tiene, se usa la imagen principal. */
+export function imageForTnVariant(product: Record<string, unknown>, variantId: string): string | null {
+  const images = Array.isArray(product.images)
+    ? product.images.filter(isObject)
+    : [];
+  const variant = Array.isArray(product.variants)
+    ? product.variants.find((entry) =>
+        isObject(entry) && text(entry.id) === variantId,
+      )
+    : null;
+  if (isObject(variant)) {
+    const imageId = text(variant.image_id);
+    if (imageId) {
+      const selected = images.find((entry) => text(entry.id) === imageId);
+      const url = productImageUrl(selected?.src);
+      if (url) return url;
+    }
+    if (isObject(variant.image)) {
+      const url = productImageUrl(variant.image.src);
+      if (url) return url;
+    }
+  }
+  const ordered = images.slice().sort((left, right) => {
+    const a = Number(left.position);
+    const b = Number(right.position);
+    return (Number.isFinite(a) ? a : Number.MAX_SAFE_INTEGER) -
+      (Number.isFinite(b) ? b : Number.MAX_SAFE_INTEGER);
+  });
+  for (const image of ordered) {
+    const url = productImageUrl(image.src);
+    if (url) return url;
+  }
+  return null;
+}
+
+function productImageUrl(value: unknown): string | null {
+  const raw = text(value);
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    return url.protocol === 'https:' ? url.toString() : null;
+  } catch {
+    return null;
+  }
 }
