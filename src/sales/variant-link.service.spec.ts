@@ -5,11 +5,11 @@ import { VariantChannelLinksRepository } from './variant-channel-links.repositor
 import { VariantLinkService } from './variant-link.service';
 
 describe('VariantLinkService', () => {
-  it('valida IDs reales en ambos canales y guarda solo el vinculo', async () => {
+  it('vincula sólo SKU iguales en ambos canales', async () => {
     const mlCurve = {
       getForSale: jest.fn().mockResolvedValue([
         {
-          sku: null,
+          sku: 'RM-NEG-M',
           color: 'Negro',
           size: 'M',
           ml: {
@@ -46,7 +46,7 @@ describe('VariantLinkService', () => {
       sku: 'RM-NEG-M',
       normalizedColor: 'negro',
       normalizedSize: 'm',
-      matchSource: 'MANUAL' as const,
+      matchSource: 'SKU' as const,
       createdAt: '2026-09-14T12:00:00.000Z',
       updatedAt: '2026-09-14T12:00:00.000Z',
     };
@@ -78,8 +78,37 @@ describe('VariantLinkService', () => {
       sku: 'RM-NEG-M',
       normalizedColor: 'negro',
       normalizedSize: 'm',
-      matchSource: 'MANUAL',
+      matchSource: 'SKU',
     });
     expect(curves.invalidate).toHaveBeenCalledWith('user-a');
+  });
+
+  it('rechaza SKU distintos y evita guardar el vínculo', async () => {
+    const mlCurve = {
+      getForSale: jest.fn().mockResolvedValue([{
+        sku: 'ML-SKU', color: 'Negro', size: 'M',
+        ml: { itemId: 'MLA123', variationId: '123', userProductId: null, familyId: null, stock: 2 },
+        tiendaNube: null,
+      }]),
+    };
+    const tnCurve = {
+      getForUser: jest.fn().mockResolvedValue([{
+        sku: 'TN-SKU', color: 'Negro', size: 'M',
+        ml: null, tiendaNube: { productId: '10', variantId: '20', stock: 2 },
+      }]),
+    };
+    const links = { save: jest.fn() };
+    const curves = { invalidate: jest.fn() };
+    const service = new VariantLinkService(
+      mlCurve as unknown as MercadolibreCurveService,
+      tnCurve as unknown as TiendanubeCurveService,
+      links as unknown as VariantChannelLinksRepository,
+      curves as unknown as SalesCurveService,
+    );
+    await expect(service.create('user-a', {
+      mlItemId: 'MLA123', mlVariationId: '123', tnProductId: '10', tnVariantId: '20',
+    })).rejects.toThrow('Los SKU de Mercado Libre y Tiendanube deben ser iguales');
+    expect(links.save).not.toHaveBeenCalled();
+    expect(curves.invalidate).not.toHaveBeenCalled();
   });
 });

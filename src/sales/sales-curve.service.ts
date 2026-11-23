@@ -15,7 +15,7 @@ import {
   SALES_CURVE_CACHE_TTL_MS,
 } from './sales.types';
 import { TiendanubeCurveService } from './tiendanube-curve.service';
-import { normalizeColor, normalizeSize } from './variant-normalization';
+import { normalizeColor, normalizeSize, sameSku } from './variant-normalization';
 import { VariantChannelLinksRepository } from './variant-channel-links.repository';
 
 type CacheEntry = Readonly<{
@@ -133,38 +133,35 @@ export class SalesCurveService {
     const usedTn = new Set<string>();
     const autoLinks: SaveVariantChannelLink[] = [];
     const result = mlVariants.map((mlVariant) => {
+      const skuMatches = tnVariants.filter((tn) => sameSku(mlVariant.sku, tn.sku));
+      const duplicateMlSku = mlVariants.filter((variant) =>
+        sameSku(variant.sku, mlVariant.sku),
+      ).length > 1;
+      if (duplicateMlSku || skuMatches.length > 1) {
+        return detail(mlVariant, null, 'AMBIGUOUS');
+      }
+
       const persisted = links.find((link) => sameMl(link, mlVariant));
       if (persisted) {
         const linked = tnVariants.find((tn) => sameTn(persisted, tn));
-        if (linked) {
+        if (linked && sameSku(mlVariant.sku, linked.sku) &&
+          !usedTn.has(tnKey(linked))) {
           usedTn.add(tnKey(linked));
           return detail(mlVariant, linked, 'LINKED');
         }
+        // Nunca aceptar ni sustituir silenciosamente vínculos antiguos por atributos.
+        return detail(mlVariant, null, 'UNLINKED');
       }
 
-      const available = tnVariants.filter((tn) => !usedTn.has(tnKey(tn)));
-      const skuMatches = mlVariant.sku
-        ? available.filter((tn) => tn.sku === mlVariant.sku)
-        : [];
-      const attributeMatches =
-        skuMatches.length === 0 ? matchByAttributes(mlVariant, available) : [];
-      const candidates = skuMatches.length > 0 ? skuMatches : attributeMatches;
-      if (candidates.length !== 1) {
-        return detail(
-          mlVariant,
-          null,
-          candidates.length > 1 ? 'AMBIGUOUS' : 'UNLINKED',
-        );
+      const linked = skuMatches[0];
+      if (!linked) return detail(mlVariant, null, 'UNLINKED');
+      if (usedTn.has(tnKey(linked)) ||
+        links.some((link) => sameTn(link, linked))) {
+        return detail(mlVariant, null, 'AMBIGUOUS');
       }
 
-      const linked = candidates[0];
       usedTn.add(tnKey(linked));
-      const automatic = toAutoLink(
-        userId,
-        mlVariant,
-        linked,
-        skuMatches.length === 1 ? 'SKU' : 'ATTRIBUTES',
-      );
+      const automatic = toAutoLink(userId, mlVariant, linked);
       if (automatic) autoLinks.push(automatic);
       return detail(mlVariant, linked, 'AUTO_LINKED');
     });
@@ -217,20 +214,6 @@ function uniqueMlSourceKey(
   return keys.size === 1 ? [...keys][0] : null;
 }
 
-function matchByAttributes(
-  ml: ChannelVariant,
-  candidates: ChannelVariant[],
-): ChannelVariant[] {
-  const color = normalizeColor(ml.color);
-  const size = normalizeSize(ml.size);
-  if (!color && !size) return [];
-  return candidates.filter(
-    (candidate) =>
-      normalizeColor(candidate.color) === color &&
-      normalizeSize(candidate.size) === size,
-  );
-}
-
 function sameMl(link: VariantChannelLink, variant: ChannelVariant): boolean {
   return Boolean(
     variant.ml &&
@@ -257,7 +240,6 @@ function toAutoLink(
   userId: string,
   ml: ChannelVariant,
   tn: ChannelVariant,
-  source: 'SKU' | 'ATTRIBUTES',
 ): SaveVariantChannelLink | null {
   if (!ml.ml || !tn.tiendaNube) return null;
   return {
@@ -271,7 +253,7 @@ function toAutoLink(
     sku: ml.sku ?? tn.sku,
     normalizedColor: normalizeColor(ml.color ?? tn.color),
     normalizedSize: normalizeSize(ml.size ?? tn.size),
-    matchSource: source,
+    matchSource: 'SKU',
   };
 }
 

@@ -53,7 +53,7 @@ describe('SalesCurveService', () => {
     return { service, mlCurve, tnCurve, variantLinks };
   }
 
-  it('prioriza un vinculo persistido sobre SKU o atributos', async () => {
+  it('ignora vínculos históricos si ya no coinciden los SKU', async () => {
     const ml = [mlVariant('MLA1', '100', 'SKU-A', 'Negro', 'M', 4)];
     const tn = [
       tnVariant('10', '200', 'SKU-A', 'Negro', 'M', 7),
@@ -65,9 +65,9 @@ describe('SalesCurveService', () => {
     const result = await service.getForSale(USER_ID, sale());
 
     expect(result[0]).toMatchObject({
-      mappingStatus: 'LINKED',
-      stockDifference: 0,
-      tiendaNube: { variantId: '201' },
+      mappingStatus: 'UNLINKED',
+      stockDifference: null,
+      tiendaNube: null,
     });
     expect(variantLinks.save).not.toHaveBeenCalled();
   });
@@ -93,7 +93,7 @@ describe('SalesCurveService', () => {
     );
   });
 
-  it('auto-vincula sin SKU solo ante una coincidencia inequivoca de atributos', async () => {
+  it('no vincula productos por color o talle cuando faltan SKU', async () => {
     const { service, variantLinks } = setup({
       ml: [mlVariant('MLA1', '100', null, 'Négro', 'Extra Grande', 3)],
       tn: [tnVariant('10', '200', null, 'NEGRO', 'XL', 3)],
@@ -101,22 +101,16 @@ describe('SalesCurveService', () => {
 
     const result = await service.getForSale(USER_ID, sale());
 
-    expect(result[0].mappingStatus).toBe('AUTO_LINKED');
-    expect(variantLinks.save).toHaveBeenCalledWith(
-      expect.objectContaining({
-        matchSource: 'ATTRIBUTES',
-        normalizedColor: 'negro',
-        normalizedSize: 'xl',
-      }),
-    );
+    expect(result[0].mappingStatus).toBe('UNLINKED');
+    expect(variantLinks.save).not.toHaveBeenCalled();
   });
 
   it('marca ambiguo sin elegir una variante al azar', async () => {
     const { service, variantLinks } = setup({
-      ml: [mlVariant('MLA1', '100', null, 'Negro', 'M', 3)],
+      ml: [mlVariant('MLA1', '100', 'REPEATED-SKU', 'Negro', 'M', 3)],
       tn: [
-        tnVariant('10', '200', null, 'negro', 'M', 3),
-        tnVariant('10', '201', null, 'NEGRO', 'Medium', 3),
+        tnVariant('10', '200', 'REPEATED-SKU', 'negro', 'M', 3),
+        tnVariant('10', '201', 'REPEATED-SKU', 'NEGRO', 'Medium', 3),
       ],
     });
 
@@ -127,6 +121,34 @@ describe('SalesCurveService', () => {
       tiendaNube: null,
       stockDifference: null,
     });
+    expect(variantLinks.save).not.toHaveBeenCalled();
+  });
+
+  it('rechaza SKU duplicados en Mercado Libre para evitar parejas arbitrarias', async () => {
+    const { service, variantLinks } = setup({
+      ml: [
+        mlVariant('MLA1', '100', 'REPEATED-SKU', 'Negro', 'M', 3),
+        mlVariant('MLA1', '101', 'REPEATED-SKU', 'Negro', 'L', 4),
+      ],
+      tn: [tnVariant('10', '200', 'REPEATED-SKU', 'negro', 'M', 3)],
+    });
+
+    const result = await service.getForSale(USER_ID, sale());
+    expect(result[0].mappingStatus).toBe('AMBIGUOUS');
+    expect(result[1].mappingStatus).toBe('AMBIGUOUS');
+    expect(variantLinks.save).not.toHaveBeenCalled();
+  });
+
+  it('mantiene un vínculo persistido cuando los SKU actuales son idénticos', async () => {
+    const { service, variantLinks } = setup({
+      ml: [mlVariant('MLA1', '100', 'SKU-A', 'Negro', 'M', 4)],
+      tn: [tnVariant('10', '200', 'SKU-A', 'NEGRO', 'Medium', 2)],
+      links: [link('MLA1', '100', '10', '200')],
+    });
+
+    const result = await service.getForSale(USER_ID, sale());
+    expect(result[0].mappingStatus).toBe('LINKED');
+    expect(result[0].stockDifference).toBe(2);
     expect(variantLinks.save).not.toHaveBeenCalled();
   });
 
