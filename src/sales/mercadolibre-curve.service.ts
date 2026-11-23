@@ -78,7 +78,7 @@ export class MercadolibreCurveService {
           ));
           for (const item of batch) {
             if (String(item.seller_id) !== String(connection.seller_id)) continue;
-            for (const variant of mapClassicItem(item)) {
+            for (const variant of mapClassicItem(item as MlItem)) {
               if (!variant.ml || !sameSku(variant.sku, sku)) continue;
               matches.push({
                 itemId: variant.ml.itemId,
