@@ -110,6 +110,7 @@ function mapSale(row: RecentSaleRow): RecentSale {
     color: row.color,
     size: row.size,
     mappingStatus: row.mapping_status,
+    ...(row.order_status === undefined ? {} : { orderStatus: row.order_status }),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
