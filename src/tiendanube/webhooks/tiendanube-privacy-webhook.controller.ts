@@ -36,6 +36,18 @@ export class TiendanubePrivacyWebhookController {
     return OK_RESPONSE;
   }
 
+  @Post('order-cancelled')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  orderCancelled(
+    @RawBody() rawBody: Buffer | undefined,
+    @Headers('x-linkedstore-hmac-sha256') signature: unknown,
+    @Body() payload: unknown,
+  ): TiendanubeWebhookResponse {
+    this.privacyWebhookService.handleOrderCancelled({ rawBody, signature, payload });
+    return OK_RESPONSE;
+  }
+
   @Post('store-redact')
   @HttpCode(200)
   @Header('Cache-Control', 'no-store')
