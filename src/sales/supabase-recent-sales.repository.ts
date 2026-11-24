@@ -1,5 +1,5 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
-import type { RecentSaleRow } from '../database/database.types';
+import type { RecentSaleChannel, RecentSaleRow } from '../database/database.types';
 import { SupabaseService } from '../database/supabase.service';
 import { RecentSalesRepository } from './recent-sales.repository';
 import type { RecentSale, SaveRecentSale } from './sales.types';
@@ -20,6 +20,13 @@ export class SupabaseRecentSalesRepository extends RecentSalesRepository {
       .upsert(rows, {
         onConflict: 'user_id,channel,external_order_id,external_order_item_id',
       });
+    if (error) this.writeError();
+  }
+
+  async markOrderCancelled(userId: string, channel: RecentSaleChannel, orderId: string): Promise<void> {
+    const { error } = await this.supabase.getClient().from('recent_sales')
+      .update({ order_status: 'cancelled', updated_at: new Date().toISOString() })
+      .eq('user_id', userId).eq('channel', channel).eq('external_order_id', orderId);
     if (error) this.writeError();
   }
 
