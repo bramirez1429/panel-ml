@@ -73,6 +73,12 @@ function toInsert(sale: SaveRecentSale, updatedAt: string) {
     color: sale.color,
     size: sale.size,
     mapping_status: sale.mappingStatus,
+    ...(sale.orderStatus === undefined ? {} : { order_status: sale.orderStatus }),
+    ...(sale.buyerName === undefined ? {} : { buyer_name: sale.buyerName }),
+    ...(sale.unitPrice === undefined ? {} : { unit_price: sale.unitPrice }),
+    ...(sale.currency === undefined ? {} : { currency: sale.currency }),
+    ...(sale.imageUrl === undefined ? {} : { image_url: sale.imageUrl }),
+    ...(sale.shippingStatus === undefined ? {} : { shipping_status: sale.shippingStatus }),
     updated_at: updatedAt,
   };
 }
