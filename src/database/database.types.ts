@@ -419,6 +419,12 @@ export type RecentSaleRow = {
   color: string | null;
   size: string | null;
   mapping_status: SaleMappingStatus;
+  order_status?: 'paid' | 'cancelled';
+  buyer_name?: string | null;
+  unit_price?: number | null;
+  currency?: string | null;
+  image_url?: string | null;
+  shipping_status?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -607,6 +613,32 @@ export type Database = {
         PromotionBulkJobItemInsert
       >;
       recent_sales: Table<RecentSaleRow, RecentSaleInsert>;
+      sales_order_workflow: Table<{
+        workspace_id: string;
+        channel: RecentSaleChannel;
+        external_order_id: string;
+        completed_at: string | null;
+        completed_by: string | null;
+      }, {
+        workspace_id: string;
+        channel: RecentSaleChannel;
+        external_order_id: string;
+        completed_at?: string | null;
+        completed_by?: string | null;
+      }>;
+      sales_notification_reads: Table<{
+        user_id: string;
+        workspace_id: string;
+        channel: RecentSaleChannel;
+        external_order_id: string;
+        read_at: string;
+      }, {
+        user_id: string;
+        workspace_id: string;
+        channel: RecentSaleChannel;
+        external_order_id: string;
+        read_at?: string;
+      }>;
       variant_channel_links: Table<
         VariantChannelLinkRow,
         VariantChannelLinkInsert
