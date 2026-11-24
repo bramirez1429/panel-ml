@@ -16,6 +16,7 @@ import {
 import {
   parseCustomerPrivacyPayload,
   parseOrderPaidPayload,
+  parseOrderCancelledPayload,
   parseStoreRedactPayload,
   TiendanubeIncomingWebhook,
 } from './tiendanube-privacy-webhook.types';
@@ -33,6 +34,13 @@ export class TiendanubePrivacyWebhookService {
   handleOrderPaid(webhook: TiendanubeIncomingWebhook): void {
     this.verifyAuthenticity(webhook.rawBody, webhook.signature);
     const payload = parseOrderPaidPayload(webhook.payload);
+    if (!payload) this.invalidPayload();
+    this.saleIngestion.receive(payload.orderId, payload.storeId);
+  }
+
+  handleOrderCancelled(webhook: TiendanubeIncomingWebhook): void {
+    this.verifyAuthenticity(webhook.rawBody, webhook.signature);
+    const payload = parseOrderCancelledPayload(webhook.payload);
     if (!payload) this.invalidPayload();
     this.saleIngestion.receive(payload.orderId, payload.storeId);
   }
