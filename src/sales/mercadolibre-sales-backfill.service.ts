@@ -73,7 +73,6 @@ export class MercadolibreSalesBackfillService {
     while (ids.length < MAX_ORDERS) {
       const params = new URLSearchParams({
         seller: String(sellerId),
-        'order.status': 'paid',
         'order.date_created.from': from.toISOString(),
         'order.date_created.to': to.toISOString(),
         sort: 'date_desc',
