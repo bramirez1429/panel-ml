@@ -49,7 +49,7 @@ export function shipmentLogistic(raw: Record<string, unknown>): string | null {
 function orderFromApi(raw: Record<string, unknown>) {
   const orderId = id(raw.id);
   const soldAt = iso(raw.date_closed) ?? iso(raw.date_created);
-  if (!orderId || !soldAt || raw.status !== 'paid') return null;
+  if (!orderId || !soldAt || (raw.status !== 'paid' && raw.status !== 'cancelled')) return null;
   const shipmentId = isObject(raw.shipping) ? id(raw.shipping.id) : null;
   const lines = (Array.isArray(raw.order_items) ? raw.order_items.filter(isObject) : []).flatMap((line, index) => {
     const item = isObject(line.item) ? line.item : {};
@@ -62,14 +62,14 @@ function orderFromApi(raw: Record<string, unknown>) {
       color: attr('color'), size: attr('size'), quantity, unitPrice: money(line.unit_price),
       currency: text(line.currency_id) ?? text(raw.currency_id), imageUrl: text(item.thumbnail) }];
   });
-  return { orderId, shipmentId, soldAt, lines, completedAt: null as string | null };
+  return { orderId, shipmentId, soldAt, lines, cancelled: raw.status === 'cancelled', completedAt: null as string | null };
 }
 type LiveOrder = NonNullable<ReturnType<typeof orderFromApi>>;
 type ShipmentGroup = { key: string; shipmentId: string | null; orders: LiveOrder[] };
 export function groupLiveOrders(orders: LiveOrder[]): ShipmentGroup[] {
   const groups = new Map<string, ShipmentGroup>();
   for (const order of orders) {
-    const key = order.shipmentId ? 'shipment:' + order.shipmentId : 'order:' + order.orderId;
+    const key = order.cancelled ? 'cancelled:' + order.orderId : order.shipmentId ? 'shipment:' + order.shipmentId : 'order:' + order.orderId;
     const group = groups.get(key) ?? { key, shipmentId: order.shipmentId, orders: [] };
     if (!group.orders.some(existing => existing.orderId === order.orderId)) group.orders.push(order);
     groups.set(key, group);
@@ -93,7 +93,7 @@ export class MercadolibreShipmentsService {
       let truncated = false;
       let unparsed = 0;
       for (let offset = 0; offset < MAX_ORDERS; offset += PAGE) {
-        const params = new URLSearchParams({ seller: String(connection.seller_id), 'order.status': 'paid',
+        const params = new URLSearchParams({ seller: String(connection.seller_id), 'order.status': 'paid,cancelled',
           'order.date_created.from': from, sort: 'date_desc', offset: String(offset), limit: String(PAGE) });
         const response = await this.api.get<unknown>('/orders/search?' + params.toString(), accessToken, undefined, { timeoutMs: API_TIMEOUT });
         if (!isObject(response) || !Array.isArray(response.results)) throw new BadGatewayException('Respuesta de órdenes inválida');
@@ -106,6 +106,29 @@ export class MercadolibreShipmentsService {
         if (offset + PAGE >= MAX_ORDERS) truncated = true;
       }
       const db = this.supabase.getClient();
+      // La búsqueda como vendedor puede omitir cancelaciones. Recuperar también
+      // los IDs de las cancelaciones que ya registró la integración.
+      const { data: cancelledRows, error: cancelledError } = await db.from('recent_sales')
+        .select('external_order_id').eq('user_id', connection.user_id)
+        .eq('channel', 'MERCADOLIBRE').eq('order_status', 'cancelled')
+        .gte('sold_at', from).limit(MAX_ORDERS);
+      let cancellationUnavailable = Boolean(cancelledError);
+      const existingIds = new Set(orders.map(o => o.orderId));
+      const missing = [...new Set((cancelledRows ?? []).map(r => r.external_order_id))]
+        .filter(orderId => id(orderId) && !existingIds.has(orderId));
+      for (let offset = 0; offset < missing.length; offset += CONCURRENCY) {
+        if (Date.now() - started > 15000) { cancellationUnavailable = true; break; }
+        const recovered = await Promise.allSettled(missing.slice(offset, offset + CONCURRENCY).map(async orderId => {
+          const raw = await this.api.get<unknown>('/orders/' + orderId, accessToken, undefined, { timeoutMs: API_TIMEOUT });
+          if (!isObject(raw) || id(raw.id) !== orderId || !isObject(raw.seller) ||
+              id(raw.seller.id) !== String(connection.seller_id)) return null;
+          return orderFromApi(raw);
+        }));
+        for (const result of recovered) {
+          if (result.status === 'fulfilled' && result.value) orders.push(result.value);
+          else cancellationUnavailable = true;
+        }
+      }
       const ids = [...new Set(orders.map(o => o.orderId))];
       let preparationUnavailable = false;
       for (let offset = 0; offset < ids.length; offset += 50) {
@@ -131,7 +154,8 @@ export class MercadolibreShipmentsService {
         let status: string | null = null, substatus: string | null = null, logistic: string | null = null;
         let deadline: string | null = null, slaStatus: string | null = null;
         let issue: string | null = null;
-        if (!group.shipmentId) issue = 'Pedido sin ID de envío';
+        if (group.orders.every(o => o.cancelled)) status = 'cancelled';
+        else if (!group.shipmentId) issue = 'Pedido sin ID de envío';
         else if (Date.now() - started > 35000) issue = 'Consulta incompleta por límite de tiempo';
         else {
           try {
@@ -157,7 +181,7 @@ export class MercadolibreShipmentsService {
       }
       const failed = shipments.filter(s => s.issue !== null).length;
       this.logger.log('Envíos: ' + orders.length + ' órdenes, ' + shipments.length + ' grupos, ' + failed + ' por revisar');
-      return { today, fetchedAt: new Date().toISOString(), days: DAYS, truncated, unparsed, preparationUnavailable, shipments };
+      return { today, fetchedAt: new Date().toISOString(), days: DAYS, truncated, unparsed, preparationUnavailable, cancellationUnavailable, shipments };
     });
   }
 
