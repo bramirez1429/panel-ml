@@ -42,6 +42,10 @@ export function shipmentStage(status: string | null, logistic: string | null, de
   const day = argentinaDay(new Date(deadline));
   return day < today ? 'OVERDUE' : day === today ? 'TODAY' : 'UPCOMING';
 }
+export function terminalShipmentDate(raw: Record<string, unknown>, status: string | null): string | null {
+  if (!status || !FINAL.has(status) || !isObject(raw.status_history)) return null;
+  return iso(raw.status_history['date_' + status]);
+}
 export function shipmentLogistic(raw: Record<string, unknown>): string | null {
   if (text(raw.logistic_type)) return text(raw.logistic_type);
   return isObject(raw.logistic) ? text(raw.logistic.type) : null;
@@ -62,7 +66,9 @@ function orderFromApi(raw: Record<string, unknown>) {
       color: attr('color'), size: attr('size'), quantity, unitPrice: money(line.unit_price),
       currency: text(line.currency_id) ?? text(raw.currency_id), imageUrl: text(item.thumbnail) }];
   });
-  return { orderId, shipmentId, soldAt, lines, cancelled: raw.status === 'cancelled', completedAt: null as string | null };
+  return { orderId, shipmentId, soldAt, lines, cancelled: raw.status === 'cancelled',
+    cancelledAt: raw.status === 'cancelled' && isObject(raw.cancel_detail) ? iso(raw.cancel_detail.date) : null,
+    completedAt: null as string | null };
 }
 type LiveOrder = NonNullable<ReturnType<typeof orderFromApi>>;
 type ShipmentGroup = { key: string; shipmentId: string | null; orders: LiveOrder[] };
@@ -154,7 +160,18 @@ export class MercadolibreShipmentsService {
         let status: string | null = null, substatus: string | null = null, logistic: string | null = null;
         let deadline: string | null = null, slaStatus: string | null = null;
         let issue: string | null = null;
-        if (group.orders.every(o => o.cancelled)) status = 'cancelled';
+        let terminalAt: string | null = null;
+        if (group.orders.every(o => o.cancelled)) {
+          status = 'cancelled';
+          terminalAt = group.orders.flatMap(o => o.cancelledAt ? [o.cancelledAt] : []).sort().at(-1) ?? null;
+          // No consultar SLA de cancelados. Si falta la fecha, intentar leer el historial del envío.
+          if (!terminalAt && group.shipmentId && Date.now() - started <= 35000) {
+            try {
+              const raw = await this.api.get<unknown>('/shipments/' + group.shipmentId, accessToken, undefined, { timeoutMs: API_TIMEOUT, formatNew: true });
+              if (isObject(raw)) { terminalAt = terminalShipmentDate(raw, 'cancelled'); logistic = shipmentLogistic(raw); }
+            } catch { /* la fecha queda desconocida */ }
+          }
+        }
         else if (!group.shipmentId) issue = 'Pedido sin ID de envío';
         else if (Date.now() - started > 35000) issue = 'Consulta incompleta por límite de tiempo';
         else {
@@ -162,6 +179,7 @@ export class MercadolibreShipmentsService {
             const raw = await this.api.get<unknown>('/shipments/' + group.shipmentId, accessToken, undefined, { timeoutMs: API_TIMEOUT, formatNew: true });
             if (!isObject(raw)) throw new Error('invalid shipment');
             status = text(raw.status); substatus = text(raw.substatus); logistic = shipmentLogistic(raw);
+            terminalAt = terminalShipmentDate(raw, status);
             if (status && PENDING.has(status) && logistic !== 'fulfillment' && !(status === 'ready_to_ship' && substatus && DISPATCHED_SUBSTATUS.has(substatus))) {
               try {
                 const sla = await this.api.get<unknown>('/shipments/' + group.shipmentId + '/sla', accessToken, undefined, { timeoutMs: API_TIMEOUT });
@@ -172,7 +190,7 @@ export class MercadolibreShipmentsService {
             if (!status) issue = 'Estado de envío no disponible';
           } catch { issue = 'No se pudo consultar el envío'; }
         }
-        return { ...group, status, substatus, logistic, deadline, slaStatus, issue,
+        return { ...group, status, substatus, logistic, deadline, slaStatus, issue, terminalAt,
           stage: shipmentStage(status, logistic, deadline, today, substatus) };
       };
       const shipments: Awaited<ReturnType<typeof resolveGroup>>[] = [];
