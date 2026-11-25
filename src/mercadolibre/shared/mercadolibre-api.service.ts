@@ -29,6 +29,7 @@ export type MercadolibreApiResponse<T> = {
 
 export type MercadolibreApiRequestOptions = {
   timeoutMs?: number;
+  formatNew?: boolean;
 };
 
 @Injectable()
@@ -46,7 +47,7 @@ export class MercadolibreApiService {
       path,
       {
         method: 'GET',
-        headers: this.headers(accessToken),
+        headers: this.headers(accessToken, false, options?.formatNew ? { 'x-format-new': 'true' } : undefined),
       },
       kind,
       options,
