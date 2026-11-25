@@ -1,4 +1,4 @@
-import { groupLiveOrders, shipmentLogistic, shipmentStage } from './mercadolibre-shipments.service';
+import { groupLiveOrders, shipmentLogistic, shipmentStage, terminalShipmentDate } from './mercadolibre-shipments.service';
 
 describe('gestión de envíos', () => {
   const today = '2026-11-25';
@@ -14,12 +14,16 @@ describe('gestión de envíos', () => {
     expect(shipmentStage('handling', 'fulfillment', null, today)).toBe('MANAGED');
   });
   it('agrupa dos órdenes en un solo paquete, sin duplicar registros', () => {
-    const first = { orderId: '1', shipmentId: '100', soldAt: '2026-11-24T23:00:00Z', lines: [], cancelled: false, completedAt: null };
+    const first = { orderId: '1', shipmentId: '100', soldAt: '2026-11-24T23:00:00Z', lines: [], cancelled: false, cancelledAt: null, completedAt: null };
     const second = { ...first, orderId: '2' };
     expect(groupLiveOrders([first, second, first])).toHaveLength(1);
     expect(groupLiveOrders([first, second, first])[0].orders).toHaveLength(2);
     expect(groupLiveOrders([first, {...second, shipmentId: null}])).toHaveLength(2);
     expect(groupLiveOrders([first, {...second, cancelled: true}])).toHaveLength(2);
+  });
+  it('obtiene fecha final del historial sin inventar fechas', () => {
+    expect(terminalShipmentDate({ status_history: { date_delivered: '2026-11-25T12:00:00Z' } }, 'delivered')).toBe('2026-11-25T12:00:00.000Z');
+    expect(terminalShipmentDate({}, 'cancelled')).toBeNull();
   });
   it('reconoce tanto la respuesta actual como la heredada', () => {
     expect(shipmentLogistic({ logistic: { type: 'self_service' } })).toBe('self_service');
