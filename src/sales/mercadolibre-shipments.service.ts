@@ -17,6 +17,7 @@ const API_TIMEOUT = 4000;
 const PENDING = new Set(['pending', 'handling', 'ready_to_ship']);
 const FINAL = new Set(['delivered', 'not_delivered', 'cancelled', 'returned']);
 const TRANSIT = new Set(['shipped', 'in_transit']);
+const DISPATCHED_SUBSTATUS = new Set(['picked_up', 'authorized_by_carrier', 'in_hub', 'dropped_off']);
 type Stage = 'TODAY' | 'UPCOMING' | 'OVERDUE' | 'TRANSIT' | 'FINISHED' | 'REVIEW' | 'MANAGED';
 
 function id(value: unknown): string | null {
@@ -33,9 +34,9 @@ function money(value: unknown): number | null {
   const n = Number(value);
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
-export function shipmentStage(status: string | null, logistic: string | null, deadline: string | null, today: string): Stage {
+export function shipmentStage(status: string | null, logistic: string | null, deadline: string | null, today: string, substatus: string | null = null): Stage {
   if (status && FINAL.has(status)) return 'FINISHED';
-  if (status && TRANSIT.has(status)) return 'TRANSIT';
+  if ((status && TRANSIT.has(status)) || (status === 'ready_to_ship' && substatus && DISPATCHED_SUBSTATUS.has(substatus))) return 'TRANSIT';
   if (logistic === 'fulfillment') return 'MANAGED';
   if (!status || !PENDING.has(status) || !deadline) return 'REVIEW';
   const day = argentinaDay(new Date(deadline));
@@ -137,7 +138,7 @@ export class MercadolibreShipmentsService {
             const raw = await this.api.get<unknown>('/shipments/' + group.shipmentId, accessToken, undefined, { timeoutMs: API_TIMEOUT, formatNew: true });
             if (!isObject(raw)) throw new Error('invalid shipment');
             status = text(raw.status); substatus = text(raw.substatus); logistic = shipmentLogistic(raw);
-            if (status && PENDING.has(status) && logistic !== 'fulfillment') {
+            if (status && PENDING.has(status) && logistic !== 'fulfillment' && !(status === 'ready_to_ship' && substatus && DISPATCHED_SUBSTATUS.has(substatus))) {
               try {
                 const sla = await this.api.get<unknown>('/shipments/' + group.shipmentId + '/sla', accessToken, undefined, { timeoutMs: API_TIMEOUT });
                 if (isObject(sla)) { deadline = iso(sla.expected_date); slaStatus = text(sla.status); }
@@ -148,7 +149,7 @@ export class MercadolibreShipmentsService {
           } catch { issue = 'No se pudo consultar el envío'; }
         }
         return { ...group, status, substatus, logistic, deadline, slaStatus, issue,
-          stage: shipmentStage(status, logistic, deadline, today) };
+          stage: shipmentStage(status, logistic, deadline, today, substatus) };
       };
       const shipments: Awaited<ReturnType<typeof resolveGroup>>[] = [];
       for (let i = 0; i < groups.length; i += CONCURRENCY) {
