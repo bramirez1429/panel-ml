@@ -9,6 +9,7 @@ import { SalesCurveService } from './sales-curve.service';
 import { SalesSyncService } from './sales-sync.service';
 import { SalesPersistenceModule } from './sales-persistence.module';
 import { SalesController } from './sales.controller';
+import { MercadolibreShipmentsController, MercadolibreShipmentsService } from './mercadolibre-shipments.service';
 import { SalesOperationsController, SalesOperationsService } from './sales-operations.service';
 import { SupabaseService } from '../database/supabase.service';
 import { WorkspaceModule } from '../workspaces/workspace.module';
@@ -23,10 +24,11 @@ import { VariantLinkService } from './variant-link.service';
     SalesPersistenceModule,
     WorkspaceModule,
   ],
-  controllers: [SalesController, SalesOperationsController],
+  controllers: [SalesController, SalesOperationsController, MercadolibreShipmentsController],
   providers: [
     SupabaseService,
     SalesOperationsService,
+    MercadolibreShipmentsService,
     MercadolibreCurveService,
     MercadolibreSalesBackfillService,
     SalesSyncService,
