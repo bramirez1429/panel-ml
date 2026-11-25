@@ -1,6 +1,6 @@
 import {
   BadRequestException, Body, ConflictException, Controller, Get, Header,
-  Injectable, NotFoundException, Post, ServiceUnavailableException, UseGuards,
+  Injectable, Logger, NotFoundException, Post, ServiceUnavailableException, UseGuards,
 } from '@nestjs/common';
 import type { SafeUser } from '../auth/domain/auth.models';
 import { AccessTokenGuard } from '../auth/presentation/access-token.guard';
@@ -72,13 +72,14 @@ export function groupOrders(rows: RecentSaleRow[], workflows: Workflow[], reads:
 
 @Injectable()
 export class SalesOperationsService {
+  private readonly logger = new Logger(SalesOperationsService.name);
   constructor(private readonly supabase: SupabaseService, private readonly workspaces: WorkspaceRepository) {}
 
   private async context(userId: string): Promise<Context> {
     const workspace = await this.workspaces.findWorkspaceByUserId(userId);
     const { data,error } = await this.supabase.getClient().from('workspace_members')
       .select('user_id').eq('workspace_id',workspace.id);
-    if (error || !data) this.unavailable();
+    if (error || !data) this.unavailable('workspace_members', error?.code);
     return { userId,workspaceId: workspace.id,memberIds: data.map((row) => row.user_id) };
   }
 
@@ -95,7 +96,7 @@ export class SalesOperationsService {
         .in('user_id',ctx.memberIds).gte('sold_at',since)
         .order('sold_at',{ascending:false}).order('id',{ascending:true})
         .range(offset,offset+PAGE_SIZE-1);
-      if(error || !data) this.unavailable();
+      if(error || !data) this.unavailable('recent_sales', error?.code);
       rows.push(...data);
       if(data.length<PAGE_SIZE) break;
       if(offset+PAGE_SIZE>=MAX_LINES) this.unavailable();
@@ -112,11 +113,12 @@ export class SalesOperationsService {
         db.from('sales_notification_reads').select('channel,external_order_id')
           .eq('workspace_id',ctx.workspaceId).eq('user_id',userId).in('external_order_id',batch),
       ]);
-      if(w.error || r.error || !w.data || !r.data) this.unavailable();
+      if(w.error || r.error || !w.data || !r.data) this.unavailable(w.error || !w.data ? 'sales_order_workflow' : 'sales_notification_reads', w.error?.code ?? r.error?.code);
       workflows.push(...w.data); reads.push(...r.data);
     }
     const orders=groupOrders(rows,workflows,reads);
     const todays=orders.filter((order) => argentinaDay(new Date(order.soldAt))===today);
+    this.logger.log(`Consulta ventas: ${rows.length} registros, ${orders.length} pedidos, ${todays.length} del día ${today}`);
     return { today, days: WINDOW_DAYS, orders, summary: {
       sales: todays.filter((order)=>order.status!=='CANCELLED').length,
       pending: todays.filter((order)=>order.status==='PENDING').length,
@@ -160,7 +162,8 @@ export class SalesOperationsService {
     return data;
   }
 
-  private unavailable(): never {
+  private unavailable(stage = 'write_or_limit', code?: string): never {
+    this.logger.warn(`Error de ventas: ${stage}; code=${code ?? 'unknown'}`);
     throw new ServiceUnavailableException('No se pudo consultar o guardar la gestión de ventas');
   }
 }
