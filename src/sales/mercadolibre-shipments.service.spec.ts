@@ -14,11 +14,12 @@ describe('gestión de envíos', () => {
     expect(shipmentStage('handling', 'fulfillment', null, today)).toBe('MANAGED');
   });
   it('agrupa dos órdenes en un solo paquete, sin duplicar registros', () => {
-    const first = { orderId: '1', shipmentId: '100', soldAt: '2026-11-24T23:00:00Z', lines: [], completedAt: null };
+    const first = { orderId: '1', shipmentId: '100', soldAt: '2026-11-24T23:00:00Z', lines: [], cancelled: false, completedAt: null };
     const second = { ...first, orderId: '2' };
     expect(groupLiveOrders([first, second, first])).toHaveLength(1);
     expect(groupLiveOrders([first, second, first])[0].orders).toHaveLength(2);
     expect(groupLiveOrders([first, {...second, shipmentId: null}])).toHaveLength(2);
+    expect(groupLiveOrders([first, {...second, cancelled: true}])).toHaveLength(2);
   });
   it('reconoce tanto la respuesta actual como la heredada', () => {
     expect(shipmentLogistic({ logistic: { type: 'self_service' } })).toBe('self_service');
