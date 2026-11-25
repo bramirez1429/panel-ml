@@ -1,5 +1,5 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
-import type { RecentSaleRow } from '../database/database.types';
+import type { RecentSaleChannel, RecentSaleRow } from '../database/database.types';
 import { SupabaseService } from '../database/supabase.service';
 import { RecentSalesRepository } from './recent-sales.repository';
 import type { RecentSale, SaveRecentSale } from './sales.types';
@@ -20,6 +20,13 @@ export class SupabaseRecentSalesRepository extends RecentSalesRepository {
       .upsert(rows, {
         onConflict: 'user_id,channel,external_order_id,external_order_item_id',
       });
+    if (error) this.writeError();
+  }
+
+  async markOrderCancelled(userId: string, channel: RecentSaleChannel, orderId: string): Promise<void> {
+    const { error } = await this.supabase.getClient().from('recent_sales')
+      .update({ order_status: 'cancelled', updated_at: new Date().toISOString() })
+      .eq('user_id', userId).eq('channel', channel).eq('external_order_id', orderId);
     if (error) this.writeError();
   }
 
@@ -73,6 +80,12 @@ function toInsert(sale: SaveRecentSale, updatedAt: string) {
     color: sale.color,
     size: sale.size,
     mapping_status: sale.mappingStatus,
+    ...(sale.orderStatus === undefined ? {} : { order_status: sale.orderStatus }),
+    ...(sale.buyerName === undefined ? {} : { buyer_name: sale.buyerName }),
+    ...(sale.unitPrice === undefined ? {} : { unit_price: sale.unitPrice }),
+    ...(sale.currency === undefined ? {} : { currency: sale.currency }),
+    ...(sale.imageUrl === undefined ? {} : { image_url: sale.imageUrl }),
+    ...(sale.shippingStatus === undefined ? {} : { shipping_status: sale.shippingStatus }),
     updated_at: updatedAt,
   };
 }
@@ -97,6 +110,7 @@ function mapSale(row: RecentSaleRow): RecentSale {
     color: row.color,
     size: row.size,
     mappingStatus: row.mapping_status,
+    ...(row.order_status === undefined ? {} : { orderStatus: row.order_status }),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

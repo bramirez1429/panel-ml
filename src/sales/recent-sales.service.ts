@@ -25,7 +25,7 @@ export class RecentSalesService {
   async list(userId: string, hoursInput?: unknown) {
     const hours = parseHours(hoursInput);
     const since = new Date(Date.now() - hours * 60 * 60 * 1000);
-    const sales = await this.sales.findSince(since);
+    const sales = (await this.sales.findSince(since)).filter((sale) => sale.orderStatus !== 'cancelled');
     const items: ReturnType<typeof summarize>[] = [];
 
     for (let index = 0; index < sales.length; index += DETAIL_CONCURRENCY) {

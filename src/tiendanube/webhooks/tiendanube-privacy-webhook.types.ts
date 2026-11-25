@@ -27,6 +27,13 @@ export function parseOrderPaidPayload(
   return storeId && orderId ? { storeId, orderId } : null;
 }
 
+export function parseOrderCancelledPayload(value: unknown): TiendanubeOrderPaidPayload | null {
+  if (!isJsonObject(value) || value.event !== 'order/cancelled') return null;
+  const storeId = normalizeExternalId(value.store_id);
+  const orderId = normalizeExternalId(value.id);
+  return storeId && orderId ? { storeId, orderId } : null;
+}
+
 export function parseStoreRedactPayload(
   value: unknown,
 ): TiendanubeStoreRedactPayload | null {

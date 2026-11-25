@@ -3,7 +3,7 @@ import { TiendanubeConnectionRepository } from '../tiendanube/connections/tienda
 import { TiendanubeApiService } from '../tiendanube/shared/tiendanube-api.service';
 import { RecentSalesRepository } from './recent-sales.repository';
 import type { SaveRecentSale, VariantChannelLink } from './sales.types';
-import { mapTiendanubeProduct } from './tiendanube-curve.service';
+import { imageForTnVariant, mapTiendanubeProduct } from './tiendanube-curve.service';
 import { isObject, localizedText, text } from './variant-normalization';
 import { VariantChannelLinksRepository } from './variant-channel-links.repository';
 
@@ -35,9 +35,10 @@ export class TiendanubeSaleIngestionService {
     if (
       !isObject(order) ||
       text(order.id) !== orderId ||
-      order.payment_status !== 'paid'
+      (order.payment_status !== 'paid' && order.status !== 'cancelled')
     )
       return;
+    const cancelled = order.status === 'cancelled';
     const soldAt = timestamp(order.paid_at) ?? timestamp(order.created_at);
     if (!soldAt) return;
     const products = Array.isArray(order.products)
@@ -70,6 +71,10 @@ export class TiendanubeSaleIngestionService {
           : [],
       ),
     );
+    const rawProducts = new Map<string, Record<string, unknown>>();
+    productResults.forEach((result, index) => {
+      if (result.status === 'fulfilled' && isObject(result.value)) rawProducts.set(productIds[index], result.value);
+    });
     const records = products.flatMap((line) => {
       const productId = text(line.product_id);
       const variantId = text(line.variant_id);
@@ -99,10 +104,17 @@ export class TiendanubeSaleIngestionService {
           color: current?.color ?? values[0] ?? null,
           size: current?.size ?? values[1] ?? null,
           mappingStatus: linked ? 'LINKED' : 'UNLINKED',
+          orderStatus: cancelled ? 'cancelled' : 'paid',
+          buyerName: text(order.contact_name),
+          unitPrice: parseMoney(line.price),
+          currency: text(order.currency),
+          imageUrl: imageForTnVariant(rawProducts.get(productId) ?? {}, variantId),
+          shippingStatus: text(order.shipping_status),
         } satisfies SaveRecentSale,
       ];
     });
     await this.sales.saveMany(records);
+    if (cancelled) await this.sales.markOrderCancelled(connection.userId, 'TIENDANUBE', orderId);
   }
 }
 
@@ -145,4 +157,11 @@ function positiveInteger(value: unknown): number | null {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0
     ? value
     : null;
+}
+
+function parseMoney(value: unknown): number | null {
+  if (typeof value !== 'number' && typeof value !== 'string') return null;
+  if (typeof value === 'string' && !value.trim()) return null;
+  const amount=Number(value);
+  return Number.isFinite(amount)&&amount>=0?amount:null;
 }

@@ -22,6 +22,12 @@ export type RecentSale = Readonly<{
   color: string | null;
   size: string | null;
   mappingStatus: SaleMappingStatus;
+  orderStatus?: 'paid' | 'cancelled';
+  buyerName?: string | null;
+  unitPrice?: number | null;
+  currency?: string | null;
+  imageUrl?: string | null;
+  shippingStatus?: string | null;
   createdAt: string;
   updatedAt: string;
 }>;

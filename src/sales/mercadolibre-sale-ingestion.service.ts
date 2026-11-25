@@ -4,7 +4,7 @@ import type { MlItem } from '../mercadolibre/direct-publications/items/items.typ
 import { PublicationSourceService } from '../mercadolibre/publications/sync/publication-source.service';
 import { MercadolibreApiService } from '../mercadolibre/shared/mercadolibre-api.service';
 import { RecentSalesRepository } from './recent-sales.repository';
-import { mapClassicItem } from './mercadolibre-curve.service';
+import { imageForMlVariant, mapClassicItem } from './mercadolibre-curve.service';
 import type { SaveRecentSale, VariantChannelLink } from './sales.types';
 import { isObject, text } from './variant-normalization';
 import { VariantChannelLinksRepository } from './variant-channel-links.repository';
@@ -38,7 +38,8 @@ export class MercadolibreSaleIngestionService {
       `/orders/${encodeURIComponent(orderId)}`,
       accessToken,
     );
-    if (!isPaidOrder(order, orderId)) return;
+    if (!isRelevantOrder(order, orderId)) return;
+    const cancelled = order.status === 'cancelled';
 
     const orderItems = Array.isArray(order.order_items)
       ? order.order_items.filter(isObject)
@@ -112,21 +113,28 @@ export class MercadolibreSaleIngestionService {
             current?.size ??
             attributeValue(source?.variation_attributes, 'size'),
           mappingStatus: linked ? 'LINKED' : 'UNLINKED',
+          orderStatus: cancelled ? 'cancelled' : 'paid',
+          buyerName: isObject(order.buyer) ? text(order.buyer.nickname) : null,
+          unitPrice: parseMoney(line.unit_price),
+          currency: text(line.currency_id) ?? text(order.currency_id),
+          imageUrl: item ? imageForMlVariant(item, variationId) : null,
+          shippingStatus: isObject(order.shipping) ? text(order.shipping.status) : null,
         } satisfies SaveRecentSale,
       ];
     });
     await this.sales.saveMany(records);
+    if (cancelled) await this.sales.markOrderCancelled(connection.user_id, 'MERCADOLIBRE', orderId);
   }
 }
 
-function isPaidOrder(
+function isRelevantOrder(
   value: unknown,
   orderId: string,
 ): value is Record<string, unknown> {
   return (
     isObject(value) &&
     text(value.id) === orderId &&
-    (value.status === 'paid' ||
+    (value.status === 'cancelled' || value.status === 'paid' ||
       (Array.isArray(value.tags) && value.tags.includes('paid')))
   );
 }
@@ -174,4 +182,11 @@ function attributeValue(
     }
   }
   return null;
+}
+
+function parseMoney(value: unknown): number | null {
+  if (typeof value !== 'number' && typeof value !== 'string') return null;
+  if (typeof value === 'string' && !value.trim()) return null;
+  const amount = Number(value);
+  return Number.isFinite(amount) && amount >= 0 ? amount : null;
 }
